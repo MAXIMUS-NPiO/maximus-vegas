@@ -1,6 +1,15 @@
-# MAXIMUS VEGAS
+# MAXIMUS VEGAS — игровой портал
 
-Двуязычный лендинг для инвесторов и B2B-партнёров. Next.js App Router, React, TypeScript. Отдельные секции, серверная генерация страниц, локальные шрифты, адаптивное меню, FAQ и подготовленный API обращений.
+Портал www.maximus.vegas: аккаунты, игровой паспорт, команды, пространства организаторов, турниры на выбывание, игровой день, проверка результатов, споры, итоги, рейтинги, центр управления и журнал решений с hash-цепочкой. Интерфейс RU / EN.
+
+Оператор портала — MAXIMUS VEGAS L.L.C-FZ, Meydan Free Zone, Dubai, UAE. Портал не содержит ставок, азартных игр, игр на деньги и призовых фондов из взносов игроков.
+
+## Стек
+
+- Next.js 16 (App Router, Turbopack), React 19, TypeScript
+- PostgreSQL (production) через `pg`; встроенный PostgreSQL (PGlite) для локального запуска и тестов
+- Формы работают без JavaScript: `POST /api/a/<action>` → `303` обратно на страницу
+- Без внешних UI-библиотек; шрифт Manrope из `@fontsource-variable/manrope`
 
 ## Запуск
 
@@ -8,76 +17,37 @@
 
 ```sh
 npm ci
-npm run dev
+npm run dev                  # http://127.0.0.1:3000/ru — встроенная база в .data/pglite
+npm run check                # TypeScript + тесты + production-сборка
+npm run build && MV_LOCAL=1 npm start
+BASE=http://127.0.0.1:3000 npm run e2e   # сквозной HTTP-сценарий на запущенном портале
 ```
 
-Откройте `http://127.0.0.1:3000/ru` или `/en`.
+Без `DATABASE_URL` локально используется встроенная база. На Vercel без `DATABASE_URL` портал работает, а страницы с данными честно показывают, что сервис данных не подключён; `/api/health` возвращает `503`.
 
-```sh
-npm run check
-```
-
-Команда проверяет TypeScript, тесты валидации и production-сборку. `npm start` запускает собранную версию.
-
-## Структура
-
-```text
-src/app/[lang]/page.tsx       # Композиция главной страницы
-src/app/[lang]/layout.tsx     # Язык, шрифты, SEO и шапка
-src/app/[lang]/styles.css     # Тема и адаптивная вёрстка
-src/app/[lang]/privacy/       # Уведомление об обработке обращений
-src/components/sections/     # Hero, Metrics, Ecosystem, Partners,
-                             # Business, About, FAQ, Contact, Footer
-src/components/header.tsx    # Переключатель языка и мобильное меню
-src/components/inquiry-form.tsx
-src/lib/content.ts           # Все русские и английские тексты
-src/lib/inquiries.ts         # Серверная валидация
-src/app/api/inquiries/       # POST → настроенный HTTPS webhook
-public/lion-logo.png         # Плоское изображение льва
-.github/workflows/ci.yml     # Проверки при push и pull request
-```
-
-## GitHub → Vercel
-
-Репозиторий: https://github.com/MAXIMUS-NPiO/maximus-vegas
-
-```sh
-git clone https://github.com/MAXIMUS-NPiO/maximus-vegas.git
-cd maximus-vegas
-npm ci
-npm run dev
-```
-
-Проект Vercel: `maximus-vegas-landing`, команда `maximus-fdc6`. Root Directory — корень репозитория; production-ветка — `main`. Настройки Next.js заданы в `vercel.json`.
-
-Vercel Git integration создаёт production deployments из `main` и previews из остальных веток после подключения репозитория в Settings → Git. GitHub Actions отдельно проверяет код; при необходимости настройте защиту `main` с обязательным check.
-
-Не используйте GitHub Pages: серверный API этого проекта требует Next.js-хостинг, например Vercel.
-
-## Контакты и обработка обращений
-
-Скопируйте `.env.example` в `.env.local` для локальной работы. На Vercel задайте переменные в Settings → Environment Variables и выполните новый deployment.
+## Переменные окружения
 
 | Переменная | Назначение |
 | --- | --- |
-| `NEXT_PUBLIC_SITE_URL` | Канонический адрес сайта. Если не задан, на Vercel используется адрес production-проекта |
-| `NEXT_PUBLIC_CONTACT_EMAIL` | Рабочий email для контактного блока и mailto |
-| `LEAD_WEBHOOK_URL` | HTTPS-адрес сервиса, который принимает и сохраняет обращения |
-| `LEAD_WEBHOOK_TOKEN` | Серверный Bearer-токен сервиса, если требуется |
-| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Необязательное распределённое ограничение частоты обращений |
+| `DATABASE_URL` (или `POSTGRES_URL`) | Подключение к PostgreSQL. Схема создаётся и обновляется автоматически при первом запросе |
+| `NEXT_PUBLIC_SITE_URL` | Канонический адрес, например `https://www.maximus.vegas` |
+| `NEXT_PUBLIC_CONTACT_EMAIL` | Публичный email (по умолчанию `info@maximus.ltd`) |
+| `ADMIN_BOOTSTRAP_TOKEN` | Необязательно: секрет ≥ 24 символов для выдачи прав администратора на `/ru/admin/claim` |
+| `LEAD_WEBHOOK_URL`, `LEAD_WEBHOOK_TOKEN` | Необязательно: копия заявок во внешнюю CRM (заявки всегда сохраняются в базе) |
+| `DATABASE_POOL_MAX` | Необязательно: размер пула соединений (по умолчанию 5) |
 
-Без webhook форма **не принимает данные**. Если email настроен, посетителю доступен прямой контакт. Без обоих каналов выводится честный статус недоступности; перед коммерческим запуском подключите хотя бы email. После изменения этих переменных нужен новый deployment, поскольку страницы генерируются при сборке.
+## Первый администратор
 
-API принимает `name`, `email`, `company`, `interest` (`partnership`, `investment`, `demo`), `message`, `lang` (`ru`, `en`), `consent: true`, пустой `website` (honeypot). Webhook получает эти поля плюс `source` и `receivedAt`. HTTP 2xx от webhook считается подтверждением приёма: endpoint должен сохранять данные до ответа, дедуплицировать повторные обращения и экранировать сообщения при выводе.
+Войдите в свой аккаунт и откройте `/ru/admin/claim`. Код владельца передан лично; в репозитории хранится только его SHA-256. Код работает, пока на платформе нет ни одного администратора. Дальнейшие роли выдаются в `/ru/admin?tab=users`.
 
-Ограничения: только same-origin JSON, тело до 16 KiB, проверка согласия и полей, таймаут доставки, запрет перенаправлений webhook. При настроенном Redis — до 5 обращений на email за 10 минут. До включения публичной формы добавьте ограничение запросов в Vercel Firewall или в приёмнике; email-лимит сам по себе не предотвращает распределённый спам. Автоматические маркетинговые рассылки не подключены. Проверьте текст privacy notice с учётом выбранного сервиса и процессов компании.
+## GitHub → Vercel
 
-## Контент и границы проекта
+Репозиторий: https://github.com/MAXIMUS-NPiO/maximus-vegas. Проект Vercel `maximus-vegas-landing`; production собирается из `main`, остальные ветки — preview. GitHub Actions выполняет `npm run check` на каждый push и pull request.
 
-Лендинг описывает Tournament Suite на основе предоставленных продуктовых материалов. Он не подключён к игровой платформе и не регистрирует игроков на турниры. Прогнозы выручки, оценки компании, неподтверждённые логотипы партнёров и конфиденциальные документы не опубликованы. Файлы исходного проекта `sources/` не входят в этот репозиторий.
+## Документация
 
-Бизнес-показатели, контакты и условия партнёрства перед публичным использованием подтверждает компания. Исходный сайт по предоставленной ссылке был недоступен для чтения из-за ограничения браузера; эта версия — самостоятельная реализация.
-
-## Изображение льва
-
-`public/lion-logo.png` создано встроенным imagegen по запросу пользователя. Prompt: “Symmetrical geometric lion head in bold ivory, transparent background, flat vector-like styling, no text, container, gold, gradients, shadows, or 3D.” Изображение используется в шапке, подвале и favicon. 3D-иллюстрация в проект не включена.
+- `docs/ARCHITECTURE.md` — модули, данные, действия API, безопасность
+- `docs/RUNBOOK.md` — развёртывание, миграции, проверка, откат
+- `docs/MODULES.md` — реестр модулей со статусами
+- `docs/RISK_LOG.md` — риски, пробелы и открытые вопросы
+- `docs/IP_RECORD.md` — запись компонентов для внутреннего учёта IP (MIPA)
