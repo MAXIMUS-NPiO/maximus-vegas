@@ -6,7 +6,8 @@ import { gameBySlug } from "@/lib/games.ts";
 import { pageMeta } from "@/lib/meta.ts";
 import { viewer } from "@/server/viewer.ts";
 import { teamBySlug } from "@/server/queries.ts";
-import { ActionForm, Badge, DbDown, Flash, type SearchParams } from "@/components/ui";
+import { mediaUrl } from "@/server/media.ts";
+import { ActionForm, Badge, DbDown, Field, Flash, type SearchParams } from "@/components/ui";
 import { LocalTime } from "@/components/time";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string; slug: string }> }): Promise<Metadata> {
@@ -31,7 +32,9 @@ export default async function TeamPage({ params, searchParams }: { params: Promi
     );
   const data = await teamBySlug(db, slug);
   if (!data) notFound();
-  const { team, members, invites, tournaments } = data;
+  const { team, members, invites, tournaments, stats } = data;
+  const ru = lang === "ru";
+  const T = (a: string, b: string) => (ru ? a : b);
   const isOwner = user?.id === team.owner_id;
   const isLeader = isOwner || user?.id === team.captain_id;
   const isMember = Boolean(user && members.some((m) => m.id === user.id));
@@ -39,13 +42,35 @@ export default async function TeamPage({ params, searchParams }: { params: Promi
   const hidden = { team: team.id };
   return (
     <div className="container page">
+      {team.banner_media_id ? <img src={mediaUrl(team.banner_media_id)!} alt="" className="banner-img" /> : null}
       <p className="eyebrow">
         <Link href={`/${lang}/games/${team.game}`}>{gameBySlug(team.game)?.name ?? team.game}</Link>
       </p>
-      <h1>
-        {team.name} {team.tag ? <span className="badge badge-muted">{team.tag}</span> : null}
-      </h1>
+      <div className="team-head">
+        {team.logo_media_id ? <img src={mediaUrl(team.logo_media_id)!} alt="" width={64} height={64} className="team-logo" /> : null}
+        <h1>
+          {team.name} {team.tag ? <span className="badge badge-muted">{team.tag}</span> : null}
+        </h1>
+      </div>
       <Flash lang={lang} params={sp} />
+      <dl className="stat-row section-tight">
+        <div>
+          <dt>{T("Матчи", "Matches")}</dt>
+          <dd>{stats.played}</dd>
+        </div>
+        <div>
+          <dt>{T("Победы", "Wins")}</dt>
+          <dd>{stats.wins}</dd>
+        </div>
+        <div>
+          <dt>{T("Турниры", "Tournaments")}</dt>
+          <dd>{tournaments.length}</dd>
+        </div>
+        <div>
+          <dt>{T("Призовые места", "Podiums")}</dt>
+          <dd>{stats.podiums}</dd>
+        </div>
+      </dl>
       <div className="grid grid-2">
         <section>
           <h2 className="h3">
@@ -117,6 +142,32 @@ export default async function TeamPage({ params, searchParams }: { params: Promi
                 </>
               ) : null}
             </>
+          ) : null}
+          {isLeader ? (
+            <details className="disclosure card">
+              <summary>{T("Логотип и баннер", "Logo and banner")}</summary>
+              <ActionForm action="team.media" lang={lang} back={back} hidden={hidden} className="stack-sm" multipart>
+                <Field label={T("Логотип — квадрат, PNG, JPEG или WebP, до 256 КБ", "Logo — square, PNG, JPEG or WebP, up to 256 KB")}>
+                  <input type="file" name="logo" accept="image/png,image/jpeg,image/webp" />
+                </Field>
+                <Field label={T("Баннер — широкий, до 1 МБ", "Banner — wide, up to 1 MB")}>
+                  <input type="file" name="banner" accept="image/png,image/jpeg,image/webp" />
+                </Field>
+                <button className="btn btn-primary btn-sm">{T("Загрузить", "Upload")}</button>
+              </ActionForm>
+              <div className="row">
+                {team.logo_media_id ? (
+                  <ActionForm action="team.media" lang={lang} back={back} hidden={{ ...hidden, clear: "logo" }}>
+                    <button className="btn btn-ghost btn-xs">{T("Убрать логотип", "Remove logo")}</button>
+                  </ActionForm>
+                ) : null}
+                {team.banner_media_id ? (
+                  <ActionForm action="team.media" lang={lang} back={back} hidden={{ ...hidden, clear: "banner" }}>
+                    <button className="btn btn-ghost btn-xs">{T("Убрать баннер", "Remove banner")}</button>
+                  </ActionForm>
+                ) : null}
+              </div>
+            </details>
           ) : null}
           <h2 className="h3">{d.teams.tournaments}</h2>
           {tournaments.length ? (

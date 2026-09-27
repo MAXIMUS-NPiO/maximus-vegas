@@ -3,6 +3,24 @@ import { siteOrigin } from "@/lib/site.ts";
 
 export default function robots(): MetadataRoute.Robots {
   const origin = siteOrigin() ?? "https://www.maximus.vegas";
-  const privatePaths = ["/api/", "/ru/hub", "/en/hub", "/ru/settings", "/en/settings", "/ru/admin", "/en/admin", "/ru/notifications", "/en/notifications", "/ru/calendar", "/en/calendar", "/ru/organizer/", "/en/organizer/", "/ru/matches/", "/en/matches/", "/ru/search", "/en/search"];
+  const personal = [
+    "hub",
+    "settings",
+    "admin",
+    "notifications",
+    "calendar",
+    "organizer/",
+    "matches/",
+    "search",
+    "progress",
+    "billing",
+    "challenges",
+    "welcome",
+    "verify-email",
+    "activate",
+    "reset-password",
+    "signup/check-email",
+  ];
+  const privatePaths = ["/api/", ...personal.flatMap((p) => [`/ru/${p}`, `/en/${p}`])];
   return { rules: { userAgent: "*", allow: "/", disallow: privatePaths }, sitemap: `${origin}/sitemap.xml` };
 }

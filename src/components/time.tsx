@@ -62,3 +62,27 @@ export function LocalDateTimeInput({ name, iso, required }: { name: string; iso?
     />
   );
 }
+
+/** Live countdown to a UTC instant (updates every 15 s). The server remains the authority on the deadline. */
+export function Countdown({ iso, lang }: { iso: string | Date; lang: "ru" | "en" }) {
+  const target = new Date(iso).getTime();
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(id);
+  }, []);
+  if (now === null) return null;
+  const left = target - now;
+  const ru = lang === "ru";
+  if (left <= 0) return <span className="countdown">{ru ? "срок истёк" : "closed"}</span>;
+  const d = Math.floor(left / 86_400_000);
+  const h = Math.floor((left % 86_400_000) / 3_600_000);
+  const m = Math.max(1, Math.ceil((left % 3_600_000) / 60_000));
+  const parts = [d ? `${d} ${ru ? "д" : "d"}` : "", h ? `${h} ${ru ? "ч" : "h"}` : "", !d ? `${m} ${ru ? "мин" : "min"}` : ""].filter(Boolean);
+  return (
+    <span className="countdown" aria-live="off">
+      {ru ? "осталось" : "left"}: {parts.join(" ")}
+    </span>
+  );
+}

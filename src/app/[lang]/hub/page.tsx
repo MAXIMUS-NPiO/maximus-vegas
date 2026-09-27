@@ -7,6 +7,9 @@ import { gameBySlug } from "@/lib/games.ts";
 import { pageMeta } from "@/lib/meta.ts";
 import { viewer } from "@/server/viewer.ts";
 import { hub, notifications } from "@/server/queries.ts";
+import { needsTermsAcceptance } from "@/server/accounts.ts";
+import { mailConfigured } from "@/server/mail.ts";
+import { balance, rankFor, totalXp } from "@/server/progression.ts";
 import { ActionForm, Badge, DbDown, Empty, Flash, type SearchParams } from "@/components/ui";
 import { LocalTime } from "@/components/time";
 import { Arrow } from "@/components/icons";
@@ -30,7 +33,23 @@ export default async function Hub({ params, searchParams }: { params: Promise<{ 
       </div>
     );
   if (!user) redirect(`/${lang}/signin?next=/${lang}/hub`);
-  const [data, notes] = await Promise.all([hub(db, user), notifications(db, user.id, 8)]);
+  const [data, notes, termsUpdate, xp, coins, [waiting]] = await Promise.all([
+    hub(db, user),
+    notifications(db, user.id, 8),
+    needsTermsAcceptance(db, user.id),
+    totalXp(db, user.id),
+    balance(db, user.id),
+    db.query<{ n: number }>(
+      `select count(*)::int as n from challenges
+        where (opponent_id = $1 and status = 'pending') or (status = 'accepted' and $1 in (challenger_id, opponent_id))
+           or (status = 'reported' and reported_by <> $1 and $1 in (challenger_id, opponent_id))`,
+      [user.id],
+    ),
+  ]);
+  const ru = lang === "ru";
+  const T = (a: string, b: string) => (ru ? a : b);
+  const { rank } = rankFor(xp);
+  const back = `/${lang}/hub`;
   const active = data.registrations.filter((r) => !["COMPLETED", "CANCELLED"].includes(r.status));
   const needsCheckIn = active.find((r) => r.check_in_open && r.reg_status === "registered" && !r.checked_in_at);
   const step = data.matches.length
@@ -42,13 +61,61 @@ export default async function Hub({ params, searchParams }: { params: Promise<{ 
         : !data.teams.length
           ? { text: d.hub.steps.team, href: `/${lang}/teams/new` }
           : { text: d.hub.steps.profile, href: `/${lang}/settings` };
-  const back = `/${lang}/hub`;
   return (
     <div className="container page">
       <h1>
         {d.hub.hello}, {user.displayName}
       </h1>
       <Flash lang={lang} params={sp} />
+      {termsUpdate ? (
+        <div className="notice notice-warn" role="status">
+          <p>
+            {T("Мы обновили условия использования и уведомление о конфиденциальности.", "We have updated the terms of use and the privacy notice.")}{" "}
+            <Link href={`/${lang}/terms`} className="text-link">
+              {T("Условия", "Terms")}
+            </Link>{" "}
+            ·{" "}
+            <Link href={`/${lang}/privacy`} className="text-link">
+              {T("Конфиденциальность", "Privacy")}
+            </Link>
+          </p>
+          <ActionForm action="account.accept_terms" lang={lang} back={back}>
+            <button className="btn btn-primary btn-sm">{T("Принять новую редакцию", "Accept the new version")}</button>
+          </ActionForm>
+        </div>
+      ) : null}
+      {!user.emailVerified && mailConfigured() ? (
+        <div className="notice" role="status">
+          <p>{T("Подтвердите email — это нужно для восстановления доступа и оплаты членства.", "Confirm your email — it is needed for account recovery and membership payments.")}</p>
+          <ActionForm action="auth.verify_request" lang={lang} back={back}>
+            <button className="btn btn-ghost btn-sm">{T("Отправить письмо", "Send the email")}</button>
+          </ActionForm>
+        </div>
+      ) : null}
+      {!user.onboarded ? (
+        <p className="small">
+          <Link href={`/${lang}/welcome`} className="text-link">
+            {T("Завершите первые шаги: страна, игровые ники, команда", "Finish getting started: country, in-game names, team")}
+          </Link>
+        </p>
+      ) : null}
+      <div className="grid grid-3 section-tight">
+        <Link href={`/${lang}/progress`} className="card card-link">
+          <span className="field-label">{T("Ранг", "Rank")}</span>
+          <strong>{ru ? rank.ru : rank.en}</strong>
+          <span className="small muted">{xp} XP</span>
+        </Link>
+        <Link href={`/${lang}/progress#shop`} className="card card-link">
+          <span className="field-label">{T("Монеты", "Coins")}</span>
+          <strong>{coins}</strong>
+          <span className="small muted">{T("только косметика, без вывода", "cosmetics only, no cash-out")}</span>
+        </Link>
+        <Link href={`/${lang}/challenges`} className="card card-link">
+          <span className="field-label">{T("Вызовы 1v1", "1v1 challenges")}</span>
+          <strong>{waiting?.n ?? 0}</strong>
+          <span className="small muted">{T("ждут вашего действия", "waiting for you")}</span>
+        </Link>
+      </div>
       <Link href={step.href} className="card card-link next-step">
         <span className="field-label">{d.hub.nextStep}</span>
         <span className="next-step-text">{step.text}</span>

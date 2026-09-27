@@ -19,8 +19,8 @@ export default async function Help({ params }: { params: Promise<{ lang: string 
     <div className="container narrow page">
       <PageHead title={d.help.title} />
       <div className="faq">
-        {d.help.faqs.map(([q, a]) => (
-          <details key={q}>
+        {d.help.faqs.map(([q, a], i) => (
+          <details key={q} id={`faq-${i + 1}`}>
             <summary>{q}</summary>
             <p>{a}</p>
           </details>

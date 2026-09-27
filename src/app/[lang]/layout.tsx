@@ -7,6 +7,7 @@ import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
 import { viewer } from "@/server/viewer.ts";
 import { unreadCount } from "@/server/queries.ts";
+import { isStaff } from "@/server/access.ts";
 import "./styles.css";
 
 const manrope = localFont({
@@ -60,8 +61,9 @@ export default async function Layout({ children, params }: { children: React.Rea
         <Header
           lang={lang}
           nav={d.nav}
+          extra={d.x.nav}
           common={d.common}
-          user={user ? { username: user.username, displayName: user.displayName, admin: user.roles.includes("admin"), unread } : null}
+          user={user ? { username: user.username, displayName: user.displayName, admin: isStaff(user), unread } : null}
         />
         <main id="main">{children}</main>
         <Footer lang={lang} />

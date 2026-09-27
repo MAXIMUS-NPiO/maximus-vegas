@@ -7,7 +7,7 @@ import type { Dict, Locale } from "@/lib/i18n";
 
 type NavUser = { username: string; displayName: string; admin: boolean; unread: number } | null;
 
-export function Header({ lang, nav, common, user }: { lang: Locale; nav: Dict["nav"]; common: Dict["common"]; user: NavUser }) {
+export function Header({ lang, nav, extra, common, user }: { lang: Locale; nav: Dict["nav"]; extra: Dict["x"]["nav"]; common: Dict["common"]; user: NavUser }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname() || `/${lang}`;
   const navRef = useRef<HTMLElement>(null);
@@ -102,6 +102,9 @@ export function Header({ lang, nav, common, user }: { lang: Locale; nav: Dict["n
                 <div className="account-panel">
                   <Link href={`/${lang}/hub`}>{nav.hub}</Link>
                   <Link href={`/${lang}/players/${user.username}`}>{nav.profile}</Link>
+                  <Link href={`/${lang}/progress`}>{extra.progress}</Link>
+                  <Link href={`/${lang}/challenges`}>{extra.challenges}</Link>
+                  <Link href={`/${lang}/billing`}>{extra.billing}</Link>
                   <Link href={`/${lang}/organizer`}>{nav.organizer}</Link>
                   <Link href={`/${lang}/settings`}>{nav.settings}</Link>
                   {user.admin ? <Link href={`/${lang}/admin`}>{nav.admin}</Link> : null}

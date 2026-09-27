@@ -1,3 +1,5 @@
+import { extEn, extRu, type Ext } from "./i18n-ext.ts";
+
 export type Locale = "ru" | "en";
 export const LOCALES: Locale[] = ["ru", "en"];
 export const isLocale = (value: string): value is Locale => value === "ru" || value === "en";
@@ -53,7 +55,8 @@ const ru = {
         label: "Играть",
         items: [
           ["games", "Игры", "Каталог дисциплин и способы проверки результатов"],
-          ["matchmaking", "Подбор игры", "Поиск соперников и напарников"],
+          ["matchmaking", "Быстрый матч", "Соперник из реальной очереди по вашей игре"],
+          ["challenges", "Вызовы 1v1", "Вызовите конкретного игрока — без ставок"],
           ["cloud-gaming", "Облачный гейминг", "Удалённые игровые сессии"],
           ["server-rentals", "Аренда серверов", "Выделенные игровые серверы"],
         ],
@@ -78,6 +81,7 @@ const ru = {
         items: [
           ["players", "Игроки", "Профили и игровая история"],
           ["teams", "Команды", "Составы, приглашения и результаты"],
+          ["membership", "Членство", "Премиальный пропуск и косметика — без преимущества в игре"],
           ["community", "Сообщества", "Клубы по играм и интересам"],
           ["venues", "Площадки", "Клубы и игровые пространства"],
         ],
@@ -113,7 +117,7 @@ const ru = {
     company: "MAXIMUS VEGAS L.L.C-FZ · Meydan Free Zone · Dubai, UAE",
     noGambling: "Без ставок, азартных игр и игр на деньги.",
     columns: [
-      ["Портал", [["tournaments", "Турниры"], ["games", "Игры"], ["rankings", "Рейтинги"], ["teams", "Команды"], ["players", "Игроки"]]],
+      ["Портал", [["tournaments", "Турниры"], ["games", "Игры"], ["rankings", "Рейтинги"], ["teams", "Команды"], ["players", "Игроки"], ["membership", "Членство"]]],
       ["Доверие", [["trust", "Честная игра"], ["status", "Статус сервисов"], ["help", "Помощь и FAQ"], ["contact", "Контакты"]]],
       ["Документы", [["terms", "Условия использования"], ["privacy", "Конфиденциальность"], ["explore", "Все разделы"], ["innovations", "Технологии"]]],
     ] as Array<[string, Array<[string, string]>]>,
@@ -636,7 +640,12 @@ const ru = {
   help: {
     title: "Помощь и FAQ",
     faqs: [
-      ["Сколько стоит участие?", "Регистрация, команды и участие в турнирах на портале бесплатны. Платных механик и ставок нет."],
+      ["Сколько стоит участие?", "Регистрация, команды, участие в турнирах, вызовы 1v1 и быстрые матчи бесплатны. Необязательное платное членство даёт только косметику и премиальную линию сезонного пропуска и не влияет на соревнование. Ставок, платных взносов за участие и призов из взносов нет."],
+      ["Что такое XP, монеты и ранги?", "XP начисляется за подтверждённые матчи, места в турнирах и участие; от XP зависят ранг и уровни сезонного пропуска. Монеты дают цели, уровни пропуска, приглашения и награды победителям турниров. Монеты тратятся только на косметику и премиальную линию пропуска; их нельзя купить, передать, поставить на исход или вывести."],
+      ["Как работает быстрый матч?", "Выберите игру — портал соединит вас с реальным игроком, который уже ждёт в очереди этой игры. Если никого нет, вы ждёте в очереди до 30 минут. Ботов и выдуманных соперников нет."],
+      ["Как оспорить уже решённый матч?", "На странице матча нажмите «Оспорить результат», опишите проблему и приложите ссылку или изображение. Организатор оставит результат в силе или отменит его. Оспаривание, оставленное без удовлетворения, снижает репутацию; обоснованное — нет."],
+      ["Не приходит письмо или забыл пароль", "Проверьте спам. Письмо для подтверждения можно запросить повторно в настройках, а новый пароль — на странице «Забыли пароль?». Если отправка писем ещё не подключена, напишите в поддержку с адреса аккаунта."],
+      ["Что даёт членство и как его оплатить?", "Членство — это премиальная линия пропуска и косметика. Сначала подаётся заявка; после одобрения выставляется счёт, в котором до оплаты показаны цена, срок, налоговый режим и условия возврата. Оплата проходит на странице платёжного провайдера, когда онлайн-оплата включена."],
       ["Как зарегистрироваться в командный турнир?", "Владелец или капитан команды открывает турнир и регистрирует команду. Состав на момент заявки фиксируется, игрок не может одновременно выступать за две команды в одном турнире."],
       ["Что такое check-in?", "Подтверждение участия перед стартом. Если check-in обязателен, в сетку попадают только прошедшие его участники."],
       ["Как отправить результат?", "Откройте матч в хабе, укажите счёт и приложите ссылку на доказательство. Соперник подтвердит результат или откроет спор."],
@@ -823,9 +832,9 @@ const ru = {
   } as Record<string, string>,
 };
 
-export type Dict = typeof ru;
+type BaseDict = typeof ru;
 
-const en: Dict = {
+const en: BaseDict = {
   meta: {
     title: "MAXIMUS VEGAS — tournaments, teams and gaming identity",
     description:
@@ -876,7 +885,8 @@ const en: Dict = {
         label: "Play",
         items: [
           ["games", "Games", "Titles and how results are verified"],
-          ["matchmaking", "Matchmaking", "Find opponents and teammates"],
+          ["matchmaking", "Quick match", "An opponent from the real queue for your game"],
+          ["challenges", "1v1 challenges", "Challenge a specific player — no stakes"],
           ["cloud-gaming", "Cloud gaming", "Remote game sessions"],
           ["server-rentals", "Server rentals", "Dedicated game servers"],
         ],
@@ -901,6 +911,7 @@ const en: Dict = {
         items: [
           ["players", "Players", "Profiles and match history"],
           ["teams", "Teams", "Rosters, invitations and results"],
+          ["membership", "Membership", "Premium pass and cosmetics — no in-game advantage"],
           ["community", "Communities", "Clubs by game and interest"],
           ["venues", "Venues", "Gaming clubs and spaces"],
         ],
@@ -936,7 +947,7 @@ const en: Dict = {
     company: "MAXIMUS VEGAS L.L.C-FZ · Meydan Free Zone · Dubai, UAE",
     noGambling: "No betting, gambling or real-money gaming.",
     columns: [
-      ["Portal", [["tournaments", "Tournaments"], ["games", "Games"], ["rankings", "Rankings"], ["teams", "Teams"], ["players", "Players"]]],
+      ["Portal", [["tournaments", "Tournaments"], ["games", "Games"], ["rankings", "Rankings"], ["teams", "Teams"], ["players", "Players"], ["membership", "Membership"]]],
       ["Trust", [["trust", "Fair play"], ["status", "Service status"], ["help", "Help & FAQ"], ["contact", "Contact"]]],
       ["Documents", [["terms", "Terms of use"], ["privacy", "Privacy"], ["explore", "All sections"], ["innovations", "Technology"]]],
     ],
@@ -1459,7 +1470,12 @@ const en: Dict = {
   help: {
     title: "Help & FAQ",
     faqs: [
-      ["How much does it cost?", "Sign-up, teams and tournament entry on the portal are free. There are no paid mechanics or betting."],
+      ["How much does it cost?", "Sign-up, teams, tournament entry, 1v1 challenges and quick matches are free. An optional paid membership gives cosmetics and the premium season-pass track only and does not affect competition. There is no betting, no paid entry and no prize pool funded by entry fees."],
+      ["What are XP, coins and ranks?", "XP comes from confirmed matches, tournament placings and participation; it drives your rank and season-pass tiers. Coins come from objectives, pass tiers, invites and tournament winner awards. Coins are spent only on cosmetics and the premium pass track; they cannot be bought, transferred, staked or cashed out."],
+      ["How does quick match work?", "Pick a game and the portal pairs you with a real player already waiting in that game's queue. If nobody is waiting, you stay in the queue for up to 30 minutes. No bots and no invented opponents."],
+      ["How do I dispute a decided match?", "On the match page choose “Dispute the result”, describe the problem and add a link or an image. The organiser upholds or overturns the result. A dispute rejected after review lowers your reputation; a justified one does not."],
+      ["No email arrived, or I forgot my password", "Check spam. You can request a new confirmation email in settings and a new password on the “Forgot password?” page. If email delivery is not connected yet, write to support from your account address."],
+      ["What does membership give and how do I pay?", "Membership is the premium pass track and cosmetics. You apply first; after approval an invoice shows the price, term, tax treatment and refund terms before any payment. Payment happens on the payment provider's page once online payment is enabled."],
       ["How do I enter a team tournament?", "The team owner or captain opens the tournament and registers the team. The roster is locked at entry; a player cannot play for two teams in the same tournament."],
       ["What is check-in?", "Confirming you will play before the start. If check-in is mandatory, only checked-in participants are placed in the bracket."],
       ["How do I submit a result?", "Open the match from your hub, enter the score and add an evidence link. Your opponent confirms or opens a dispute."],
@@ -1646,7 +1662,20 @@ const en: Dict = {
   },
 };
 
-export const dictionaries: Record<Locale, Dict> = { ru, en };
+export type Dict = BaseDict & { x: Ext };
+
+function merge(base: BaseDict, ext: Ext): Dict {
+  return {
+    ...base,
+    ok: { ...base.ok, ...ext.ok },
+    errors: { ...base.errors, ...ext.errors },
+    statuses: { ...base.statuses, outcome: { ...base.statuses.outcome, ...ext.outcome }, match: { ...base.statuses.match, ...ext.matchStatus } },
+    notifications: { ...base.notifications, kinds: { ...base.notifications.kinds, ...ext.kinds } },
+    x: ext,
+  };
+}
+
+export const dictionaries: Record<Locale, Dict> = { ru: merge(ru, extRu), en: merge(en, extEn) };
 export const dict = (lang: Locale): Dict => dictionaries[lang];
 
 export function fill(template: string, values: Record<string, unknown>): string {

@@ -6,6 +6,8 @@ import { gameBySlug } from "@/lib/games.ts";
 import { pageMeta } from "@/lib/meta.ts";
 import { viewer } from "@/server/viewer.ts";
 import { playerProfile } from "@/server/queries.ts";
+import { avatarColor, hasActiveMembership, rankFor, totalXp } from "@/server/progression.ts";
+import { reputation } from "@/server/disputes.ts";
 import { Badge, DbDown, Empty } from "@/components/ui";
 import { LocalTime } from "@/components/time";
 
@@ -39,10 +41,14 @@ export default async function Player({ params }: { params: Promise<{ lang: strin
       </div>
     );
   const wins = p.history.filter((h) => h.won).length;
+  const ru = lang === "ru";
+  const [xp, rep, member] = await Promise.all([totalXp(db, p.user.id), reputation(db, p.user.id), hasActiveMembership(db, p.user.id)]);
+  const { rank } = rankFor(xp);
+  const color = avatarColor(p.user.avatar_color);
   return (
     <div className="container page">
       <header className="profile-head">
-        <span className="avatar avatar-xl" aria-hidden="true">
+        <span className="avatar avatar-xl" aria-hidden="true" style={color ? { background: color } : undefined}>
           {p.user.display_name.slice(0, 1).toUpperCase()}
         </span>
         <div>
@@ -51,10 +57,18 @@ export default async function Player({ params }: { params: Promise<{ lang: strin
             @{p.user.username}
             {p.user.country ? ` · ${p.user.country}` : ""} · {d.players.since} <LocalTime iso={p.user.created_at} lang={lang} dateOnly />
           </p>
+          <p className="row">
+            <Badge status="info">{ru ? rank.ru : rank.en}</Badge>
+            {member ? <Badge status="ok">{ru ? "Членство VEGAS" : "VEGAS member"}</Badge> : null}
+          </p>
           {p.user.bio ? <p className="prewrap">{p.user.bio}</p> : null}
           {p.self ? (
             <Link href={`/${lang}/settings`} className="btn btn-ghost btn-sm">
               {d.players.edit}
+            </Link>
+          ) : user ? (
+            <Link href={`/${lang}/challenges?to=${p.user.username}`} className="btn btn-ghost btn-sm">
+              {ru ? "Вызвать на матч 1v1" : "Challenge to a 1v1"}
             </Link>
           ) : null}
         </div>
@@ -70,6 +84,14 @@ export default async function Player({ params }: { params: Promise<{ lang: strin
           <div>
             <dt>{d.players.tournaments}</dt>
             <dd>{p.tournaments.length}</dd>
+          </div>
+          <div>
+            <dt>XP</dt>
+            <dd>{xp}</dd>
+          </div>
+          <div>
+            <dt title={ru ? "100 минус 5 за каждое оспаривание, оставленное без удовлетворения" : "100 minus 5 for each dispute rejected after review"}>{ru ? "Репутация" : "Reputation"}</dt>
+            <dd>{rep}</dd>
           </div>
         </dl>
       </header>

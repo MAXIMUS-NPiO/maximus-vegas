@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { dict, type Locale } from "@/lib/i18n.ts";
 import type { ModuleState } from "@/lib/directions.ts";
+import { SubmitGuard } from "./submit-guard";
 
 export type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 export const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
@@ -88,6 +89,36 @@ const tone: Record<string, string> = {
   confirmed: "ok",
   superseded: "muted",
   rejected: "bad",
+  ok: "ok",
+  warn: "warn",
+  bad: "bad",
+  info: "info",
+  live: "live",
+  muted: "muted",
+  accepted: "ok",
+  approved: "ok",
+  active: "ok",
+  paid: "ok",
+  succeeded: "ok",
+  sent: "ok",
+  submitted: "warn",
+  under_review: "info",
+  awaiting_info: "warn",
+  declined: "bad",
+  proposed: "info",
+  retired: "muted",
+  void: "muted",
+  refunded: "muted",
+  partially_refunded: "warn",
+  processing: "info",
+  failed: "bad",
+  expired: "muted",
+  canceled: "muted",
+  suspended: "warn",
+  ended: "muted",
+  reported: "warn",
+  upheld: "muted",
+  overturned: "ok",
 };
 
 export function Badge({ status, children }: { status: string; children: ReactNode }) {
@@ -115,6 +146,9 @@ export function ActionForm({
   children,
   className,
   hidden,
+  id,
+  pending,
+  multipart,
 }: {
   action: string;
   lang: Locale;
@@ -122,31 +156,59 @@ export function ActionForm({
   children: ReactNode;
   className?: string;
   hidden?: Record<string, string>;
+  id?: string;
+  /** Text shown while the request is in flight (optional). */
+  pending?: string;
+  /** Needed for forms with a file input. */
+  multipart?: boolean;
 }) {
   return (
-    <form method="post" action={`/api/a/${action}?lang=${lang}`} className={className}>
+    <form method="post" action={`/api/a/${action}?lang=${lang}`} className={className} id={id} encType={multipart ? "multipart/form-data" : undefined}>
       <FormMeta lang={lang} back={back} />
       {hidden ? Object.entries(hidden).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />) : null}
       {children}
+      <SubmitGuard pending={pending} />
     </form>
   );
 }
 
-export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+export function Field({ label, hint, error, errorId, children }: { label: string; hint?: string; error?: string; errorId?: string; children: ReactNode }) {
   return (
-    <label className="field">
+    <label className={error ? "field has-error" : "field"}>
       <span className="field-label">{label}</span>
       {children}
+      {error ? (
+        <span className="field-error" id={errorId}>
+          {error}
+        </span>
+      ) : null}
       {hint ? <span className="field-hint">{hint}</span> : null}
     </label>
   );
 }
 
-export function Check({ name, label, defaultChecked, required }: { name: string; label: ReactNode; defaultChecked?: boolean; required?: boolean }) {
+export function Check({
+  name,
+  label,
+  defaultChecked,
+  required,
+  value,
+  error,
+}: {
+  name: string;
+  label: ReactNode;
+  defaultChecked?: boolean;
+  required?: boolean;
+  value?: string;
+  error?: string;
+}) {
   return (
-    <label className="check">
-      <input type="checkbox" name={name} defaultChecked={defaultChecked} required={required} />
-      <span>{label}</span>
+    <label className={error ? "check has-error" : "check"}>
+      <input type="checkbox" name={name} defaultChecked={defaultChecked} required={required} value={value} aria-invalid={error ? true : undefined} />
+      <span>
+        {label}
+        {error ? <span className="field-error">{error}</span> : null}
+      </span>
     </label>
   );
 }

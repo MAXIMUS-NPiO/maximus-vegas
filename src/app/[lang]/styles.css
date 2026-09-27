@@ -1693,3 +1693,399 @@ a.b-link:hover {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------- Release 2: accounts, progression, formats, membership ---------- */
+
+/* Forms: field-level errors and grouped settings */
+.field-error {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #f6c7c8;
+}
+.field.has-error input,
+.field.has-error select,
+.field.has-error textarea {
+  border-color: var(--bad);
+}
+.check.has-error input {
+  outline: 2px solid var(--bad);
+  outline-offset: 2px;
+}
+.form-grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+.fieldset {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px 16px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.fieldset legend {
+  padding: 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+button[aria-busy="true"] {
+  opacity: 0.6;
+  cursor: progress;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.submit-pending:empty {
+  display: none;
+}
+.empty-action {
+  margin-top: 4px;
+}
+.stat-row {
+  flex-wrap: wrap;
+  row-gap: 12px;
+}
+.section-tight-top {
+  padding-top: 0;
+}
+
+/* Key–value lists used on tournament pages */
+.kv-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.kv-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 6px;
+  overflow-wrap: anywhere;
+}
+
+/* Banners and logos */
+.banner-img {
+  display: block;
+  width: 100%;
+  max-height: 260px;
+  object-fit: cover;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  margin-bottom: 20px;
+  background: var(--surface);
+}
+.team-head {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.team-head h1 {
+  margin: 0;
+}
+.team-logo {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.sponsor-thumb {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.sponsor-strip {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+}
+.sponsor-strip li {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 64px;
+  min-width: 120px;
+  padding: 10px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-weight: 700;
+}
+.sponsor-strip img {
+  max-height: 44px;
+  max-width: 160px;
+  object-fit: contain;
+}
+
+/* Double elimination groups */
+.bracket-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 28px;
+  min-width: 0;
+}
+.bracket-group > h3 {
+  margin: 0;
+}
+.b-match.is-empty {
+  opacity: 0.55;
+  border-style: dashed;
+}
+
+/* Match check-in */
+.checkin-card {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Progression */
+.big-number {
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1.15;
+  margin: 4px 0 10px;
+  letter-spacing: -0.01em;
+}
+.progress-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.progress-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: inherit;
+}
+.pass-track {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(132px, 1fr);
+  gap: 10px;
+  overflow-x: auto;
+  padding: 4px 2px 12px;
+  scroll-snap-type: x proximity;
+}
+.tier {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  scroll-snap-align: start;
+  opacity: 0.7;
+}
+.tier.is-open {
+  opacity: 1;
+  border-color: rgba(139, 108, 246, 0.45);
+}
+.tier-n {
+  font-weight: 800;
+  font-size: 18px;
+}
+.tier-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 52px;
+}
+.tier-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--dim);
+  font-weight: 700;
+}
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+.swatch-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+.swatch-card.is-equipped {
+  border-color: var(--ok);
+}
+.swatch {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid var(--line-2);
+}
+
+/* Challenges */
+.challenge-list > li {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+/* Onboarding */
+.onboarding .step-list {
+  list-style: none;
+  margin: 20px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.step-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.step-card.is-done {
+  border-color: rgba(79, 191, 135, 0.5);
+}
+.step-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.step-head h2 {
+  margin: 0;
+}
+.step-num {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  flex-shrink: 0;
+}
+.step-card.is-done .step-num {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+/* Invoices and receipts */
+.invoice .kv dd {
+  overflow-wrap: anywhere;
+}
+.receipt .table td {
+  overflow-wrap: anywhere;
+}
+
+/* Staff second factor */
+.qr {
+  width: 220px;
+  max-width: 100%;
+  background: #fff;
+  padding: 10px;
+  border-radius: var(--radius);
+}
+.qr svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.secret {
+  overflow-wrap: anywhere;
+  background: var(--surface-2);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.codes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 24px;
+  padding-left: 22px;
+  margin: 0;
+  font-size: 16px;
+}
+
+@media (max-width: 960px) {
+  .form-grid-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 720px) {
+  .form-grid-4 {
+    grid-template-columns: 1fr;
+  }
+  .big-number {
+    font-size: 26px;
+  }
+  .codes {
+    grid-template-columns: 1fr;
+  }
+  .sponsor-strip li {
+    min-width: 0;
+    flex: 1 1 40%;
+  }
+}
+/* A select sized by its longest option must never push the page wider than the screen. */
+.inline-form input:not([type="hidden"]),
+.inline-form select {
+  min-width: 0;
+  max-width: 100%;
+}
+/* A labelled field inside an inline form: the field grows along the row, its input stays one line tall. */
+.inline-form > .field {
+  flex: 1 1 200px;
+}
+.inline-form .field > input:not([type="hidden"]),
+.inline-form .field > select {
+  flex: none;
+  width: 100%;
+}
+.inline-form:has(> .field) {
+  align-items: flex-end;
+}
+.countdown {
+  font-weight: 700;
+  color: var(--warn);
+  font-variant-numeric: tabular-nums;
+}
+/* Match history on phones: the description takes its own full-width line above the result details. */
+@media (max-width: 720px) {
+  .history-row > .grow {
+    flex: 1 1 100%;
+    order: -1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}

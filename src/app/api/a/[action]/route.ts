@@ -1,34 +1,73 @@
+import { after } from "next/server";
 import * as auth from "@/server/auth.ts";
+import * as accounts from "@/server/accounts.ts";
 import * as teams from "@/server/teams.ts";
 import * as tournaments from "@/server/tournaments.ts";
 import * as matches from "@/server/matches.ts";
+import * as disputes from "@/server/disputes.ts";
+import * as leaderboard from "@/server/leaderboard.ts";
+import * as progression from "@/server/progression.ts";
+import * as challenges from "@/server/challenges.ts";
+import * as sponsors from "@/server/sponsors.ts";
+import * as billing from "@/server/billing.ts";
+import * as mfa from "@/server/mfa.ts";
 import * as admin from "@/server/admin.ts";
+import { storeUpload } from "@/server/media.ts";
+import { drainOutbox, mailConfigured } from "@/server/mail.ts";
 import { fail } from "@/server/errors.ts";
-import { requireUser } from "@/server/access.ts";
-import { clearSessionCookie, context, errorCode, redirect, sameOrigin, sessionCookie, withParam, type Ctx } from "@/server/http.ts";
+import { requireUser, isStaff } from "@/server/access.ts";
+import {
+  clearDraftCookie,
+  clearSessionCookie,
+  context,
+  draftCookie,
+  errorCode,
+  redirect,
+  sameOrigin,
+  sessionCookie,
+  withParam,
+  type Ctx,
+} from "@/server/http.ts";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-type Result = void | string | { to?: string; ok?: string; cookie?: string };
+type Result = void | string | { to?: string; ok?: string; cookie?: string | string[]; external?: boolean };
 type Handler = (c: Ctx) => Promise<Result>;
 
 const idOf = (value: string | undefined) => (value && /^[0-9a-f-]{36}$/i.test(value) ? value : fail("invalid_input"));
 const u = (c: Ctx) => requireUser(c.user);
 const matchPath = (c: Ctx, id: string) => `/${c.lang}/matches/${id}`;
+/** Control-centre actions: platform staff with a second factor verified in this session. */
+const staff = async (c: Ctx) => {
+  const user = u(c);
+  if (!isStaff(user) && !user.roles.includes("referee")) fail("forbidden");
+  await mfa.requireStaffMfa(c.db, user);
+  return user;
+};
+
+const signupDraft = (c: Ctx) => ({ email: c.form.email ?? "", username: c.form.username ?? "", displayName: c.form.displayName ?? "", marketing: c.form.marketing ?? "" });
 
 const handlers: Record<string, Handler> = {
+  // ---------- Accounts ----------
   "auth.signup": async (c) => {
-    const s = await auth.signUp(c.db, {
+    const input = {
       email: c.form.email,
       username: c.form.username,
       displayName: c.form.displayName,
       password: c.form.password,
       adult: c.form.adult,
       terms: c.form.terms,
+      marketing: c.form.marketing,
       userAgent: c.request.headers.get("user-agent") ?? "",
-    });
-    return { to: `/${c.lang}/hub`, ok: "welcome", cookie: sessionCookie(s.token, s.expires) };
+      lang: c.lang,
+    };
+    if (accounts.emailFirstMode()) {
+      await accounts.signUpEmailFirst(c.db, input);
+      return { to: `/${c.lang}/signup/check-email`, cookie: clearDraftCookie() };
+    }
+    const s = await auth.signUp(c.db, input);
+    return { to: `/${c.lang}/welcome`, ok: "welcome", cookie: [sessionCookie(s.token, s.expires), clearDraftCookie()] };
   },
   "auth.signin": async (c) => {
     const s = await auth.signIn(c.db, {
@@ -37,12 +76,40 @@ const handlers: Record<string, Handler> = {
       userAgent: c.request.headers.get("user-agent") ?? "",
       clientKey: c.request.headers.get("x-forwarded-for")?.split(",")[0]?.trim(),
     });
-    const next = c.form.next && /^\/(ru|en)\//.test(c.form.next) && !c.form.next.startsWith("//") ? c.form.next : `/${c.lang}/hub`;
+    const next = c.form.next && /^\/(ru|en)\//.test(c.form.next) && !c.form.next.startsWith("//") && !c.form.next.includes("\\") ? c.form.next : `/${c.lang}/hub`;
     return { to: next, cookie: sessionCookie(s.token, s.expires) };
   },
   "auth.signout": async (c) => {
     await auth.signOut(c.db, c.token);
     return { to: `/${c.lang}`, ok: "signed_out", cookie: clearSessionCookie() };
+  },
+  "auth.verify_request": async (c) => {
+    await accounts.requestEmailVerification(c.db, u(c), c.lang);
+    return { ok: "verification_sent" };
+  },
+  "auth.reset_request": async (c) => {
+    await accounts.requestPasswordReset(c.db, c.form.email, c.lang);
+    return { to: `/${c.lang}/forgot-password`, ok: "reset_sent" };
+  },
+  "auth.verify": async (c) => {
+    await accounts.verifyEmail(c.db, c.form.token);
+    return { to: c.user ? `/${c.lang}/settings` : `/${c.lang}/signin`, ok: "email_verified" };
+  },
+  "auth.activate": async (c) => {
+    const s = await accounts.activateAccount(c.db, c.form.token, c.request.headers.get("user-agent") ?? "");
+    return { to: `/${c.lang}/welcome`, ok: "account_activated", cookie: sessionCookie(s.token, s.expires) };
+  },
+  "auth.reset": async (c) => {
+    const s = await accounts.resetPassword(c.db, c.form.token, c.form.password, c.request.headers.get("user-agent") ?? "");
+    return { to: `/${c.lang}/hub`, ok: "password_changed", cookie: sessionCookie(s.token, s.expires) };
+  },
+  "account.accept_terms": async (c) => {
+    await accounts.acceptCurrentTerms(c.db, u(c));
+    return { ok: "saved" };
+  },
+  "account.marketing": async (c) => {
+    await accounts.setMarketing(c.db, u(c), c.form.optIn === "1");
+    return { ok: "saved" };
   },
   "account.profile": async (c) => {
     await auth.updateProfile(c.db, u(c), {
@@ -51,6 +118,11 @@ const handlers: Record<string, Handler> = {
       bio: c.form.bio,
       profilePublic: c.form.profilePublic,
     });
+    if ("countryCode" in c.form) await accounts.setCountry(c.db, u(c), c.form.countryCode);
+    return { ok: "saved" };
+  },
+  "account.country": async (c) => {
+    await accounts.setCountry(c.db, u(c), c.form.countryCode);
     return { ok: "saved" };
   },
   "account.game": async (c) => {
@@ -74,12 +146,42 @@ const handlers: Record<string, Handler> = {
   },
   "account.claim_admin": async (c) => {
     await auth.claimAdmin(c.db, u(c), c.form.token);
-    return { to: `/${c.lang}/admin`, ok: "admin_granted" };
+    return { to: `/${c.lang}/admin/security`, ok: "admin_granted" };
+  },
+  "onboarding.done": async (c) => {
+    await accounts.completeOnboarding(c.db, u(c));
+    return { to: c.form.next === "tournaments" ? `/${c.lang}/tournaments` : `/${c.lang}/hub`, ok: "welcome" };
   },
   "notifications.read": async (c) => {
     await admin.markNotificationsRead(c.db, u(c));
     return { ok: "saved" };
   },
+
+  // ---------- Staff second factor ----------
+  "mfa.start": async (c) => {
+    const user = u(c);
+    if (!isStaff(user)) fail("forbidden");
+    await mfa.startEnrolment(c.db, user);
+    return { to: `/${c.lang}/admin/security` };
+  },
+  "mfa.confirm": async (c) => {
+    const codes = await mfa.confirmEnrolment(c.db, u(c), c.form.code);
+    const cookie = `mv_codes=${Buffer.from(codes.join(",")).toString("base64url")}; Path=/${c.lang}/admin/security; HttpOnly; SameSite=Strict; Max-Age=300${process.env.NODE_ENV === "production" && process.env.MV_INSECURE_COOKIES !== "1" ? "; Secure" : ""}`;
+    return { to: `/${c.lang}/admin/security`, ok: "mfa_enrolled", cookie };
+  },
+  "mfa.codes_saved": async (c) => ({ to: `/${c.lang}/admin`, cookie: `mv_codes=; Path=/${c.lang}/admin/security; HttpOnly; SameSite=Strict; Max-Age=0` }),
+  "mfa.verify": async (c) => {
+    await mfa.verifySecondFactor(c.db, u(c), c.form.code);
+    const next = c.form.next && /^\/(ru|en)\/admin/.test(c.form.next) ? c.form.next : `/${c.lang}/admin`;
+    return { to: next, ok: "mfa_verified" };
+  },
+  "mfa.reset": async (c) => {
+    const user = await staff(c);
+    await mfa.resetFactor(c.db, user, idOf(c.form.user));
+    return { ok: "saved" };
+  },
+
+  // ---------- Teams and organisers ----------
   "team.create": async (c) => {
     const t = await teams.createTeam(c.db, u(c), { name: c.form.name, tag: c.form.tag, game: c.form.game });
     return { to: `/${c.lang}/teams/${t.slug}`, ok: "team_created" };
@@ -109,6 +211,10 @@ const handlers: Record<string, Handler> = {
     await teams.setTeamRole(c.db, u(c), idOf(c.form.team), idOf(c.form.member), role);
     return { ok: "saved" };
   },
+  "team.media": async (c) => {
+    await teams.setTeamMedia(c.db, u(c), idOf(c.form.team), { logo: c.files.logo, banner: c.files.banner, clear: c.form.clear });
+    return { ok: "saved" };
+  },
   "org.create": async (c) => {
     const org = await teams.createOrg(c.db, u(c), { name: c.form.name, description: c.form.description });
     return { to: `/${c.lang}/organizer/${org.slug}`, ok: "org_created" };
@@ -121,6 +227,8 @@ const handlers: Record<string, Handler> = {
     await teams.removeOrgMember(c.db, u(c), idOf(c.form.org), idOf(c.form.member));
     return { ok: "saved" };
   },
+
+  // ---------- Tournaments ----------
   "tournament.create": async (c) => {
     const t = await tournaments.createTournament(c.db, u(c), idOf(c.form.org), tournamentInput(c));
     return { to: `/${c.lang}/organizer/t/${t.slug}`, ok: "tournament_created" };
@@ -163,6 +271,38 @@ const handlers: Record<string, Handler> = {
     await tournaments.disqualify(c.db, u(c), idOf(c.form.tournament), idOf(c.form.registration), c.form.reason);
     return { ok: "saved" };
   },
+  "tournament.coorg_add": async (c) => {
+    await tournaments.addCoOrganizer(c.db, u(c), idOf(c.form.tournament), c.form.username);
+    return { ok: "saved" };
+  },
+  "tournament.coorg_remove": async (c) => {
+    await tournaments.removeCoOrganizer(c.db, u(c), idOf(c.form.tournament), idOf(c.form.member));
+    return { ok: "saved" };
+  },
+  "tournament.banner": async (c) => {
+    const user = u(c);
+    const id = idOf(c.form.tournament);
+    await c.db.tx(async (q) => {
+      const t = await tournaments.lockTournament(q, id);
+      if (!(await tournaments.canManageTournament(q, t, user))) fail("forbidden");
+      const media = c.form.clear === "1" ? null : await storeUpload(q, user.id, "tournament_banner", c.files.banner);
+      if (!media && c.form.clear !== "1") fail("invalid_file");
+      await q.query("update tournaments set banner_media_id = $2, updated_at = now() where id = $1", [t.id, media]);
+    });
+    return { ok: "saved" };
+  },
+  "tournament.prize": async (c) => {
+    const user = await staff(c);
+    await tournaments.setPrizeCoins(c.db, user, idOf(c.form.tournament), c.form.coins);
+    return { ok: "saved" };
+  },
+  "sponsor.attach": async (c) => {
+    const user = await staff(c);
+    await sponsors.attachSponsor(c.db, user, idOf(c.form.tournament), idOf(c.form.sponsor), c.form.attach === "1");
+    return { ok: "saved" };
+  },
+
+  // ---------- Matches, disputes, leaderboard ----------
   "match.submit": async (c) => {
     const id = idOf(c.form.match);
     await matches.submitResult(c.db, u(c), id, { scoreA: c.form.scoreA, scoreB: c.form.scoreB, evidenceUrl: c.form.evidence, note: c.form.note });
@@ -209,6 +349,165 @@ const handlers: Record<string, Handler> = {
     });
     return { to: matchPath(c, id), ok: "saved" };
   },
+  "match.checkin": async (c) => {
+    const id = idOf(c.form.match);
+    await tournaments.matchCheckIn(c.db, u(c), id);
+    return { to: matchPath(c, id), ok: "checked_in" };
+  },
+  "dispute.file": async (c) => {
+    const id = idOf(c.form.match);
+    const user = u(c);
+    const media = c.files.evidenceImage ? await storeUpload(c.db, user.id, "evidence", c.files.evidenceImage) : null;
+    await disputes.fileDispute(c.db, user, id, { reason: c.form.reason, evidenceUrl: c.form.evidence, evidenceMediaId: media });
+    return { to: matchPath(c, id), ok: "dispute_opened" };
+  },
+  "dispute.decide": async (c) => {
+    await disputes.decideDispute(c.db, u(c), idOf(c.form.dispute), c.form.decision, c.form.note);
+    return { ok: c.form.decision === "overturn" ? "dispute_overturned" : "dispute_upheld" };
+  },
+  "score.submit": async (c) => {
+    const r = await leaderboard.submitScore(c.db, u(c), idOf(c.form.tournament), scoreInput(c));
+    return { ok: r.review === "pending" ? "score_flagged" : "score_saved" };
+  },
+  "score.log": async (c) => {
+    const r = await leaderboard.submitScore(c.db, u(c), idOf(c.form.tournament), { ...scoreInput(c), registration: c.form.registration }, true);
+    return { ok: r.review === "pending" ? "score_flagged" : "score_saved" };
+  },
+  "score.review": async (c) => {
+    await leaderboard.reviewScore(c.db, u(c), idOf(c.form.entry), c.form.decision, c.form.note);
+    return { ok: "saved" };
+  },
+
+  // ---------- Progression ----------
+  "objective.claim": async (c) => {
+    await progression.claimObjective(c.db, u(c), c.form.objective);
+    return { ok: "reward_claimed" };
+  },
+  "pass.claim": async (c) => {
+    await progression.claimPassTier(c.db, u(c), c.form.tier, c.form.track);
+    return { ok: "reward_claimed" };
+  },
+  "pass.unlock": async (c) => {
+    await progression.unlockPremium(c.db, u(c));
+    return { ok: "premium_unlocked" };
+  },
+  "shop.buy": async (c) => {
+    await progression.buyCosmetic(c.db, u(c), c.form.item);
+    return { ok: "item_bought" };
+  },
+  "cosmetic.equip": async (c) => {
+    await progression.equipCosmetic(c.db, u(c), c.form.item);
+    return { ok: "saved" };
+  },
+  "referral.redeem": async (c) => {
+    await progression.redeemReferral(c.db, u(c), c.form.code);
+    return { ok: "reward_claimed" };
+  },
+
+  // ---------- Challenges and quick match ----------
+  "challenge.create": async (c) => {
+    await challenges.createChallenge(c.db, u(c), { opponent: c.form.opponent, game: c.form.game, message: c.form.message });
+    return { to: `/${c.lang}/challenges`, ok: "challenge_sent" };
+  },
+  "challenge.respond": async (c) => {
+    await challenges.respondChallenge(c.db, u(c), idOf(c.form.challenge), c.form.accept === "1");
+    return { ok: "saved" };
+  },
+  "challenge.cancel": async (c) => {
+    await challenges.cancelChallenge(c.db, u(c), idOf(c.form.challenge));
+    return { ok: "saved" };
+  },
+  "challenge.report": async (c) => {
+    await challenges.reportChallenge(c.db, u(c), idOf(c.form.challenge), {
+      result: c.form.result,
+      myScore: c.form.myScore,
+      theirScore: c.form.theirScore,
+      evidenceUrl: c.form.evidence,
+    });
+    return { ok: "result_submitted" };
+  },
+  "challenge.confirm": async (c) => {
+    await challenges.confirmChallenge(c.db, u(c), idOf(c.form.challenge));
+    return { ok: "result_confirmed" };
+  },
+  "challenge.dispute": async (c) => {
+    await challenges.disputeChallenge(c.db, u(c), idOf(c.form.challenge), c.form.reason);
+    return { ok: "dispute_opened" };
+  },
+  "challenge.resolve": async (c) => {
+    const user = await staff(c);
+    await challenges.resolveChallenge(c.db, user, idOf(c.form.challenge), c.form.winner, c.form.note);
+    return { ok: "saved" };
+  },
+  "quick.join": async (c) => {
+    const r = await challenges.joinQuickMatch(c.db, u(c), c.form.game);
+    return { to: `/${c.lang}/matchmaking`, ok: r.matched ? "quick_matched" : "quick_queued" };
+  },
+  "quick.leave": async (c) => {
+    await challenges.leaveQuickMatch(c.db, u(c));
+    return { to: `/${c.lang}/matchmaking`, ok: "saved" };
+  },
+
+  // ---------- Membership and payments ----------
+  "membership.apply": async (c) => {
+    const r = await billing.applyForMembership(c.db, u(c), { offer: c.form.offer, objective: c.form.objective }, c.lang);
+    return { to: `/${c.lang}/billing?ref=${encodeURIComponent(r.reference)}`, ok: "application_saved" };
+  },
+  "membership.withdraw": async (c) => {
+    await billing.withdrawApplication(c.db, u(c), idOf(c.form.application));
+    return { ok: "saved" };
+  },
+  "billing.checkout": async (c) => {
+    const url = await billing.startCheckout(c.db, u(c), idOf(c.form.invoice), c.form.accept, c.lang);
+    return { to: url, external: true };
+  },
+  "billing.decide": async (c) => {
+    const user = await staff(c);
+    await billing.decideApplication(c.db, user, idOf(c.form.application), c.form.status, c.form.note, c.lang);
+    return { ok: "saved" };
+  },
+  "billing.invoice": async (c) => {
+    const user = await staff(c);
+    await billing.issueInvoice(c.db, user, idOf(c.form.application), c.lang);
+    return { ok: "invoice_issued" };
+  },
+  "billing.void": async (c) => {
+    const user = await staff(c);
+    await billing.voidInvoice(c.db, user, idOf(c.form.invoice), c.form.reason);
+    return { ok: "saved" };
+  },
+  "billing.refund": async (c) => {
+    const user = await staff(c);
+    await billing.refundInvoice(c.db, user, idOf(c.form.invoice), c.form.amount);
+    return { ok: "refund_requested" };
+  },
+  "billing.reconcile": async (c) => {
+    await staff(c);
+    await billing.reconcileAttempt(c.db, idOf(c.form.attempt), "admin");
+    return { ok: "saved" };
+  },
+  "offer.create": async (c) => {
+    const user = await staff(c);
+    await billing.createOfferVersion(c.db, user, c.form);
+    return { ok: "saved" };
+  },
+  "offer.approve": async (c) => {
+    const user = await staff(c);
+    await billing.approveOffer(c.db, user, idOf(c.form.offer), c.form.approvalRef);
+    return { ok: "saved" };
+  },
+  "offer.retire": async (c) => {
+    const user = await staff(c);
+    await billing.retireOffer(c.db, user, idOf(c.form.offer));
+    return { ok: "saved" };
+  },
+  "membership.set": async (c) => {
+    const user = await staff(c);
+    await billing.setMembershipState(c.db, user, idOf(c.form.membership), { status: c.form.status, endsAt: c.form.endsAt, reason: c.form.reason });
+    return { ok: "saved" };
+  },
+
+  // ---------- Partner applications and administration ----------
   "application.create": async (c) => {
     await admin.createApplication(
       c.db,
@@ -227,32 +526,75 @@ const handlers: Record<string, Handler> = {
     return { ok: "application_received" };
   },
   "admin.role": async (c) => {
-    await admin.setRole(c.db, u(c), idOf(c.form.user), c.form.role, c.form.grant === "1");
+    const user = await staff(c);
+    mfa.requireStepUp(user);
+    await admin.setRole(c.db, user, idOf(c.form.user), c.form.role, c.form.grant === "1");
     return { ok: "saved" };
   },
   "admin.user_status": async (c) => {
-    await admin.setUserStatus(c.db, u(c), idOf(c.form.user), c.form.status, c.form.reason);
+    const user = await staff(c);
+    mfa.requireStepUp(user);
+    await admin.setUserStatus(c.db, user, idOf(c.form.user), c.form.status, c.form.reason);
     return { ok: "saved" };
   },
   "admin.application": async (c) => {
-    await admin.setApplicationStatus(c.db, u(c), idOf(c.form.application), c.form.status);
+    const user = await staff(c);
+    await admin.setApplicationStatus(c.db, user, idOf(c.form.application), c.form.status);
     return { ok: "saved" };
+  },
+  "sponsor.create": async (c) => {
+    const user = await staff(c);
+    await sponsors.createSponsor(c.db, user, { name: c.form.name, tier: c.form.tier, website: c.form.website, logo: c.files.logo });
+    return { ok: "saved" };
+  },
+  "sponsor.toggle": async (c) => {
+    const user = await staff(c);
+    await sponsors.setSponsorActive(c.db, user, idOf(c.form.sponsor), c.form.active === "1");
+    return { ok: "saved" };
+  },
+  "outbox.drain": async (c) => {
+    await staff(c);
+    const r = await drainOutbox(c.db, 25);
+    return { ok: r.configured ? "outbox_drained" : "email_not_configured" };
   },
 };
 
 function tournamentInput(c: Ctx) {
+  const weights: Record<string, unknown> = {};
+  for (const [k, value] of Object.entries(c.form)) if (k.startsWith("w_")) weights[k.slice(2)] = value;
   return {
     name: c.form.name,
     game: c.form.game,
+    format: c.form.format,
     participantType: c.form.participantType,
     teamSize: c.form.teamSize,
     maxParticipants: c.form.maxParticipants,
     checkInRequired: c.form.checkInRequired,
     region: c.form.region,
+    regionLock: c.multi.regionLock?.join(",") ?? c.form.regionLock,
     startsAt: c.form.startsAt,
     timeZone: c.form.tz,
     description: c.form.description,
     rules: c.form.rules,
+    bestOf: c.form.bestOf,
+    submissionHours: c.form.submissionHours,
+    weights,
+    prizeText: c.form.prizeText,
+    livestreamUrl: c.form.livestreamUrl,
+  };
+}
+
+function scoreInput(c: Ctx) {
+  return {
+    kills: c.form.kills,
+    assists: c.form.assists,
+    deaths: c.form.deaths,
+    headshots: c.form.headshots,
+    damage: c.form.damage,
+    distance: c.form.distance,
+    placement: c.form.placement,
+    matchRef: c.form.matchRef,
+    evidenceUrl: c.form.evidence,
   };
 }
 
@@ -266,19 +608,24 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
   try {
     c = await context(request);
   } catch (error) {
-    console.error(`[action ${action}] context`, error);
+    console.error(`[action ${action}] context`, (error as Error).message);
     return redirect(withParam(`/${fallbackLang}`, "e", errorCode(error)));
   }
+  if (mailConfigured()) after(() => drainOutbox(c.db, 10).catch((e) => console.error("[outbox]", (e as Error).message)));
   try {
     const result = await handler(c);
     const r = typeof result === "string" ? { to: result } : result ?? {};
+    if (r.external) return redirect(r.to!, r.cookie);
     const to = r.to ?? c.back;
     return redirect(r.ok ? withParam(to, "ok", r.ok) : to, r.cookie);
   } catch (error) {
     const code = errorCode(error);
     if (code === "server_error" || code === "db_unavailable") console.error(`[action ${action}]`, error);
-    if (code === "unauthorized")
-      return redirect(`/${c.lang}/signin?next=${encodeURIComponent(c.back)}&e=unauthorized`);
+    if (code === "unauthorized") return redirect(`/${c.lang}/signin?next=${encodeURIComponent(c.back)}&e=unauthorized`);
+    if (code === "mfa_not_enrolled") return redirect(withParam(`/${c.lang}/admin/security`, "e", code));
+    if (code === "mfa_required" || code === "step_up_required")
+      return redirect(`/${c.lang}/admin/mfa?next=${encodeURIComponent(c.back)}&e=${code}`);
+    if (action === "auth.signup") return redirect(withParam(c.back, "e", code), draftCookie(signupDraft(c)));
     return redirect(withParam(c.back, "e", code));
   }
 }

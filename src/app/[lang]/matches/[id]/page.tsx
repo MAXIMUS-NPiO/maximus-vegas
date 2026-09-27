@@ -5,8 +5,10 @@ import { dict, fill, isLocale } from "@/lib/i18n.ts";
 import { pageMeta } from "@/lib/meta.ts";
 import { viewer } from "@/server/viewer.ts";
 import { getMatch } from "@/server/queries.ts";
-import { canReferee } from "@/server/access.ts";
+import { canRefereeTournament } from "@/server/tournaments.ts";
 import { roundName } from "@/server/bracket.ts";
+import { deRoundName } from "@/server/double.ts";
+import { mediaUrl } from "@/server/media.ts";
 import { ActionForm, Badge, DbDown, Field, Flash, type SearchParams } from "@/components/ui";
 import { LocalDateTimeInput, LocalTime, TimeZoneField } from "@/components/time";
 
@@ -31,8 +33,13 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
   const data = await getMatch(db, id);
   if (!data || data.match.t_status === "DRAFT") notFound();
   const { match: m, a, b, results, disputes } = data;
-  const referee = await canReferee(db, m.org_id, user);
+  const referee = await canRefereeTournament(db, { id: m.tournament_id, org_id: m.org_id }, user);
+  const ru = lang === "ru";
+  const roundLabel = m.t_format === "double_elimination" ? deRoundName((m.bracket ?? "W") as "W" | "L" | "GF", m.round, m.w_rounds, m.l_rounds, lang) : roundName(m.round, m.rounds, lang);
+
   const mySide = user ? (a?.leaders.includes(user.id) ? "a" : b?.leaders.includes(user.id) ? "b" : null) : null;
+  const openPost = disputes.find((x) => x.kind === "post_result" && x.status === "open");
+  const canFilePost = Boolean(mySide) && m.status === "completed" && m.outcome !== "bye" && ["IN_PROGRESS", "PAUSED", "COMPLETED"].includes(m.t_status) && !openPost;
   const live = m.t_status === "IN_PROGRESS";
   const pending = results.find((r) => r.status === "pending");
   const confirmed = results.find((r) => r.status === "confirmed");
@@ -75,7 +82,7 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
   return (
     <div className="container page">
       <p className="eyebrow">
-        <Link href={`/${lang}/tournaments/${m.t_slug}`}>{m.t_name}</Link> · {roundName(m.round, m.rounds, lang)} · {d.match.gameDay}
+        <Link href={`/${lang}/tournaments/${m.t_slug}`}>{m.t_name}</Link> · {roundLabel} · {d.match.gameDay}
       </p>
       <div className="row-between">
         <h1>
@@ -112,6 +119,26 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
           ) : null}
         </div>
       </div>
+
+      {live && both && ["ready", "in_progress"].includes(m.status) ? (
+        <section className="card checkin-card" aria-label={ru ? "Check-in к матчу" : "Match check-in"}>
+          <p className="field-label">{ru ? "Check-in к матчу" : "Match check-in"}</p>
+          <div className="row">
+            <span>
+              {a?.name}: {m.a_checked_in_at ? <Badge status="ok">{ru ? "на месте" : "here"}</Badge> : <Badge status="muted">{ru ? "нет отметки" : "not yet"}</Badge>}
+            </span>
+            <span>
+              {b?.name}: {m.b_checked_in_at ? <Badge status="ok">{ru ? "на месте" : "here"}</Badge> : <Badge status="muted">{ru ? "нет отметки" : "not yet"}</Badge>}
+            </span>
+            {mySide && !(mySide === "a" ? m.a_checked_in_at : m.b_checked_in_at) ? (
+              <ActionForm action="match.checkin" lang={lang} back={back} hidden={hidden}>
+                <button className="btn btn-primary btn-sm">{ru ? "Отметиться" : "Check in"}</button>
+              </ActionForm>
+            ) : null}
+          </div>
+          <p className="small muted">{ru ? "Отметка помогает организатору видеть, кто на месте. Она не блокирует матч: неявку фиксирует судья." : "Check-in shows the organiser who is here. It never blocks the match: the referee records no-shows."}</p>
+        </section>
+      ) : null}
 
       {confirmed ? (
         <p className="notice notice-ok">
@@ -257,6 +284,68 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
         </section>
       ) : null}
 
+      {canFilePost ? (
+        <details className="disclosure card">
+          <summary>{ru ? "Оспорить решённый результат" : "Dispute this decided result"}</summary>
+          <p className="small muted">
+            {ru
+              ? "Опишите, что произошло, и приложите доказательство. Организатор оставит результат в силе или отменит его. Необоснованное оспаривание снижает репутацию."
+              : "Describe what happened and attach evidence. The organiser upholds or overturns the result. An unfounded dispute lowers your reputation."}
+          </p>
+          <form method="post" action={`/api/a/dispute.file?lang=${lang}`} encType="multipart/form-data" className="stack">
+            <input type="hidden" name="lang" value={lang} />
+            <input type="hidden" name="back" value={back} />
+            <input type="hidden" name="match" value={m.id} />
+            <Field label={ru ? "Что произошло" : "What happened"}>
+              <textarea name="reason" required minLength={10} maxLength={1000} rows={3} />
+            </Field>
+            <Field label={ru ? "Ссылка на доказательство" : "Evidence link"} hint={d.common.optional}>
+              <input name="evidence" type="url" maxLength={500} placeholder="https://" />
+            </Field>
+            <Field label={ru ? "Изображение-доказательство" : "Evidence image"} hint={ru ? "PNG, JPEG или WebP до 1,5 МБ. Видят только участники матча и судьи." : "PNG, JPEG or WebP up to 1.5 MB. Only the match's participants and referees can see it."}>
+              <input name="evidenceImage" type="file" accept="image/png,image/jpeg,image/webp" />
+            </Field>
+            <button className="btn btn-danger btn-sm">{ru ? "Отправить оспаривание" : "Submit dispute"}</button>
+          </form>
+        </details>
+      ) : null}
+
+      {referee && openPost ? (
+        <section className="card action-card referee">
+          <h2 className="h3">{ru ? "Оспаривание решённого матча" : "Dispute of a decided match"}</h2>
+          <p className="prewrap">{openPost.reason}</p>
+          {openPost.evidence_url ? (
+            <a href={openPost.evidence_url} target="_blank" rel="noopener noreferrer nofollow" className="text-link">
+              {ru ? "Доказательство" : "Evidence"} ↗
+            </a>
+          ) : null}
+          {openPost.evidence_media_id ? (
+            <a href={mediaUrl(openPost.evidence_media_id)!} target="_blank" rel="noopener" className="text-link">
+              {ru ? "Изображение" : "Image"} ↗
+            </a>
+          ) : null}
+          <p className="small muted">
+            {ru
+              ? "Отмена результата передаёт победу другой стороне и обновляет сетку. Если следующий матч уже сыгран, отмена заблокирована. Для финала пересчитываются места и награда без изъятия ранее выплаченного."
+              : "Overturning gives the win to the other side and updates the bracket. If the next match was already played, it is blocked. For the deciding match, placements and the award are re-settled without clawing back anything paid."}
+          </p>
+          <div className="grid grid-2">
+            <ActionForm action="dispute.decide" lang={lang} back={back} hidden={{ dispute: openPost.id, decision: "uphold" }} className="stack">
+              <Field label={ru ? "Обоснование" : "Reasoning"}>
+                <textarea name="note" required minLength={5} maxLength={1000} rows={2} />
+              </Field>
+              <button className="btn btn-ghost btn-sm">{ru ? "Оставить результат в силе" : "Uphold the result"}</button>
+            </ActionForm>
+            <ActionForm action="dispute.decide" lang={lang} back={back} hidden={{ dispute: openPost.id, decision: "overturn" }} className="stack">
+              <Field label={ru ? "Обоснование" : "Reasoning"}>
+                <textarea name="note" required minLength={5} maxLength={1000} rows={2} />
+              </Field>
+              <button className="btn btn-danger btn-sm">{ru ? "Отменить результат" : "Overturn the result"}</button>
+            </ActionForm>
+          </div>
+        </section>
+      ) : null}
+
       <section className="section-tight">
         <h2 className="h3">{d.match.history}</h2>
         {results.length ? (
@@ -276,7 +365,7 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
                   <tr key={r.id}>
                     <td>v{r.version}</td>
                     <td>
-                      {r.outcome === "no_show" ? d.statuses.outcome.no_show : `${r.score_a} : ${r.score_b}`}
+                      {r.outcome === "no_show" ? d.statuses.outcome.no_show : r.outcome === "decision" ? d.statuses.outcome.decision : `${r.score_a} : ${r.score_b}`}
                       {r.evidence_url ? (
                         <>
                           {" "}
@@ -318,7 +407,21 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
                   </span>
                   <Badge status={x.status}>{d.match.disputeStatus[x.status]}</Badge>
                 </div>
+                {x.kind === "post_result" ? <p className="small muted">{ru ? "Оспаривание решённого результата" : "Dispute of a decided result"}</p> : null}
                 <p className="prewrap">{x.reason === "conflicting_results" ? (lang === "ru" ? "Стороны отправили разные результаты" : "The sides submitted different results") : x.reason}</p>
+                {x.evidence_url ? (
+                  <a href={x.evidence_url} target="_blank" rel="noopener noreferrer nofollow" className="text-link small">
+                    {ru ? "доказательство" : "evidence"} ↗
+                  </a>
+                ) : null}
+                {x.evidence_media_id && (referee || mySide) ? (
+                  <a href={mediaUrl(x.evidence_media_id)!} target="_blank" rel="noopener" className="text-link small">
+                    {ru ? "изображение" : "image"} ↗
+                  </a>
+                ) : null}
+                {x.decision ? (
+                  <Badge status={x.decision}>{x.decision === "overturned" ? (ru ? "Результат отменён" : "Overturned") : ru ? "Результат в силе" : "Upheld"}</Badge>
+                ) : null}
                 {x.resolution && x.resolution !== "result_confirmed" ? <p className="small muted prewrap">{x.resolution}</p> : null}
               </li>
             ))}

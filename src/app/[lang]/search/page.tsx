@@ -29,7 +29,9 @@ export default async function Search({ params, searchParams }: { params: Promise
     const like = `%${needle.replace(/[%_]/g, "")}%`;
     teams = await db.query<{ slug: string; name: string }>("select slug, name from teams where lower(name) like $1 or lower(tag) like $1 order by name limit 20", [like]);
   }
-  const nothing = q.length >= 2 && !tournaments.length && !players.length && !teams.length;
+  // Help articles are searched in the page language, so answers never depend on the database.
+  const faqs = q.length >= 2 ? d.help.faqs.map(([question, answer], i) => ({ question, answer, i })).filter((f) => `${f.question} ${f.answer}`.toLowerCase().includes(needle)) : [];
+  const nothing = q.length >= 2 && !tournaments.length && !players.length && !teams.length && !faqs.length;
   return (
     <div className="container narrow page">
       <PageHead title={d.search.title} />
@@ -59,6 +61,19 @@ export default async function Search({ params, searchParams }: { params: Promise
             {players.map((x) => (
               <li key={x.username}>
                 <Link href={`/${lang}/players/${x.username}`}>{x.display_name}</Link> <span className="small muted">@{x.username}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {faqs.length ? (
+        <section className="section-tight">
+          <h2 className="h4">{lang === "ru" ? "Помощь" : "Help"}</h2>
+          <ul className="link-list">
+            {faqs.map((f) => (
+              <li key={f.i}>
+                <Link href={`/${lang}/help#faq-${f.i + 1}`}>{f.question}</Link>
+                <div className="small muted">{f.answer.length > 140 ? `${f.answer.slice(0, 140)}…` : f.answer}</div>
               </li>
             ))}
           </ul>

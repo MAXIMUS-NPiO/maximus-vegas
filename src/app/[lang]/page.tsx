@@ -6,6 +6,8 @@ import { DIRECTIONS, t } from "@/lib/directions.ts";
 import { pageMeta } from "@/lib/meta.ts";
 import { viewer } from "@/server/viewer.ts";
 import { listTournaments } from "@/server/queries.ts";
+import { activeSponsors } from "@/server/sponsors.ts";
+import { mediaUrl } from "@/server/media.ts";
 import { DbDown, Empty, Flash, StateBadge, type SearchParams } from "@/components/ui";
 import { TournamentCard } from "@/components/tournament";
 import { Arrow, Shield } from "@/components/icons";
@@ -26,8 +28,10 @@ export default async function Home({ params, searchParams }: { params: Promise<{
   const sp = await searchParams;
   const { db, user, dbError } = await viewer();
   const tournaments = db ? await listTournaments(db, { limit: 6 }).catch(() => []) : [];
+  const sponsors = db ? await activeSponsors(db).catch(() => []) : [];
+  const ru = lang === "ru";
   const featured = ["cs2", "valorant", "dota2", "lol", "rocket-league", "mlbb", "brawl-stars", "deadlock"];
-  const directions = DIRECTIONS.filter((x) => ["academy", "cloud-gaming", "media", "venues", "matchmaking", "server-rentals"].includes(x.slug));
+  const directions = DIRECTIONS.filter((x) => ["academy", "cloud-gaming", "media", "venues", "coaches", "server-rentals"].includes(x.slug));
   return (
     <>
       <section className="hero">
@@ -101,6 +105,28 @@ export default async function Home({ params, searchParams }: { params: Promise<{
         </div>
       </section>
 
+      <section className="section section-tight-top">
+        <div className="container">
+          <div className="grid grid-3">
+            <Link href={`/${lang}/matchmaking`} className="card card-link">
+              <span className="field-label">{ru ? "ИГРАТЬ СЕЙЧАС" : "PLAY NOW"}</span>
+              <h3>{ru ? "Быстрый матч" : "Quick match"}</h3>
+              <p className="muted small">{ru ? "Соперник из реальной очереди по вашей игре. Без ставок." : "An opponent from the real queue for your game. No stakes."}</p>
+            </Link>
+            <Link href={`/${lang}/challenges`} className="card card-link">
+              <span className="field-label">1V1</span>
+              <h3>{ru ? "Вызовы" : "Challenges"}</h3>
+              <p className="muted small">{ru ? "Вызовите конкретного игрока. Результат подтверждает соперник." : "Challenge a specific player. The opponent confirms the result."}</p>
+            </Link>
+            <Link href={`/${lang}/progress`} className="card card-link">
+              <span className="field-label">{ru ? "СЕЗОН 1" : "SEASON 1"}</span>
+              <h3>{ru ? "Ранги и сезонный пропуск" : "Ranks and season pass"}</h3>
+              <p className="muted small">{ru ? "XP за подтверждённые матчи, цели и косметика. Монеты не покупаются и не выводятся." : "XP for confirmed matches, objectives and cosmetics. Coins cannot be bought or cashed out."}</p>
+            </Link>
+          </div>
+        </div>
+      </section>
+
       <section className="section section-alt">
         <div className="container">
           <div className="section-head">
@@ -167,6 +193,31 @@ export default async function Home({ params, searchParams }: { params: Promise<{
           </div>
         </div>
       </section>
+
+      {sponsors.length ? (
+        <section className="section section-alt" aria-labelledby="sponsors-title">
+          <div className="container">
+            <h2 id="sponsors-title" className="h4 muted">
+              {ru ? "Партнёры и спонсоры" : "Partners and sponsors"}
+            </h2>
+            <ul className="sponsor-strip">
+              {sponsors.map((s) => (
+                <li key={s.id}>
+                  {s.website_url ? (
+                    <a href={s.website_url} rel="noopener noreferrer sponsored" target="_blank">
+                      {s.logo_media_id ? <img src={mediaUrl(s.logo_media_id)!} alt={s.name} loading="lazy" /> : <span>{s.name}</span>}
+                    </a>
+                  ) : s.logo_media_id ? (
+                    <img src={mediaUrl(s.logo_media_id)!} alt={s.name} loading="lazy" />
+                  ) : (
+                    <span>{s.name}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      ) : null}
 
       <section className="section">
         <div className="container cta-band">

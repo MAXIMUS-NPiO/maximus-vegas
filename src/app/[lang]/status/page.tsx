@@ -5,6 +5,9 @@ import { MODULES, t, type ModuleState } from "@/lib/directions.ts";
 import { pageMeta } from "@/lib/meta.ts";
 import { viewer } from "@/server/viewer.ts";
 import { ping } from "@/server/queries.ts";
+import { mailConfigured } from "@/server/mail.ts";
+import { paymentReadiness, publicOffer } from "@/server/billing.ts";
+import { emailFirstMode } from "@/server/accounts.ts";
 import { Badge, PageHead, StateBadge } from "@/components/ui";
 import { LocalTime } from "@/components/time";
 
@@ -21,6 +24,11 @@ export default async function Status({ params }: { params: Promise<{ lang: strin
   const { db } = await viewer();
   let latency: number | null = null;
   if (db) latency = await ping(db).catch(() => null);
+  const ru = lang === "ru";
+  const T = (a: string, b: string) => (ru ? a : b);
+  const mail = mailConfigured();
+  const offer = db && latency !== null ? await publicOffer(db).catch(() => null) : null;
+  const pay = paymentReadiness(offer);
   const order: ModuleState[] = ["works", "connect", "dev", "research"];
   return (
     <div className="container page">
@@ -35,6 +43,26 @@ export default async function Status({ params }: { params: Promise<{ lang: strin
             </Badge>
           ) : (
             <Badge status="rejected">{d.status.down}</Badge>
+          )}
+        </div>
+        <div className="row-between">
+          <span>{T("Регистрация", "Sign-up")}</span>
+          {latency !== null ? (
+            <Badge status="works">{emailFirstMode() ? T("Открыта · с подтверждением email", "Open · with email confirmation") : T("Открыта", "Open")}</Badge>
+          ) : (
+            <Badge status="rejected">{d.status.down}</Badge>
+          )}
+        </div>
+        <div className="row-between">
+          <span>{T("Служебные письма", "Service emails")}</span>
+          {mail ? <Badge status="works">{T("Подключены", "Connected")}</Badge> : <Badge status="dev">{T("Не подключены", "Not connected")}</Badge>}
+        </div>
+        <div className="row-between">
+          <span>{T("Онлайн-оплата членства", "Online membership payment")}</span>
+          {pay.ready ? (
+            <Badge status="works">{pay.mode === "live" ? T("Включена", "On") : T("Тестовый режим", "Test mode")}</Badge>
+          ) : (
+            <Badge status="dev">{T("Не включена", "Not enabled")}</Badge>
           )}
         </div>
         <p className="small muted">

@@ -22,8 +22,9 @@ export default async function Explore({ params }: { params: Promise<{ lang: stri
     ["calendar", d.hub.calendar],
     ["settings", d.nav.settings],
     ["organizer", d.nav.organizer],
-    ["inventory", t(DIRECTIONS.find((x) => x.slug === "inventory")!.title, lang)],
-    ["billing", t(DIRECTIONS.find((x) => x.slug === "billing")!.title, lang)],
+    ["progress", d.x.nav.progress],
+    ["challenges", d.x.nav.challenges],
+    ["billing", d.x.nav.billing],
   ];
   const service: Array<[string, string]> = [
     ["trust", d.trust.title],
