@@ -52,7 +52,21 @@ Title: Release report · Status: FINAL · Version: 1.0 · Date: 27 September 202
 | Письма | Не подключены до `MAIL_FROM` и ключа провайдера; письма сохраняются в очереди |
 | Второй фактор | Обязателен для `admin` и `support` при входе в центр управления |
 
-Фактическое состояние production (коммит, развёртывание, `/api/health`) проверяется после выката и фиксируется в отчёте владельцу: локальный commit, push, preview и production — четыре разных результата.
+## 5a. Проверка production (27 September 2026, 19:19–19:25 UTC, только чтение)
+
+| Проверка | Результат |
+| --- | --- |
+| Remote `main` после push | `5cba2a71a2bef74132688a93148957453e83edc2` (fast-forward с `11e3074`), прочитан `git ls-remote` |
+| Смена версии на `www.maximus.vegas` | Через ~1 минуту после push `/api/health` вернул новые поля: `{"status":"ok","database":"postgres","email":"not_connected","payments":"off"}` |
+| Миграции 2–5 | Применены: `/ru/membership` показывает предложение из миграции 5 |
+| Публичные страницы | 25 адресов, включая новые (`membership`, `matchmaking`, `challenges`, `signup/check-email`, `verify-email`, `activate`, `reset-password`), — `200` |
+| Личные страницы без входа | `hub`, `progress`, `billing`, `welcome`, `admin`, `settings` — `307` на вход |
+| Плановое обслуживание без секрета | `404` |
+| Сервисы в уведомлении о конфиденциальности | Vercel (Washington, D.C., USA), Neon PostgreSQL (AWS us-east-1), письма и оплата — не подключены |
+| Редакция документов | «Version 2 of 27 September 2026» |
+| Ответ сервера | `x-vercel-id: iad1::iad1::…` |
+
+Идентификатор deployment в Vercel и связь deployment → commit через API Vercel не проверены: доступа к Vercel из этой среды нет. Локальный commit, push, preview и production — четыре разных результата; подтверждены commit, push и изменённое поведение production.
 
 ## 6. Развёртывание и откат
 
