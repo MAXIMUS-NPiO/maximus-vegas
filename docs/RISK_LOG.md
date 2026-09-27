@@ -1,6 +1,6 @@
 # Риск-лог, пробелы и решения
 
-Title: Risk log · Status: FINAL · Version: 2.0 · Date: 27 September 2026
+Title: Risk log · Status: PENDING MIPA REGISTRATION · Version: 2.0 · Date: 27 September 2026
 
 Владельцы указаны ролями: **Владелец** — руководство MAXIMUS VEGAS L.L.C-FZ; **Техническая команда** — разработка и эксплуатация портала; **Центр управления** — сотрудники платформы с ролью `admin`. Имена не указываются, потому что они не предоставлены.
 
@@ -40,8 +40,8 @@ Title: Risk log · Status: FINAL · Version: 2.0 · Date: 27 September 2026
 
 ## 3. Решения release 2
 
-- Промпт клуба (`MAXIMUS Club Portal — Website Update, Participant Registration and Payments`, Version 1.0, 27 September 2026) применён к порталу MAXIMUS VEGAS только как стандарт инженерной работы: регистрация и email, согласия, очередь писем, раздельные состояния заявки, оплаты и членства, hosted-оплата, проверка webhook, идемпотентность, второй фактор, тесты, документация и отчёт. Контент клуба (направления, тарифы NPIO) в этот репозиторий не переносится.
-- Взносы MAXIMUS INVESTMENT BUSINESS CLUB NPIO через этот портал не принимаются. Получатель любых платежей портала фиксирован: MAXIMUS VEGAS L.L.C-FZ; платёж на другое юридическое лицо блокируется проверкой `recipient_mismatch`.
+- Промпт клуба (`MAXIMUS Club Portal — Website Update, Participant Registration and Payments`, Version 1.0, 27 September 2026) применён к порталу MAXIMUS VEGAS только как стандарт инженерной работы: регистрация и email, согласия, очередь писем, раздельные состояния заявки, оплаты и членства, hosted-оплата, проверка webhook, идемпотентность, второй фактор, тесты, документация и отчёт. Контент клуба (направления, тарифы MAXIMUS INVESTMENT BUSINESS CLUB NPIO (DIFC)) в этот репозиторий не переносится.
+- Взносы MAXIMUS INVESTMENT BUSINESS CLUB NPIO (DIFC) через этот портал не принимаются. Получатель любых платежей портала фиксирован: MAXIMUS VEGAS L.L.C-FZ; платёж на другое юридическое лицо блокируется проверкой `recipient_mismatch`.
 - Stripe подключён как технический кандидат (SDK-адаптер). Это не доказательство одобрения мерчанта; оплата выключена до N1–N3.
 - Регистрация и участие не зависят от готовности оплаты.
 - Оператор портала — MAXIMUS VEGAS L.L.C-FZ (Meydan Free Zone); статус DIFC порталу не приписывается.

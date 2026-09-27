@@ -1,6 +1,6 @@
 # Запись компонентов для внутреннего учёта IP (MIPA)
 
-Title: IP component record · Status: FINAL · Version: 2.0 · Date: 27 September 2026
+Title: IP component record · Status: PENDING MIPA REGISTRATION · Version: 2.0 · Date: 27 September 2026
 
 MIPA — внутренний контур фиксации и управления IP. Эта запись — локальный манифест в репозитории; она не является государственной регистрацией и не заменяет запись во внутреннем реестре MIPA.
 
@@ -14,5 +14,5 @@ MIPA — внутренний контур фиксации и управлен�
 | Версия и хеш | Версия 2.0; хеш — идентификатор commit в `main` репозитория `MAXIMUS-NPiO/maximus-vegas` (фиксируется в отчёте о выпуске) |
 | Происхождение | Новая реализация в стеке портала. Логика эталонного архива (Express + SQLite) перенесена и переработана; код архива в репозиторий не копировался. Код TournamentSuite и Banger не использовался: он не был предоставлен |
 | Сторонние компоненты | Next.js, React (MIT); node-postgres (MIT); PGlite (Apache-2.0 / PostgreSQL License); stripe-node (MIT); Nodemailer (MIT-0); uqr (MIT); шрифт Manrope (SIL OFL 1.1) |
-| Регистрационный номер | NOT PROVIDED |
+| Регистрационный номер MIPA | TO BE ASSIGNED |
 | Ограничения | Названия игр принадлежат их правообладателям; портал не аффилирован с издателями. Stripe — технический кандидат провайдера, не подтверждённый мерчант |

@@ -1,6 +1,6 @@
 # Карта покрытия технического handoff
 
-Title: Handoff coverage map · Status: FINAL · Version: 1.0 · Date: 27 September 2026
+Title: Handoff coverage map · Status: PENDING MIPA REGISTRATION · Version: 1.0 · Date: 27 September 2026
 
 Источник требований — «Maximus Vegas — Technical Handoff & Requirements Spec» (разделы 3–9). Эталонная реализация из архива `maximus-vegas-backend.zip` (Express + SQLite) использована как описание логики и перенесена в стек портала (Next.js + PostgreSQL); отдельный сервер Express не развёртывается.
 

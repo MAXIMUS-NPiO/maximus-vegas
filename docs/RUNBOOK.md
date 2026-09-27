@@ -1,6 +1,6 @@
 # Runbook: развёртывание, проверка, откат
 
-Title: Runbook · Status: FINAL · Version: 2.0 · Date: 27 September 2026
+Title: Runbook · Status: PENDING MIPA REGISTRATION · Version: 2.0 · Date: 27 September 2026
 
 ## 1. Развёртывание
 

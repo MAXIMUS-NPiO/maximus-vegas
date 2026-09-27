@@ -1,6 +1,6 @@
 # Архитектура портала MAXIMUS VEGAS
 
-Title: Architecture · Status: FINAL · Version: 2.0 · Date: 27 September 2026
+Title: Architecture · Status: PENDING MIPA REGISTRATION · Version: 2.0 · Date: 27 September 2026
 
 Версия 2.0 описывает release 2 (форматы турниров, споры по решённым матчам, прогрессию, вызовы, подтверждение email, согласия, второй фактор для сотрудников, членство и платёжный контур). Всё, что было в 1.0, сохраняется.
 

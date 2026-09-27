@@ -1,6 +1,6 @@
 # Отчёт о выпуске: release 2
 
-Title: Release report · Status: FINAL · Version: 1.0 · Date: 27 September 2026
+Title: Release report · Status: PENDING MIPA REGISTRATION · Version: 1.0 · Date: 27 September 2026
 
 ## 1. Основание и границы
 

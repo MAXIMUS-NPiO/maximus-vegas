@@ -1,6 +1,6 @@
 # Реестр модулей
 
-Title: Module registry · Status: FINAL · Version: 2.0 · Date: 27 September 2026
+Title: Module registry · Status: PENDING MIPA REGISTRATION · Version: 2.0 · Date: 27 September 2026
 
 Источник — `src/lib/directions.ts`; та же таблица показывается на `/ru/status`. Живое состояние базы, регистрации, писем и оплаты — в верхнем блоке `/status` и в `/api/health`.
 
