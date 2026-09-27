@@ -10,7 +10,11 @@ const reply = (status: number, error?: string) =>
   });
 
 export async function POST(request: Request) {
-  if (request.headers.get("origin") !== new URL(request.url).origin)
+  // Next.js may use an internal hostname in request.url behind its proxy.
+  // Compare against the actual incoming Host and the proxy's protocol instead.
+  const protocol = request.headers.get("x-forwarded-proto") || new URL(request.url).protocol.slice(0, -1);
+  const expectedOrigin = `${protocol}://${request.headers.get("host")}`;
+  if (request.headers.get("origin") !== expectedOrigin)
     return reply(403, "Invalid origin");
   if (
     !request.headers
