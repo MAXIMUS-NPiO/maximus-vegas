@@ -209,3 +209,25 @@ export async function removeOrgMember(db: Database, user: SessionUser, orgId: st
     await audit(q, { actorId: user.id, action: "org.member_removed", entity: "organization", entityId: orgId, data: { userId: memberId } });
   });
 }
+
+/** Team logo and banner (owner or captain). Images only, size-limited, stored with the portal's data. */
+export async function setTeamMedia(
+  db: Database,
+  user: SessionUser,
+  teamId: string,
+  input: { logo?: File | null; banner?: File | null; clear?: unknown },
+) {
+  const { storeUpload } = await import("./media.ts");
+  await db.tx(async (q) => {
+    const team = await lockTeam(q, teamId);
+    if (!isLeader(team, user.id)) fail("not_team_leader");
+    if (input.clear === "logo") await q.query("update teams set logo_media_id = null where id = $1", [team.id]);
+    if (input.clear === "banner") await q.query("update teams set banner_media_id = null where id = $1", [team.id]);
+    const logo = await storeUpload(q, user.id, "team_logo", input.logo);
+    const banner = await storeUpload(q, user.id, "team_banner", input.banner);
+    if (logo) await q.query("update teams set logo_media_id = $2 where id = $1", [team.id, logo]);
+    if (banner) await q.query("update teams set banner_media_id = $2 where id = $1", [team.id, banner]);
+    if (!logo && !banner && !input.clear) fail("invalid_file");
+    await audit(q, { actorId: user.id, action: "team.media_updated", entity: "team", entityId: team.id, data: { logo: Boolean(logo), banner: Boolean(banner), clear: input.clear ?? null } });
+  });
+}

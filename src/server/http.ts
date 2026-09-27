@@ -45,9 +45,9 @@ export function withParam(path: string, key: "ok" | "e", code: string) {
   return `${url.pathname}${url.search}${hash ? `#${hash}` : ""}`;
 }
 
-export function redirect(path: string, cookie?: string) {
+export function redirect(path: string, cookie?: string | string[]) {
   const headers = new Headers({ Location: path, "Cache-Control": "no-store" });
-  if (cookie) headers.append("Set-Cookie", cookie);
+  for (const c of Array.isArray(cookie) ? cookie : cookie ? [cookie] : []) headers.append("Set-Cookie", c);
   return new Response(null, { status: 303, headers });
 }
 
@@ -65,18 +65,28 @@ export type Ctx = {
   user: SessionUser | null;
   form: Record<string, string>;
   multi: Record<string, string[]>;
+  files: Record<string, File>;
   lang: "ru" | "en";
   back: string;
   request: Request;
   token: string | undefined;
 };
 
+/** Upper bound for any action body (uploads are limited per kind well below this). */
+export const MAX_BODY_BYTES = 3 * 1024 * 1024;
+
 export async function context(request: Request): Promise<Ctx> {
+  const length = Number(request.headers.get("content-length") ?? "0");
+  if (length > MAX_BODY_BYTES) throw new DomainError("file_too_large");
   const data = await request.formData();
   const form: Record<string, string> = {};
   const multi: Record<string, string[]> = {};
+  const files: Record<string, File> = {};
   for (const [k, value] of data.entries()) {
-    if (typeof value !== "string") continue;
+    if (typeof value !== "string") {
+      if (value && (value as File).size > 0) files[k] = value as File;
+      continue;
+    }
     form[k] = value;
     (multi[k] ??= []).push(value);
   }
@@ -85,5 +95,26 @@ export async function context(request: Request): Promise<Ctx> {
   const db = await getDb();
   const token = parseCookies(request.headers.get("cookie"))[SESSION_COOKIE];
   const user = await sessionUser(db, token);
-  return { db, user, form, multi, lang, back, request, token };
+  return { db, user, form, multi, files, lang, back, request, token };
+}
+
+/**
+ * Short-lived copy of what was typed into a registration form, so a validation error or a language
+ * switch does not wipe it. HttpOnly, never in the URL, never the password; cleared on success.
+ */
+export const DRAFT_COOKIE = "mv_draft";
+export function draftCookie(values: Record<string, string>) {
+  const payload = Buffer.from(JSON.stringify(values)).toString("base64url");
+  return `${DRAFT_COOKIE}=${payload}; Path=/; HttpOnly; SameSite=Lax; Max-Age=900${secure() ? "; Secure" : ""}`;
+}
+export const clearDraftCookie = () => `${DRAFT_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure() ? "; Secure" : ""}`;
+export function readDraft(raw: string | undefined): Record<string, string> {
+  if (!raw || raw.length > 4000) return {};
+  try {
+    const value = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
+    if (!value || typeof value !== "object") return {};
+    return Object.fromEntries(Object.entries(value).filter(([, v]) => typeof v === "string").map(([k, v]) => [k, String(v).slice(0, 300)]));
+  } catch {
+    return {};
+  }
 }

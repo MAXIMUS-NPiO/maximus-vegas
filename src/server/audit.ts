@@ -28,7 +28,10 @@ function digest(prev: string, at: string, e: AuditEntry): string {
 }
 
 /** Appends a hash-chained audit record. Must run inside the caller's transaction. */
-export async function audit(q: Queryable, entry: AuditEntry): Promise<void> {
+export async function audit(q: Queryable, input: AuditEntry): Promise<void> {
+  // Hash exactly what will be stored: Dates and other JSON-serialisable values are normalised first,
+  // so verification over the stored jsonb reproduces the same digest.
+  const entry: AuditEntry = { ...input, data: JSON.parse(JSON.stringify(input.data ?? {})) };
   await q.query("select pg_advisory_xact_lock($1)", [AUDIT_LOCK]);
   const [last] = await q.query<{ hash: string }>(
     "select hash from audit_log order by id desc limit 1",

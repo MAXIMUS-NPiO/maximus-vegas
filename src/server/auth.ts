@@ -24,6 +24,11 @@ export type SessionUser = {
   displayName: string;
   roles: Role[];
   sessionId: string;
+  emailVerified?: boolean;
+  /** When this session last passed the second factor (staff only). */
+  mfaAt?: Date | null;
+  avatarColor?: string;
+  onboarded?: boolean;
 };
 
 export async function hashPassword(password: string): Promise<string> {
@@ -51,7 +56,7 @@ const DUMMY_HASH =
 
 export const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
 
-async function createSession(q: Queryable, userId: string, userAgent: string) {
+export async function createSession(q: Queryable, userId: string, userAgent: string) {
   const token = randomBytes(32).toString("base64url");
   const expires = new Date(Date.now() + SESSION_DAYS * 86400_000);
   await q.query(
@@ -76,30 +81,55 @@ export type SignUpInput = {
   password: unknown;
   adult: unknown;
   terms: unknown;
+  marketing?: unknown;
   userAgent?: string;
+  lang?: "ru" | "en";
 };
 
-export async function signUp(db: Database, input: SignUpInput) {
+export function parseSignUp(input: SignUpInput) {
   const email = v.email(input.email);
   const username = v.username(input.username);
   const displayName = v.displayName(input.displayName || input.username);
   const password = v.password(input.password);
   if (!v.bool(input.adult)) fail("adult_required");
   if (!v.bool(input.terms)) fail("consent_required");
-  const passwordHash = await hashPassword(password);
+  return { email, username, displayName, password, marketing: v.bool(input.marketing) };
+}
+
+/** Records acceptance of the current terms and privacy notice and the separate marketing choice. */
+export async function recordSignupConsents(q: Queryable, userId: string, marketing: boolean) {
+  const { LEGAL_VERSIONS } = await import("../lib/legal.ts");
+  await q.query(
+    `insert into consents (user_id, kind, version, granted, source) values ($1, 'terms', $2, true, 'signup'), ($1, 'privacy', $3, true, 'signup'),
+       ($1, 'marketing', $2, $4, 'signup')`,
+    [userId, LEGAL_VERSIONS.terms, LEGAL_VERSIONS.privacy, marketing],
+  );
+  if (marketing) await q.query("update users set marketing_opt_in_at = now() where id = $1", [userId]);
+}
+
+/**
+ * Instant sign-up: the account is usable immediately; email confirmation is a separate state. An email
+ * conflict returns a generic refusal rather than confirming that the address is registered.
+ */
+export async function signUp(db: Database, input: SignUpInput) {
+  const data = parseSignUp(input);
+  const passwordHash = await hashPassword(data.password);
   try {
     return await db.tx(async (q) => {
       const [user] = await q.query<{ id: string }>(
         `insert into users (email, username, display_name, password_hash, adult_confirmed_at)
          values ($1, $2, $3, $4, now()) returning id`,
-        [email, username, displayName, passwordHash],
+        [data.email, data.username, data.displayName, passwordHash],
       );
-      await audit(q, { actorId: user.id, action: "user.signup", entity: "user", entityId: user.id, data: { username } });
+      await recordSignupConsents(q, user.id, data.marketing);
+      await audit(q, { actorId: user.id, action: "user.signup", entity: "user", entityId: user.id, data: { username: data.username } });
       const session = await createSession(q, user.id, input.userAgent ?? "");
+      const { queueVerification } = await import("./accounts.ts");
+      await queueVerification(q, user.id, data.email, input.lang ?? "ru");
       return { userId: user.id, ...session };
     });
   } catch (error) {
-    if (isUniqueViolation(error, "users_email_key")) fail("email_taken");
+    if (isUniqueViolation(error, "users_email_key")) fail("signup_unavailable");
     if (isUniqueViolation(error, "users_username_key")) fail("username_taken");
     throw error;
   }
@@ -123,6 +153,8 @@ export async function signIn(
     for (const key of keys) await db.query("insert into auth_attempts (key, ok) values ($1, false)", [key]);
     fail("invalid_credentials");
   }
+  // Only reachable with the correct password, so it reveals nothing to someone guessing addresses.
+  if (user.status === "pending") fail("account_not_activated");
   if (user.status !== "active") fail("account_suspended");
   return db.tx(async (q) => {
     await q.query("delete from auth_attempts where key = any($1)", [keys]);
@@ -142,8 +174,12 @@ export async function sessionUser(db: Queryable, token: string | undefined): Pro
     display_name: string;
     roles: Role[] | null;
     last_seen_at: Date;
+    email_verified_at: Date | null;
+    mfa_at: Date | null;
+    avatar_color: string;
+    onboarded_at: Date | null;
   }>(
-    `select u.id, u.email, u.username, u.display_name, s.last_seen_at,
+    `select u.id, u.email, u.username, u.display_name, s.last_seen_at, u.email_verified_at, s.mfa_at, u.avatar_color, u.onboarded_at,
             array(select role from user_roles r where r.user_id = u.id order by role) as roles
        from sessions s join users u on u.id = s.user_id
       where s.id = $1 and s.revoked_at is null and s.expires_at > now() and u.status = 'active'`,
@@ -159,6 +195,10 @@ export async function sessionUser(db: Queryable, token: string | undefined): Pro
     displayName: row.display_name,
     roles: row.roles ?? [],
     sessionId: id,
+    emailVerified: Boolean(row.email_verified_at),
+    mfaAt: row.mfa_at ? new Date(row.mfa_at) : null,
+    avatarColor: row.avatar_color,
+    onboarded: Boolean(row.onboarded_at),
   };
 }
 
@@ -264,32 +304,68 @@ export async function claimAdmin(db: Database, user: SessionUser, token: unknown
 
 export async function exportAccount(db: Database, user: SessionUser) {
   const [profile] = await db.query(
-    "select id, email, username, display_name, country, bio, profile_public, created_at from users where id = $1",
+    `select id, email, username, display_name, country, country_code, bio, profile_public, avatar_color, referral_code,
+            email_verified_at, marketing_opt_in_at, onboarded_at, created_at from users where id = $1`,
     [user.id],
   );
+  const q = <T = Record<string, unknown>>(sql: string) => db.query<T & Record<string, unknown>>(sql, [user.id]);
+  const [mfa] = await q<{ enrolled: boolean }>("select confirmed_at is not null as enrolled from mfa_factors where user_id = $1");
   return {
     exportedAt: new Date().toISOString(),
     profile,
     roles: user.roles,
-    gameAccounts: await db.query("select game, handle, verified, created_at from linked_game_accounts where user_id = $1", [user.id]),
-    teams: await db.query(
-      "select t.slug, t.name, t.game, tm.joined_at from team_members tm join teams t on t.id = tm.team_id where tm.user_id = $1",
-      [user.id],
-    ),
-    registrations: await db.query(
+    consents: await q("select kind, version, granted, source, created_at from consents where user_id = $1 order by id"),
+    secondFactor: { enrolled: Boolean(mfa?.enrolled) },
+    gameAccounts: await q("select game, handle, verified, created_at from linked_game_accounts where user_id = $1"),
+    teams: await q("select t.slug, t.name, t.game, tm.joined_at from team_members tm join teams t on t.id = tm.team_id where tm.user_id = $1"),
+    registrations: await q(
       `select t.slug as tournament, r.status, r.placement, r.created_at
          from roster_entries re join registrations r on r.id = re.registration_id
          join tournaments t on t.id = r.tournament_id where re.user_id = $1`,
-      [user.id],
     ),
-    sessions: await db.query(
-      "select created_at, last_seen_at, expires_at, revoked_at, user_agent from sessions where user_id = $1 order by created_at desc",
-      [user.id],
+    scoreEntries: await q(
+      `select t.slug as tournament, s.kills, s.assists, s.deaths, s.headshots, s.damage, s.distance, s.placement, s.match_ref,
+              s.evidence_url, s.flags, s.review, s.review_note, s.created_at
+         from score_entries s join tournaments t on t.id = s.tournament_id where s.submitted_by = $1 order by s.created_at`,
     ),
-    notifications: await db.query(
-      "select kind, data, read_at, created_at from notifications where user_id = $1 order by created_at desc",
-      [user.id],
+    disputesFiled: await q("select match_id, kind, reason, evidence_url, status, decision, created_at from disputes where opened_by = $1 order by created_at"),
+    challenges: await q(
+      `select c.kind, c.game, c.status, (c.challenger_id = $1) as sent_by_me, case when c.challenger_id = $1 then uo.username else uc.username end as opponent,
+              c.score_challenger, c.score_opponent, (c.winner_id = $1) as won, c.created_at, c.completed_at
+         from challenges c join users uc on uc.id = c.challenger_id join users uo on uo.id = c.opponent_id
+        where $1 in (c.challenger_id, c.opponent_id) order by c.created_at`,
     ),
+    wallet: {
+      balance: (await q<{ balance: number }>("select balance from wallets where user_id = $1"))[0]?.balance ?? 0,
+      ledger: await q("select delta, reason, balance_after, created_at from coin_ledger where user_id = $1 order by id"),
+    },
+    xp: await q("select amount, reason, game, created_at from xp_events where user_id = $1 order by id"),
+    objectives: await q("select objective, claimed_at from objective_claims where user_id = $1"),
+    seasonPass: {
+      unlocks: await q("select season, source, unlocked_at from pass_unlocks where user_id = $1"),
+      claims: await q("select season, tier, track, claimed_at from pass_claims where user_id = $1 order by season, tier"),
+    },
+    cosmetics: await q("select item, source, acquired_at from user_cosmetics where user_id = $1"),
+    referral: {
+      usedCode: (await q<{ code: string; created_at: Date }>("select code, created_at from referral_redemptions where referee_id = $1"))[0] ?? null,
+      invitedPlayers: (await q<{ n: number }>("select count(*)::int as n from referral_redemptions where referrer_id = $1"))[0]?.n ?? 0,
+    },
+    uploads: await q("select id, kind, content_type, bytes, created_at from media where owner_id = $1 order by created_at"),
+    membershipApplications: await q(
+      "select reference, status, objective, decision_note, created_at, decided_at from membership_applications where user_id = $1 order by created_at",
+    ),
+    invoices: await q(
+      `select number, status, amount_minor, currency, exponent, recipient, tax_treatment, terms_version, created_at, paid_at, voided_at, refunded_minor
+         from invoices where user_id = $1 order by created_at`,
+    ),
+    paymentAttempts: await q(
+      `select i.number as invoice, a.provider, a.mode, a.status, a.amount_minor, a.currency, a.created_at, a.updated_at
+         from payment_attempts a join invoices i on i.id = a.invoice_id where a.user_id = $1 order by a.created_at`,
+    ),
+    memberships: await q("select status, starts_at, ends_at, status_reason, created_at from memberships where user_id = $1 order by created_at"),
+    emails: await q("select template, lang, status, created_at, sent_at from email_outbox where user_id = $1 order by created_at"),
+    sessions: await q("select created_at, last_seen_at, expires_at, revoked_at, user_agent from sessions where user_id = $1 order by created_at desc"),
+    notifications: await q("select kind, data, read_at, created_at from notifications where user_id = $1 order by created_at desc"),
   };
 }
 
@@ -310,18 +386,48 @@ export async function deleteAccount(db: Database, user: SessionUser, confirmPass
       [user.id],
     );
     if ((owned?.n ?? 0) > 0 || (orgs?.n ?? 0) > 0) throw new DomainError("transfer_ownership_first");
+    // A payment the provider may still confirm must settle first, so it is never attached to a deleted account.
+    const [paying] = await q.query(
+      "select 1 from payment_attempts where user_id = $1 and status in ('created','open','processing') limit 1",
+      [user.id],
+    );
+    if (paying) throw new DomainError("checkout_in_progress");
     const tag = user.id.slice(0, 8);
     await q.query(
       `update users set email = $2, username = $3, display_name = 'Deleted user', password_hash = $4,
-              country = '', bio = '', profile_public = false, status = 'deleted', updated_at = now()
+              country = '', country_code = null, bio = '', profile_public = false, avatar_color = '', referral_code = null,
+              email_verified_at = null, marketing_opt_in_at = null, status = 'deleted', updated_at = now()
         where id = $1`,
       [user.id, `deleted+${user.id}@invalid.local`, `deleted_${tag}`, `deleted$${randomBytes(16).toString("hex")}`],
     );
     await q.query("delete from linked_game_accounts where user_id = $1", [user.id]);
     await q.query("delete from team_members where user_id = $1", [user.id]);
     await q.query("delete from user_roles where user_id = $1", [user.id]);
+    await q.query("delete from tournament_organizers where user_id = $1", [user.id]);
     await q.query("update team_invites set status = 'revoked' where user_id = $1 and status = 'pending'", [user.id]);
     await q.query("update sessions set revoked_at = now() where user_id = $1 and revoked_at is null", [user.id]);
+    // Credentials, pending mail and live queues go; confirmed results, ledgers and financial records stay
+    // (without the name) because other players' histories and accounting depend on them.
+    await q.query("delete from email_tokens where user_id = $1", [user.id]);
+    await q.query("delete from email_outbox where user_id = $1", [user.id]);
+    await q.query("delete from mfa_factors where user_id = $1", [user.id]);
+    await q.query("delete from mfa_recovery_codes where user_id = $1", [user.id]);
+    await q.query("delete from quick_queue where user_id = $1", [user.id]);
+    await q.query(
+      "update challenges set status = 'cancelled', resolution = 'account_deleted' where $1 in (challenger_id, opponent_id) and status in ('pending','accepted')",
+      [user.id],
+    );
+    await q.query("update membership_applications set status = 'withdrawn', updated_at = now() where user_id = $1 and status in ('submitted','under_review','awaiting_info')", [
+      user.id,
+    ]);
+    await q.query("update invoices set status = 'void', voided_at = now() where user_id = $1 and status = 'open'", [user.id]);
+    await q.query(
+      "update memberships set status = 'ended', ends_at = least(coalesce(ends_at, now()), now()), status_reason = 'account_deleted', updated_at = now() where user_id = $1 and status in ('pending','active','suspended')",
+      [user.id],
+    );
+    await q.query("insert into consents (user_id, kind, version, granted, source) select $1, 'marketing', version, false, 'account_deleted' from consents where user_id = $1 and kind = 'marketing' order by id desc limit 1", [
+      user.id,
+    ]);
     await audit(q, { actorId: user.id, action: "user.deleted", entity: "user", entityId: user.id });
   });
 }

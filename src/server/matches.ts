@@ -1,16 +1,17 @@
 import type { Database, Queryable } from "./db.ts";
 import type { SessionUser } from "./auth.ts";
 import { audit } from "./audit.ts";
-import { canReferee, notify } from "./access.ts";
+import { notify } from "./access.ts";
 import { fail } from "./errors.ts";
-import { completeMatch, computePlacements, regLeaders, regMembers, type MatchRow } from "./tournaments.ts";
+import { canRefereeTournament, completeMatch, regLeaders, regMembers, type MatchRow } from "./tournaments.ts";
+import { rewriteWinner } from "./decisions.ts";
 import * as v from "./validate.ts";
 
-type Locked = MatchRow & { t_status: string; org_id: string; t_name: string };
+type Locked = MatchRow & { t_status: string; org_id: string; t_name: string; t_slug: string };
 
-async function lockMatch(q: Queryable, matchId: string): Promise<Locked> {
+export async function lockMatchWithTournament(q: Queryable, matchId: string): Promise<Locked> {
   const [m] = await q.query<Locked>(
-    `select m.*, t.status as t_status, t.org_id, t.name as t_name
+    `select m.*, t.status as t_status, t.org_id, t.name as t_name, t.slug as t_slug
        from matches m join tournaments t on t.id = m.tournament_id
       where m.id = $1 for update of m`,
     [matchId],
@@ -19,11 +20,13 @@ async function lockMatch(q: Queryable, matchId: string): Promise<Locked> {
   return m;
 }
 
-async function sideOf(q: Queryable, m: MatchRow, userId: string): Promise<"a" | "b" | null> {
+export async function sideOf(q: Queryable, m: { a_reg: string | null; b_reg: string | null }, userId: string): Promise<"a" | "b" | null> {
   if ((await regLeaders(q, m.a_reg)).includes(userId)) return "a";
   if ((await regLeaders(q, m.b_reg)).includes(userId)) return "b";
   return null;
 }
+
+const refereeOf = (q: Queryable, m: Locked, user: SessionUser) => canRefereeTournament(q, { id: m.tournament_id, org_id: m.org_id }, user);
 
 function live(m: Locked) {
   if (m.t_status !== "IN_PROGRESS") fail("tournament_not_live");
@@ -36,13 +39,17 @@ function scores(input: { scoreA: unknown; scoreB: unknown }, m: MatchRow) {
   return { scoreA, scoreB, winner: scoreA > scoreB ? m.a_reg! : m.b_reg! };
 }
 
-async function nextVersion(q: Queryable, matchId: string) {
+export async function nextVersion(q: Queryable, matchId: string) {
   const [row] = await q.query<{ n: number }>("select coalesce(max(version), 0)::int + 1 as n from match_results where match_id = $1", [matchId]);
   return row?.n ?? 1;
 }
 
-async function staffFor(q: Queryable, orgId: string) {
-  const rows = await q.query<{ user_id: string }>("select user_id from org_members where org_id = $1", [orgId]);
+/** Staff who see dispute and review queues: the space's members and the tournament's co-organisers. */
+export async function staffFor(q: Queryable, orgId: string, tournamentId?: string) {
+  const rows = await q.query<{ user_id: string }>(
+    "select user_id from org_members where org_id = $1 union select user_id from tournament_organizers where tournament_id = $2",
+    [orgId, tournamentId ?? null],
+  );
   return rows.map((r) => r.user_id);
 }
 
@@ -51,7 +58,7 @@ export type ResultInput = { scoreA: unknown; scoreB: unknown; evidenceUrl: unkno
 /** A participant reports a result. The opponent confirms it or opens a dispute. */
 export async function submitResult(db: Database, user: SessionUser, matchId: string, input: ResultInput) {
   await db.tx(async (q) => {
-    const m = await lockMatch(q, matchId);
+    const m = await lockMatchWithTournament(q, matchId);
     live(m);
     if (!["ready", "in_progress", "result_submitted"].includes(m.status)) fail(m.status === "completed" ? "already_completed" : "match_not_ready");
     const side = await sideOf(q, m, user.id);
@@ -85,7 +92,7 @@ export async function submitResult(db: Database, user: SessionUser, matchId: str
       }
       await q.query("update matches set status = 'disputed', updated_at = now() where id = $1", [m.id]);
       await q.query("insert into disputes (match_id, opened_by, reason) values ($1, $2, $3)", [m.id, user.id, "conflicting_results"]);
-      await notify(q, await staffFor(q, m.org_id), "dispute_opened", { matchId: m.id, tournament: m.t_name });
+      await notify(q, await staffFor(q, m.org_id, m.tournament_id), "dispute_opened", { matchId: m.id, tournament: m.t_name });
       await notify(q, await regLeaders(q, opponentReg), "dispute_opened", { matchId: m.id, tournament: m.t_name });
       await audit(q, { actorId: user.id, action: "match.results_conflict", entity: "match", entityId: m.id, data: { scoreA, scoreB } });
       return;
@@ -98,7 +105,7 @@ export async function submitResult(db: Database, user: SessionUser, matchId: str
 
 export async function confirmResult(db: Database, user: SessionUser, matchId: string) {
   await db.tx(async (q) => {
-    const m = await lockMatch(q, matchId);
+    const m = await lockMatchWithTournament(q, matchId);
     live(m);
     if (m.status === "completed") fail("already_completed");
     const side = await sideOf(q, m, user.id);
@@ -116,18 +123,19 @@ export async function confirmResult(db: Database, user: SessionUser, matchId: st
   });
 }
 
+/** Disputes a reported (not yet decided) result. Decided results use the post-result dispute flow. */
 export async function disputeResult(db: Database, user: SessionUser, matchId: string, reasonInput: unknown) {
   const reason = v.clean(reasonInput, 1000);
   if (reason.length < 5) fail("invalid_input");
   await db.tx(async (q) => {
-    const m = await lockMatch(q, matchId);
+    const m = await lockMatchWithTournament(q, matchId);
     live(m);
     if (!["result_submitted", "ready", "in_progress"].includes(m.status)) fail(m.status === "completed" ? "already_completed" : "match_not_ready");
     const side = await sideOf(q, m, user.id);
     if (!side) fail("not_participant");
     await q.query("update matches set status = 'disputed', updated_at = now() where id = $1", [m.id]);
     await q.query("insert into disputes (match_id, opened_by, reason) values ($1, $2, $3)", [m.id, user.id, reason]);
-    await notify(q, await staffFor(q, m.org_id), "dispute_opened", { matchId: m.id, tournament: m.t_name });
+    await notify(q, await staffFor(q, m.org_id, m.tournament_id), "dispute_opened", { matchId: m.id, tournament: m.t_name });
     await notify(q, await regLeaders(q, side === "a" ? m.b_reg : m.a_reg), "dispute_opened", { matchId: m.id, tournament: m.t_name });
     await audit(q, { actorId: user.id, action: "match.disputed", entity: "match", entityId: m.id });
   });
@@ -141,8 +149,8 @@ export async function officialResult(
   input: ResultInput & { resolution?: unknown },
 ) {
   await db.tx(async (q) => {
-    const m = await lockMatch(q, matchId);
-    if (!(await canReferee(q, m.org_id, user))) fail("forbidden");
+    const m = await lockMatchWithTournament(q, matchId);
+    if (!(await refereeOf(q, m, user))) fail("forbidden");
     live(m);
     if (m.status === "completed") fail("already_completed");
     if (!m.a_reg || !m.b_reg) fail("match_not_ready");
@@ -158,7 +166,7 @@ export async function officialResult(
       [m.id, version, user.id, scoreA, scoreB, winner, evidence, note],
     );
     if (resolution)
-      await q.query("update disputes set resolution = $2 where match_id = $1 and status = 'open'", [m.id, resolution]);
+      await q.query("update disputes set resolution = $2 where match_id = $1 and status = 'open' and kind = 'pre_result'", [m.id, resolution]);
     await completeMatch(q, m, { winner, scoreA, scoreB, outcome: "played" }, user.id);
     await notify(q, [...(await regMembers(q, m.a_reg)), ...(await regMembers(q, m.b_reg))], "result_confirmed", { matchId: m.id, tournament: m.t_name });
     await audit(q, { actorId: user.id, action: "match.official_result", entity: "match", entityId: m.id, data: { version, scoreA, scoreB } });
@@ -168,8 +176,8 @@ export async function officialResult(
 export async function markNoShow(db: Database, user: SessionUser, matchId: string, absentInput: unknown) {
   const absent = absentInput === "a" || absentInput === "b" ? absentInput : fail("invalid_input");
   await db.tx(async (q) => {
-    const m = await lockMatch(q, matchId);
-    if (!(await canReferee(q, m.org_id, user))) fail("forbidden");
+    const m = await lockMatchWithTournament(q, matchId);
+    if (!(await refereeOf(q, m, user))) fail("forbidden");
     live(m);
     if (m.status === "completed") fail("already_completed");
     if (!m.a_reg || !m.b_reg) fail("match_not_ready");
@@ -188,32 +196,19 @@ export async function markNoShow(db: Database, user: SessionUser, matchId: strin
 }
 
 /**
- * Corrects a confirmed result by adding a new version. Refused when the dependent match has
- * already progressed, so played games are never silently rewritten.
+ * Corrects a confirmed result by adding a new version. Played or reported dependent matches block it,
+ * so played games are never silently rewritten; automatic byes are re-routed.
  */
-export async function correctResult(
-  db: Database,
-  user: SessionUser,
-  matchId: string,
-  input: ResultInput,
-) {
+export async function correctResult(db: Database, user: SessionUser, matchId: string, input: ResultInput) {
   await db.tx(async (q) => {
-    const m = await lockMatch(q, matchId);
-    if (!(await canReferee(q, m.org_id, user))) fail("forbidden");
+    const m = await lockMatchWithTournament(q, matchId);
+    if (!(await refereeOf(q, m, user))) fail("forbidden");
     if (!["IN_PROGRESS", "PAUSED", "COMPLETED"].includes(m.t_status)) fail("tournament_not_live");
-    if (m.status !== "completed" || m.outcome === "bye") fail("not_editable");
+    if (m.status !== "completed" || m.outcome === "bye" || !m.a_reg || !m.b_reg) fail("not_editable");
     const { scoreA, scoreB, winner } = scores(input, m);
     const note = v.clean(input.note, 1000);
     if (note.length < 5) fail("invalid_input");
-    if (m.next_match_id) {
-      const [next] = await q.query<MatchRow>("select * from matches where id = $1 for update", [m.next_match_id]);
-      const [results] = await q.query<{ n: number }>("select count(*)::int as n from match_results where match_id = $1", [next.id]);
-      if (!["pending", "ready"].includes(next.status) || (results?.n ?? 0) > 0) fail("dependent_match_played");
-      if (winner !== m.winner_reg) {
-        const slot = m.next_slot === "a" ? "a_reg" : "b_reg";
-        await q.query(`update matches set ${slot} = $2, updated_at = now() where id = $1`, [next.id, winner]);
-      }
-    }
+    await rewriteWinner(q, m.id, winner, { scoreA, scoreB, outcome: "played" }, user.id);
     await q.query("update match_results set status = 'superseded' where match_id = $1 and status = 'confirmed'", [m.id]);
     const version = await nextVersion(q, m.id);
     await q.query(
@@ -221,11 +216,6 @@ export async function correctResult(
        values ($1,$2,'official',$3,$4,$5,$6,$7,$8,'confirmed',$3,now())`,
       [m.id, version, user.id, scoreA, scoreB, winner, v.optionalUrl(input.evidenceUrl), note],
     );
-    await q.query(
-      "update matches set winner_reg = $2, score_a = $3, score_b = $4, outcome = 'played', updated_at = now() where id = $1",
-      [m.id, winner, scoreA, scoreB],
-    );
-    if (m.t_status === "COMPLETED") await computePlacements(q, m.tournament_id);
     await notify(q, [...(await regMembers(q, m.a_reg)), ...(await regMembers(q, m.b_reg))], "result_corrected", { matchId: m.id, tournament: m.t_name });
     await audit(q, {
       actorId: user.id,
@@ -244,8 +234,8 @@ export async function updateMatchDetails(
   input: { roomCode?: unknown; scheduledAt?: unknown; timeZone?: unknown; live?: unknown },
 ) {
   await db.tx(async (q) => {
-    const m = await lockMatch(q, matchId);
-    const referee = await canReferee(q, m.org_id, user);
+    const m = await lockMatchWithTournament(q, matchId);
+    const referee = await refereeOf(q, m, user);
     const side = await sideOf(q, m, user.id);
     if (!referee && !side) fail("forbidden");
     if (["completed", "cancelled"].includes(m.status)) fail("already_completed");

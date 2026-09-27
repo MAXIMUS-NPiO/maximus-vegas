@@ -67,6 +67,17 @@ export type TournamentDetail = TournamentCard & {
   completed_at: Date | null;
   waitlisted: number;
   checked_in: number;
+  format: "single_elimination" | "double_elimination" | "leaderboard";
+  scoring: Record<string, number> | null;
+  best_of: number | null;
+  submission_hours: number | null;
+  submission_deadline: Date | null;
+  region_lock: string[];
+  prize_coins: number;
+  prize_text: string;
+  livestream_url: string;
+  banner_media_id: string | null;
+  created_by: string;
 };
 
 export async function getTournament(db: Queryable, slug: string) {
@@ -109,6 +120,9 @@ export async function participants(db: Queryable, tournamentId: string) {
 
 export type BracketMatch = {
   id: string;
+  bracket?: "W" | "L" | "GF";
+  a_void?: boolean;
+  b_void?: boolean;
   round: number;
   position: number;
   status: string;
@@ -125,12 +139,12 @@ export type BracketMatch = {
 
 export async function bracket(db: Queryable, tournamentId: string) {
   return db.query<BracketMatch>(
-    `select m.id, m.round, m.position, m.status, m.outcome, m.a_reg, m.b_reg, m.winner_reg, m.score_a, m.score_b, m.scheduled_at,
+    `select m.id, m.bracket, m.a_void, m.b_void, m.round, m.position, m.status, m.outcome, m.a_reg, m.b_reg, m.winner_reg, m.score_a, m.score_b, m.scheduled_at,
             coalesce(ta.name, ua.display_name) as a_name, coalesce(tb.name, ub.display_name) as b_name
        from matches m
        left join registrations ra on ra.id = m.a_reg left join teams ta on ta.id = ra.team_id left join users ua on ua.id = ra.user_id
        left join registrations rb on rb.id = m.b_reg left join teams tb on tb.id = rb.team_id left join users ub on ub.id = rb.user_id
-      where m.tournament_id = $1 order by m.round, m.position`,
+      where m.tournament_id = $1 order by array_position(array['W','L','GF'], m.bracket), m.round, m.position`,
     [tournamentId],
   );
 }
@@ -163,10 +177,18 @@ export async function getMatch(db: Queryable, id: string) {
       t_game: string;
       org_id: string;
       rounds: number;
+      t_format: string;
+      w_rounds: number;
+      l_rounds: number;
+      a_checked_in_at: Date | null;
+      b_checked_in_at: Date | null;
+      loser_next_match_id: string | null;
     }
   >(
-    `select m.*, t.slug as t_slug, t.name as t_name, t.status as t_status, t.game as t_game, t.org_id,
-            (select max(round) from matches x where x.tournament_id = m.tournament_id)::int as rounds
+    `select m.*, t.slug as t_slug, t.name as t_name, t.status as t_status, t.game as t_game, t.org_id, t.format as t_format,
+            (select max(round) from matches x where x.tournament_id = m.tournament_id and x.bracket = m.bracket)::int as rounds,
+            coalesce((select max(round) from matches x where x.tournament_id = m.tournament_id and x.bracket = 'W'), 0)::int as w_rounds,
+            coalesce((select max(round) from matches x where x.tournament_id = m.tournament_id and x.bracket = 'L'), 0)::int as l_rounds
        from matches m join tournaments t on t.id = m.tournament_id where m.id = $1`,
     [id],
   );
@@ -180,13 +202,21 @@ export async function getMatch(db: Queryable, id: string) {
       where r.match_id = $1 order by r.version desc`,
     [id],
   );
-  const disputes = await db.query<{ id: string; reason: string; status: string; resolution: string; created_at: Date; opened_by: string; resolved_at: Date | null }>(
-    `select d.id, d.reason, d.status, d.resolution, d.created_at, d.resolved_at, u.username as opened_by
+  const disputes = await db.query<{
+    id: string; reason: string; status: string; resolution: string; created_at: Date; opened_by: string; resolved_at: Date | null;
+    kind: string; decision: string | null; evidence_url: string; evidence_media_id: string | null;
+  }>(
+    `select d.id, d.reason, d.status, d.resolution, d.created_at, d.resolved_at, u.username as opened_by, d.kind, d.decision,
+            d.evidence_url, d.evidence_media_id
        from disputes d join users u on u.id = d.opened_by where d.match_id = $1 order by d.created_at desc`,
     [id],
   );
   let nextMatch: { id: string; round: number } | null = null;
   if (m.next_match_id) nextMatch = { id: m.next_match_id, round: m.round + 1 };
+  else if (m.bracket === "GF" && m.round === 1) {
+    const [reset] = await db.query<{ id: string }>("select id from matches where tournament_id = $1 and bracket = 'GF' and round = 2", [m.tournament_id]);
+    if (reset) nextMatch = { id: reset.id, round: 2 };
+  }
   return { match: m, a: await side(db, m.a_reg), b: await side(db, m.b_reg), results, disputes, nextMatch };
 }
 
@@ -252,9 +282,9 @@ export async function unreadCount(db: Queryable, userId: string) {
 
 export async function playerProfile(db: Queryable, username: string, viewer: SessionUser | null) {
   const [u] = await db.query<{
-    id: string; username: string; display_name: string; country: string; bio: string; profile_public: boolean; created_at: Date; status: string;
-  }>("select id, username, display_name, country, bio, profile_public, created_at, status from users where username = $1", [username.toLowerCase()]);
-  if (!u || u.status === "deleted") return null;
+    id: string; username: string; display_name: string; country: string; bio: string; profile_public: boolean; created_at: Date; status: string; avatar_color: string;
+  }>("select id, username, display_name, country, bio, profile_public, created_at, status, avatar_color from users where username = $1", [username.toLowerCase()]);
+  if (!u || u.status === "deleted" || u.status === "pending") return null;
   const self = viewer?.id === u.id;
   if (!u.profile_public && !self && !isAdmin(viewer)) return { user: u, hidden: true as const };
   const teams = await db.query<{ slug: string; name: string; game: string }>(
@@ -322,10 +352,10 @@ export async function listTeams(db: Queryable, game?: string) {
 }
 
 export async function teamBySlug(db: Queryable, slug: string) {
-  const [team] = await db.query<{ id: string; slug: string; name: string; tag: string; game: string; owner_id: string; captain_id: string; created_at: Date }>(
-    "select * from teams where slug = $1",
-    [slug],
-  );
+  const [team] = await db.query<{
+    id: string; slug: string; name: string; tag: string; game: string; owner_id: string; captain_id: string; created_at: Date;
+    logo_media_id: string | null; banner_media_id: string | null;
+  }>("select * from teams where slug = $1", [slug]);
   if (!team) return null;
   const members = await db.query<{ id: string; username: string; display_name: string; joined_at: Date }>(
     `select u.id, u.username, u.display_name, m.joined_at from team_members m join users u on u.id = m.user_id
@@ -342,7 +372,15 @@ export async function teamBySlug(db: Queryable, slug: string) {
       where r.team_id = $1 and r.status <> 'withdrawn' order by t.starts_at desc`,
     [team.id],
   );
-  return { team, members, invites, tournaments };
+  const [stats] = await db.query<{ played: number; wins: number; podiums: number }>(
+    `select (select count(*)::int from matches m join registrations r on r.id in (m.a_reg, m.b_reg)
+              where r.team_id = $1 and m.status = 'completed' and m.outcome <> 'bye') as played,
+            (select count(*)::int from matches m join registrations r on r.id = m.winner_reg
+              where r.team_id = $1 and m.status = 'completed' and m.outcome <> 'bye') as wins,
+            (select count(*)::int from registrations r where r.team_id = $1 and r.placement between 1 and 3) as podiums`,
+    [team.id],
+  );
+  return { team, members, invites, tournaments, stats };
 }
 
 export async function orgsFor(db: Queryable, user: SessionUser) {
@@ -422,14 +460,20 @@ export async function trustStats(db: Queryable) {
 }
 
 export async function adminOverview(db: Queryable) {
-  const [counts] = await db.query<{ users: number; teams: number; orgs: number; tournaments: number; live: number; open_disputes: number; new_applications: number }>(
-    `select (select count(*)::int from users where status <> 'deleted') as users,
+  const [counts] = await db.query<Record<string, number>>(
+    `select (select count(*)::int from users where status in ('active','suspended')) as users,
             (select count(*)::int from teams) as teams,
             (select count(*)::int from organizations) as orgs,
             (select count(*)::int from tournaments) as tournaments,
             (select count(*)::int from tournaments where status in ('IN_PROGRESS','PAUSED')) as live,
             (select count(*)::int from disputes where status = 'open') as open_disputes,
-            (select count(*)::int from applications where status = 'new') as new_applications`,
+            (select count(*)::int from applications where status = 'new') as new_applications,
+            (select count(*)::int from score_entries where review = 'pending') as pending_scores,
+            (select count(*)::int from challenges where status = 'disputed') as disputed_challenges,
+            (select count(*)::int from membership_applications where status in ('submitted','under_review','awaiting_info')) as membership_queue,
+            (select count(*)::int from invoices where status = 'open') as open_invoices,
+            (select count(*)::int from memberships where status = 'active') as active_memberships,
+            (select count(*)::int from email_outbox where status in ('pending','failed','sending')) as mail_queue`,
   );
   return counts;
 }
@@ -470,8 +514,8 @@ export async function adminAudit(db: Queryable, limit = 150) {
 }
 
 export async function adminTournaments(db: Queryable) {
-  return db.query<{ slug: string; name: string; game: string; status: string; org_name: string; org_slug: string; starts_at: Date }>(
-    `select t.slug, t.name, t.game, t.status, o.name as org_name, o.slug as org_slug, t.starts_at
+  return db.query<{ id: string; slug: string; name: string; game: string; status: string; format: string; prize_coins: number; org_name: string; org_slug: string; starts_at: Date }>(
+    `select t.id, t.slug, t.name, t.game, t.status, t.format, t.prize_coins, o.name as org_name, o.slug as org_slug, t.starts_at
        from tournaments t join organizations o on o.id = t.org_id order by t.created_at desc limit 200`,
   );
 }
