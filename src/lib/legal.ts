@@ -6,8 +6,8 @@ type Doc = { title: string; sections: Array<[string, string[]]> };
  * Versions of the published documents. A new version is a new id; acceptances are recorded against the
  * id (table `consents`). The previous version (2026-09-27) is preserved in the repository history.
  */
-export const LEGAL_VERSIONS = { terms: "2026-09-28", privacy: "2026-09-28" } as const;
-export const LEGAL_DATES: Record<Locale, string> = { ru: "Редакция от 28 сентября 2026", en: "Version of 28 September 2026" };
+export const LEGAL_VERSIONS = { terms: "2026-09-27.2", privacy: "2026-09-27.2" } as const;
+export const LEGAL_DATES: Record<Locale, string> = { ru: "Редакция 2 от 27 сентября 2026", en: "Version 2 of 27 September 2026" };
 
 const terms: Record<Locale, Doc> = {
   ru: {
