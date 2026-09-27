@@ -9,3 +9,5 @@ out/
 artifacts/
 *.log
 .vercel
+
+.data/
