@@ -69,7 +69,7 @@ test.after(async () => {
 test("accounts: sign-up, duplicate protection, sign-in, rate limiting and password change", async () => {
   const org = await user("organizer");
   assert.equal(org.username, "organizer");
-  await rejects(signUp(db, { email: "organizer@example.com", username: "other", displayName: "Other", password: "correct horse battery", adult: "on", terms: "on" }), "email_taken");
+  await rejects(signUp(db, { email: "organizer@example.com", username: "other", displayName: "Other", password: "correct horse battery", adult: "on", terms: "on" }), "signup_unavailable");
   await rejects(signUp(db, { email: "x@example.com", username: "organizer", displayName: "Xx", password: "correct horse battery", adult: "on", terms: "on" }), "username_taken");
   await rejects(signUp(db, { email: "y@example.com", username: "young", displayName: "Young", password: "correct horse battery", adult: "", terms: "on" }), "adult_required");
   await rejects(signUp(db, { email: "z@example.com", username: "shorty", displayName: "Shorty", password: "short", adult: "on", terms: "on" }), "weak_password");

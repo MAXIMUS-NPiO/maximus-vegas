@@ -59,3 +59,141 @@ test("concurrent registrations, confirmations and audit writes stay consistent",
   assert.equal(chain.valid, true, "audit chain intact after concurrent writes");
   await db.close();
 });
+
+// ---- Release 2: payments, coins, quick match and double elimination under real concurrency ----
+import { createHmac } from "node:crypto";
+import {
+  applyForMembership,
+  approveOffer,
+  createOfferVersion,
+  decideApplication,
+  handleProviderWebhook,
+  issueInvoice,
+  setPaymentProviderForTests,
+  startCheckout,
+} from "../src/server/billing.ts";
+import { claimObjective, moveCoins, balance } from "../src/server/progression.ts";
+import { joinQuickMatch } from "../src/server/challenges.ts";
+import { officialResult } from "../src/server/matches.ts";
+import { WebhookSignatureError, type PaymentProvider, type SessionState } from "../src/server/payments/provider.ts";
+
+test("payments, coins, quick match and bracket decisions stay consistent under parallel requests", { skip: !url }, async () => {
+  const db: Database = await openDatabase({ url });
+  const run = Date.now().toString(36);
+  const mk = async (name: string, verified = true): Promise<SessionUser> => {
+    const s = await signUp(db, { email: `${name}${run}@example.com`, username: `${name}${run}`.slice(0, 24), displayName: name, password: "correct horse battery", adult: "on", terms: "on" });
+    if (verified) await db.query("update users set email_verified_at = now() where id = (select user_id from sessions where id = encode(sha256($1::bytea), 'hex'))", [s.token]);
+    return (await sessionUser(db, s.token))!;
+  };
+  // Mock provider (no network): records sessions, verifies an HMAC signature.
+  const secret = "mock_secret";
+  const sessions = new Map<string, SessionState>();
+  let created = 0;
+  const provider: PaymentProvider = {
+    name: "mock",
+    mode: "test",
+    checkoutHosts: ["checkout.mock.test"],
+    async createCheckout(req) {
+      const id = `cs_${run}_${req.idempotencyKey}`;
+      if (!sessions.has(id)) {
+        created++;
+        sessions.set(id, { id, url: `https://checkout.mock.test/${id}`, status: "open", paymentStatus: "unpaid", amountTotal: req.amountMinor, currency: req.currency, paymentIntentId: null, clientReferenceId: req.invoiceId, metadata: req.metadata, livemode: false });
+      }
+      return { id, url: `https://checkout.mock.test/${id}`, expiresAt: req.expiresAt };
+    },
+    async retrieveSession(id) {
+      return sessions.get(id)!;
+    },
+    async retrievePaymentIntent(id) {
+      return { id, metadata: {}, amount: 0, currency: "AED", status: "succeeded", livemode: false };
+    },
+    verifyWebhook(raw, sig) {
+      if (sig !== createHmac("sha256", secret).update(raw).digest("hex")) throw new WebhookSignatureError();
+      const e = JSON.parse(raw);
+      return { id: e.id, type: e.type, livemode: false, created: new Date(), object: e.data.object, payloadSha256: "x" };
+    },
+    async refund() {
+      return { id: "re" };
+    },
+  };
+  setPaymentProviderForTests(provider);
+  Object.assign(process.env, { PAYMENTS_ENABLED: "1", PAYMENTS_MODE: "test", MERCHANT_VERIFIED: "1", MERCHANT_LEGAL_NAME: "MAXIMUS VEGAS L.L.C-FZ" });
+  try {
+    let admin = await mk("cadm");
+    await db.query("insert into user_roles (user_id, role) values ($1, 'admin')", [admin.id]);
+    admin = { ...admin, roles: ["admin"], mfaAt: new Date() };
+    const code = `conc-${run}`;
+    const offerId = await createOfferVersion(db, admin, {
+      code, kind: "membership", titleRu: "Ч", titleEn: "M", benefitsRu: "", benefitsEn: "", exclusionsRu: "", exclusionsEn: "",
+      price: "50", currency: "AED", taxTreatment: "test", durationDays: "30", admission: "review", termsRu: "т", termsEn: "t", refundRu: "в", refundEn: "r",
+    });
+    await approveOffer(db, admin, offerId, "concurrency test approval");
+    const buyer = await mk("cbuy");
+    const app = await applyForMembership(db, buyer, { offer: code }, "en");
+    await decideApplication(db, admin, app.id, "approved", "ok for test", "en");
+    const inv = await issueInvoice(db, admin, app.id, "en");
+    // Ten parallel checkout starts: exactly one active attempt and one provider session.
+    const starts = await Promise.allSettled(Array.from({ length: 10 }, () => startCheckout(db, buyer, inv.id, "on", "en")));
+    const urls = new Set(starts.filter((r) => r.status === "fulfilled").map((r) => (r as PromiseFulfilledResult<string>).value));
+    assert.equal(urls.size, 1, "one hosted session");
+    assert.equal(created, 1);
+    const [att] = await db.query<{ id: string; provider_session_id: string }>("select id, provider_session_id from payment_attempts where invoice_id = $1 and status = 'open'", [inv.id]);
+    const s = sessions.get(att.provider_session_id)!;
+    sessions.set(s.id, { ...s, status: "complete", paymentStatus: "paid", paymentIntentId: `pi_${run}` });
+    // The same event delivered ten times in parallel: one ledger entry, one activation.
+    const raw = JSON.stringify({ id: `evt_${run}`, type: "checkout.session.completed", livemode: false, data: { object: { id: s.id } } });
+    const sig = createHmac("sha256", secret).update(raw).digest("hex");
+    const deliveries = await Promise.all(Array.from({ length: 10 }, () => handleProviderWebhook(db, raw, sig)));
+    assert.ok(deliveries.every((d) => d.status === 200 || d.status === 500));
+    // Retries of anything that raced are idempotent too.
+    await handleProviderWebhook(db, raw, sig);
+    const [ledger] = await db.query<{ n: number }>("select count(*)::int as n from ledger_entries where invoice_id = $1", [inv.id]);
+    assert.equal(ledger.n, 1);
+    const [m] = await db.query<{ n: number }>("select count(*)::int as n from memberships where invoice_id = $1 and status = 'active'", [inv.id]);
+    assert.equal(m.n, 1);
+
+    // Coins: 12 parallel spends of 10 from a balance of 100 — exactly 10 succeed.
+    const spender = await mk("cspend");
+    await moveCoins(db, spender.id, 100, "test", "", `seed:${run}`);
+    const spends = await Promise.allSettled(Array.from({ length: 12 }, (_, i) => moveCoins(db, spender.id, -10, "test", "", `spend:${run}:${i}`)));
+    assert.equal(spends.filter((r) => r.status === "fulfilled").length, 10);
+    assert.equal(await balance(db, spender.id), 0);
+    // Objective claimed in parallel: paid once.
+    await db.query("insert into linked_game_accounts (user_id, game, handle) values ($1, 'cs2', 'h')", [spender.id]);
+    await Promise.allSettled(Array.from({ length: 6 }, () => claimObjective(db, spender, "link_game")));
+    assert.equal(await balance(db, spender.id), 50);
+
+    // Quick match: two players join at the same moment and are paired with each other.
+    const qa = await mk("cqa");
+    const qb = await mk("cqb");
+    const game = "rocket-league";
+    await db.query("delete from quick_queue where game = $1", [game]);
+    const joined = await Promise.all([joinQuickMatch(db, qa, game), joinQuickMatch(db, qb, game)]);
+    assert.equal(joined.filter((j) => j.matched).length, 1, "exactly one join creates the pairing");
+
+    // Double elimination: ten parallel referee decisions on one match advance the winner once.
+    const org = await mk("cdeorg");
+    const space = await createOrg(db, org, { name: `DE ${run}`, description: "" });
+    const t = await createTournament(db, org, space.id, {
+      name: `DE Cup ${run}`, game: "cs2", format: "double_elimination", participantType: "solo", teamSize: 1, maxParticipants: 8,
+      checkInRequired: "", region: "", startsAt: "2030-01-01T12:00", timeZone: "UTC", description: "", rules: "",
+    });
+    await transition(db, org, t.id, "PUBLISHED");
+    await transition(db, org, t.id, "REGISTRATION_OPEN");
+    for (let i = 0; i < 4; i++) await register(db, await mk(`cde${i}`), t.id);
+    await transition(db, org, t.id, "REGISTRATION_CLOSED");
+    await transition(db, org, t.id, "IN_PROGRESS");
+    const [first] = await db.query<{ id: string }>("select id from matches where tournament_id = $1 and status = 'ready' order by position limit 1", [t.id]);
+    const decisions = await Promise.allSettled(Array.from({ length: 10 }, () => officialResult(db, org, first.id, { scoreA: 2, scoreB: 0, evidenceUrl: "", note: "" })));
+    assert.equal(decisions.filter((r) => r.status === "fulfilled").length, 1);
+    const placed = await db.query<{ n: number }>(
+      "select count(*)::int as n from matches where tournament_id = $1 and (a_reg is not null or b_reg is not null) and bracket = 'L'",
+      [t.id],
+    );
+    assert.equal(placed[0].n, 1, "the loser dropped into the losers bracket exactly once");
+    assert.equal((await verifyAuditChain(db)).valid, true);
+  } finally {
+    setPaymentProviderForTests(null);
+    await db.close();
+  }
+});
