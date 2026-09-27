@@ -1,14 +1,15 @@
 # MAXIMUS VEGAS — игровой портал
 
-Портал www.maximus.vegas: аккаунты, игровой паспорт, команды, пространства организаторов, турниры на выбывание, игровой день, проверка результатов, споры, итоги, рейтинги, центр управления и журнал решений с hash-цепочкой. Интерфейс RU / EN.
+Портал www.maximus.vegas: аккаунты и игровой паспорт, команды, пространства организаторов, турниры трёх форматов (олимпийская система, double elimination с перезапуском финала, leaderboard), игровой день, проверка результатов и споры, рейтинги, прогрессия без денежной стоимости (XP, ранги, цели, сезонный пропуск, косметика), вызовы 1v1 и быстрый матч без ставок, необязательное членство со счетами и hosted-оплатой, центр управления со вторым фактором и журналом решений с hash-цепочкой. Интерфейс RU / EN.
 
-Оператор портала — MAXIMUS VEGAS L.L.C-FZ, Meydan Free Zone, Dubai, UAE. Портал не содержит ставок, азартных игр, игр на деньги и призовых фондов из взносов игроков.
+Оператор портала — MAXIMUS VEGAS L.L.C-FZ, Meydan Free Zone, Dubai, UAE. На портале нет ставок, азартных игр, игр на деньги, платного входа в турниры, покупки монет и призовых фондов из взносов игроков.
 
 ## Стек
 
-- Next.js 16 (App Router, Turbopack), React 19, TypeScript
+- Next.js 16 (App Router), React 19, TypeScript
 - PostgreSQL (production) через `pg`; встроенный PostgreSQL (PGlite) для локального запуска и тестов
 - Формы работают без JavaScript: `POST /api/a/<action>` → `303` обратно на страницу
+- Stripe SDK (hosted Checkout, проверка подписи webhook), Resend или SMTP (Nodemailer) для писем, `uqr` для QR-кода TOTP
 - Без внешних UI-библиотек; шрифт Manrope из `@fontsource-variable/manrope`
 
 ## Запуск
@@ -19,35 +20,50 @@
 npm ci
 npm run dev                  # http://127.0.0.1:3000/ru — встроенная база в .data/pglite
 npm run check                # TypeScript + тесты + production-сборка
+PG_TEST_URL=postgres://… npm test   # плюс тесты параллельности на настоящем PostgreSQL
 npm run build && MV_LOCAL=1 npm start
-BASE=http://127.0.0.1:3000 npm run e2e   # сквозной HTTP-сценарий на запущенном портале
+BASE=http://127.0.0.1:3000 npm run e2e   # сквозной HTTP-сценарий — только локально или на изолированном preview
 ```
 
 Без `DATABASE_URL` локально используется встроенная база. На Vercel без `DATABASE_URL` портал работает, а страницы с данными честно показывают, что сервис данных не подключён; `/api/health` возвращает `503`.
 
 ## Переменные окружения
 
+Полный список с пояснениями — `.env.example`. Кратко:
+
 | Переменная | Назначение |
 | --- | --- |
-| `DATABASE_URL` (или `POSTGRES_URL`) | Подключение к PostgreSQL. Схема создаётся и обновляется автоматически при первом запросе |
-| `NEXT_PUBLIC_SITE_URL` | Канонический адрес, например `https://www.maximus.vegas` |
+| `DATABASE_URL` (или `POSTGRES_URL`) | PostgreSQL. Схема создаётся и обновляется автоматически. Для Preview — отдельная база |
+| `NEXT_PUBLIC_SITE_URL` | Канонический адрес `https://www.maximus.vegas`; нужен для ссылок в письмах и возврата после оплаты |
 | `NEXT_PUBLIC_CONTACT_EMAIL` | Публичный email (по умолчанию `info@maximus.ltd`) |
-| `ADMIN_BOOTSTRAP_TOKEN` | Необязательно: секрет ≥ 24 символов для выдачи прав администратора на `/ru/admin/claim` |
+| `MAIL_FROM` + `RESEND_API_KEY` или `SMTP_URL` | Доставка служебных писем; без них письма ждут в очереди |
+| `SIGNUP_EMAIL_CONFIRMATION` | `required` — регистрация «сначала email» (при подключённой доставке) |
+| `MFA_SECRET_KEY` | Шифрование секретов второго фактора сотрудников (AES-256-GCM) |
+| `CRON_SECRET` | Защита планового обслуживания (`vercel.json`, ежедневно 03:17 UTC) |
+| `PAYMENTS_ENABLED`, `PAYMENTS_MODE`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `MERCHANT_VERIFIED`, `MERCHANT_LEGAL_NAME`, `PAYMENTS_LIVE_CONFIRMED`, `PAYMENTS_ALLOW_REFUNDS` | Приём оплат; включается, только когда выполнены все условия и есть утверждённое полное предложение |
+| `ADMIN_BOOTSTRAP_TOKEN` | Необязательно: секрет ≥ 24 символов для выдачи прав администратора; удалить после назначения |
 | `LEAD_WEBHOOK_URL`, `LEAD_WEBHOOK_TOKEN` | Необязательно: копия заявок во внешнюю CRM (заявки всегда сохраняются в базе) |
 | `DATABASE_POOL_MAX` | Необязательно: размер пула соединений (по умолчанию 5) |
 
-## Первый администратор
+## Первый администратор и второй фактор
 
-Войдите в свой аккаунт и откройте `/ru/admin/claim`. Код владельца передан лично; в репозитории хранится только его SHA-256. Код работает, пока на платформе нет ни одного администратора. Дальнейшие роли выдаются в `/ru/admin?tab=users`.
+Войдите в свой аккаунт и откройте `/ru/admin/claim`. Код владельца передан лично; в репозитории хранится только его SHA-256. Код работает, пока на платформе нет ни одного администратора. Затем подключите приложение-аутентификатор на `/ru/admin/security` и сохраните резервные коды: без второго фактора центр управления не открывается.
+
+## Оплата
+
+Платёжный контур реализован, но приём оплат выключен, пока нет утверждённых коммерческих условий членства и подтверждённого мерчанта MAXIMUS VEGAS L.L.C-FZ. Порядок включения — `docs/RUNBOOK.md`, раздел 3.
 
 ## GitHub → Vercel
 
-Репозиторий: https://github.com/MAXIMUS-NPiO/maximus-vegas. Проект Vercel `maximus-vegas-landing`; production собирается из `main`, остальные ветки — preview. GitHub Actions выполняет `npm run check` на каждый push и pull request.
+Репозиторий: https://github.com/MAXIMUS-NPiO/maximus-vegas. Проект Vercel `maximus-vegas-landing`; production собирается из `main`, остальные ветки — preview. GitHub Actions выполняет `npm run check` на push в `main` и на pull request.
 
 ## Документация
 
-- `docs/ARCHITECTURE.md` — модули, данные, действия API, безопасность
-- `docs/RUNBOOK.md` — развёртывание, миграции, проверка, откат
+- `docs/ARCHITECTURE.md` — контуры, данные, движок, прогрессия, аккаунты, MFA, оплаты, API, безопасность, тесты
+- `docs/RUNBOOK.md` — развёртывание, переменные, включение оплаты, проверка, откат, инциденты
 - `docs/MODULES.md` — реестр модулей со статусами
-- `docs/RISK_LOG.md` — риски, пробелы и открытые вопросы
+- `docs/HANDOFF_COVERAGE.md` — покрытие технического handoff и исключения
+- `docs/IMPLEMENTATION_CHECKLIST.md` — разделение юрлиц, взносы, условия, данные
+- `docs/RISK_LOG.md` — пробелы (NOT PROVIDED), риски с владельцем и статусом, решения
 - `docs/IP_RECORD.md` — запись компонентов для внутреннего учёта IP (MIPA)
+- `docs/RELEASE_2.md` — отчёт о выпуске release 2
