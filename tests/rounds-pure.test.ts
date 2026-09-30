@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { roundRobinSchedule } from "../src/server/roundrobin.ts";
 import { defaultSwissRounds, effectiveSwissRounds, pairKey, pairSwissRound, type SwissEntrant } from "../src/server/swiss.ts";
-import { computeStandings, standingsOrder, validPoints, type StandingsMatch, type StandingsRow } from "../src/server/standings.ts";
+import { annulledEntrants, computeStandings, standingsOrder, validPoints, type StandingsMatch, type StandingsRow } from "../src/server/standings.ts";
 
 const P = { win: 3, draw: 1, loss: 0, bye: 3 };
 
@@ -171,10 +171,42 @@ test("standings (round robin): head-to-head decides a tie on points before Sonne
   assert.equal(dq.find((r) => r.id === "D")!.sonnebornBerger, 6, "D's win over the disqualified A still counts");
 });
 
+test("disqualification rules in round robin: annul, forfeit and the 50% rule, decided from the matches alone", () => {
+  const res = (a: string, b: string, w: string | null, status = "completed", outcome = "played"): StandingsMatch => ({
+    a, b, winner: w, scoreA: w === null ? null : w === a ? 2 : 1, scoreB: w === null ? null : w === a ? 1 : 2, outcome, status,
+  });
+  const ids = ["A", "B", "C", "D"];
+  const entrants = ids.map((id, i) => ({ id, seed: i + 1, disqualified: id === "A" }));
+  // A beat B, then was disqualified: the two other matches of A were cancelled (annul) or forfeited (forfeit).
+  const others = [res("B", "C", "B"), res("C", "D", "C"), res("B", "D", "B")];
+  const annulledRun = [res("A", "B", "A"), res("A", "C", null, "cancelled", "disqualification"), res("A", "D", null, "cancelled", "disqualification"), ...others];
+  const forfeitRun = [res("A", "B", "A"), res("A", "C", "C", "completed", "disqualification"), res("A", "D", "D", "completed", "disqualification"), ...others];
+  const pts = (rows: ReturnType<typeof computeStandings>) => Object.fromEntries(rows.map((r) => [r.id, r.points]));
+  // annul: every match of A disappears from the table, including B's loss to A.
+  const annul = computeStandings("round_robin", entrants, annulledRun, P, { disqualification: "annul" });
+  assert.deepEqual(pts(annul), { A: 0, B: 6, C: 3, D: 0 });
+  assert.equal(annul.find((r) => r.id === "A")!.annulled, true);
+  assert.equal(annul.find((r) => r.id === "B")!.played, 2);
+  // forfeit: B's loss stands and C and D are credited with wins over A.
+  const forfeit = computeStandings("round_robin", entrants, forfeitRun, P, { disqualification: "forfeit" });
+  assert.deepEqual(pts(forfeit), { A: 3, B: 6, C: 6, D: 3 });
+  assert.equal(forfeit.find((r) => r.id === "A")!.annulled, false);
+  assert.equal(forfeit.find((r) => r.id === "A")!.rank, null, "disqualified entrants never get a place");
+  // half: A played 1 of 3 (less than half) → annulled; with 2 of 3 played → forfeits stand.
+  assert.deepEqual(pts(computeStandings("round_robin", entrants, annulledRun, P, { disqualification: "half" })), { A: 0, B: 6, C: 3, D: 0 });
+  const twoPlayed = [res("A", "B", "A"), res("A", "C", "C"), res("A", "D", "D", "completed", "disqualification"), ...others];
+  const half = computeStandings("round_robin", entrants, twoPlayed, P, { disqualification: "half" });
+  assert.deepEqual(pts(half), { A: 3, B: 6, C: 6, D: 3 });
+  assert.equal(annulledEntrants(entrants, twoPlayed, "half").size, 0);
+  assert.deepEqual([...annulledEntrants(entrants, annulledRun, "half")], ["A"]);
+  // Swiss never annuls: played results stand for opponents' tie-breaks.
+  assert.equal(computeStandings("swiss", entrants, forfeitRun, P, { disqualification: "annul" }).find((r) => r.id === "A")!.annulled, false);
+});
+
 test("standings order: each tie-breaker applies only when every earlier one is equal", () => {
   const row = (id: string, o: Partial<StandingsRow>): StandingsRow => ({
     id, seed: Number(id), disqualified: false, played: 3, wins: 0, draws: 0, losses: 0, byes: 0, points: 6, scoreFor: 0, scoreAgainst: 0,
-    diff: 0, buchholz: 10, medianBuchholz: 4, sonnebornBerger: 5, headToHead: 0, rank: null, ...o,
+    diff: 0, buchholz: 10, medianBuchholz: 4, sonnebornBerger: 5, headToHead: 0, rank: null, annulled: false, ...o,
   });
   const swiss = standingsOrder("swiss");
   const sort = (rows: StandingsRow[], f = swiss) => [...rows].sort(f).map((r) => r.id);

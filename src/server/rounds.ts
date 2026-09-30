@@ -16,7 +16,7 @@ import { notify } from "./access.ts";
 import { fail } from "./errors.ts";
 import { roundRobinSchedule, RR_MAX_ENTRANTS } from "./roundrobin.ts";
 import { effectiveSwissRounds, pairKey, pairSwissRound, SWISS_VERSION } from "./swiss.ts";
-import { computeStandings, STANDINGS_VERSION, type StandingsRow } from "./standings.ts";
+import { annulledEntrants, computeStandings, STANDINGS_VERSION, type StandingsRow } from "./standings.ts";
 import { completeMatch, completeTournament, regMembers, type MatchRow } from "./tournaments.ts";
 import { grantXp, XP } from "./progression.ts";
 import { isRoundFormat, settingsOf, type FormatSettings } from "./format-settings.ts";
@@ -120,11 +120,13 @@ const roundMatches = (q: Queryable, tournamentId: string) =>
 export async function roundStandings(q: Queryable, t: { id: string; format: string; format_settings?: unknown }): Promise<StandingsRow[]> {
   if (!isRoundFormat(t.format)) return [];
   const [entrants, matches] = await Promise.all([entrantsOf(q, t.id), roundMatches(q, t.id)]);
+  const settings = settingsOf(t);
   return computeStandings(
     t.format,
     entrants.map((e, i) => ({ id: e.id, seed: e.seed ?? 1000 + i, disqualified: e.status === "disqualified" })),
     matches.map((m) => ({ a: m.a_reg, b: m.b_reg, winner: m.winner_reg, scoreA: m.score_a, scoreB: m.score_b, outcome: m.outcome, status: m.status })),
-    settingsOf(t).points,
+    settings.points,
+    { disqualification: settings.disqualification },
   );
 }
 
@@ -233,15 +235,35 @@ export async function roundPlacements(q: Queryable, tournamentId: string): Promi
 }
 
 /**
- * A disqualified entrant forfeits every open match: all remaining round-robin matches, or the current
- * Swiss match. Results already played stand; a Swiss entrant is no longer paired.
+ * Open matches of a disqualified entrant. Swiss: the current match is forfeited and the entrant is no longer
+ * paired. Round robin, by the tournament's rule: "forfeit" completes every remaining match for the opponent;
+ * "annul" cancels them and the table ignores all of the entrant's matches; "half" annuls when fewer than half
+ * of the entrant's matches had been played, otherwise forfeits.
  */
 export async function forfeitOpenMatches(q: Queryable, tournamentId: string, regId: string, actorId: string) {
+  const [t] = await q.query<{ id: string; format: string; format_settings: unknown }>("select id, format, format_settings from tournaments where id = $1", [tournamentId]);
   const open = await q.query<MatchRow>(
     `select * from matches where tournament_id = $1 and (a_reg = $2 or b_reg = $2)
        and status in ('pending','ready','in_progress','result_submitted','disputed') order by round, position for update`,
     [tournamentId, regId],
   );
+  if (t?.format === "round_robin") {
+    const all = await roundMatches(q, tournamentId);
+    const annul = annulledEntrants(
+      [{ id: regId, seed: 0, disqualified: true }],
+      all.map((m) => ({ a: m.a_reg, b: m.b_reg, winner: m.winner_reg, scoreA: m.score_a, scoreB: m.score_b, outcome: m.outcome, status: m.status })),
+      settingsOf(t).disqualification ?? "forfeit",
+    ).has(regId);
+    if (annul) {
+      for (const m of open) {
+        await q.query("update match_results set status = 'superseded' where match_id = $1 and status = 'pending'", [m.id]);
+        await q.query("update matches set status = 'cancelled', outcome = 'disqualification', updated_at = now() where id = $1", [m.id]);
+      }
+      await audit(q, { actorId, action: "tournament.results_annulled", entity: "tournament", entityId: tournamentId, data: { registrationId: regId, cancelled: open.length } });
+      await afterRoundMatch(q, tournamentId, actorId);
+      return;
+    }
+  }
   for (const m of open) {
     const [fresh] = await q.query<MatchRow>("select * from matches where id = $1", [m.id]);
     if (!fresh || fresh.status === "completed" || fresh.status === "cancelled") continue;

@@ -246,22 +246,72 @@ test("swiss: requested rounds are honoured up to n−1; a disqualified entrant f
   await assertPlacesFollowTable(t.id);
 });
 
-test("round robin: a disqualification forfeits every remaining match of that entrant", async () => {
-  const { t } = await setup(4, { format: "round_robin" });
-  await transition(db, owner, t.id, "IN_PROGRESS");
-  const round1 = (await matchesOf(t.id)).filter((m) => m.round === 1);
-  for (const m of round1) await officialResult(db, owner, m.id, { scoreA: 2, scoreB: 1, evidenceUrl: "", note: "" });
-  const victim = round1[0].a_reg!;
-  await disqualify(db, owner, t.id, victim, "Cheating report upheld");
-  const theirs = (await matchesOf(t.id)).filter((m) => m.a_reg === victim || m.b_reg === victim);
-  assert.equal(theirs.length, 3);
-  assert.ok(theirs.filter((m) => m.round > 1).every((m) => m.status === "completed" && m.outcome === "disqualification" && m.winner_reg !== victim));
-  await playOut(t.id, () => "a");
-  assert.equal((await tournamentRow(t.id)).status, "COMPLETED");
-  const table = await assertPlacesFollowTable(t.id);
-  const victimRow = table.find((r) => r.id === victim)!;
-  assert.equal(victimRow.rank, null);
-  assert.equal(victimRow.wins, 1, "results already played stand");
+test("round robin: the tournament's disqualification rule — annul by default, forfeit, or the 50% rule", async () => {
+  // Default for new tournaments: annul. The remaining matches are cancelled and every result of the entrant leaves the table.
+  {
+    const { t } = await setup(4, { format: "round_robin" });
+    assert.equal((await tournamentRow(t.id)).format_settings.disqualification, "annul");
+    await transition(db, owner, t.id, "IN_PROGRESS");
+    const round1 = (await matchesOf(t.id)).filter((m) => m.round === 1);
+    for (const m of round1) await officialResult(db, owner, m.id, { scoreA: 2, scoreB: 1, evidenceUrl: "", note: "" });
+    const victim = round1[0].a_reg!;
+    const beaten = round1[0].b_reg!;
+    await disqualify(db, owner, t.id, victim, "Cheating report upheld");
+    const theirs = (await matchesOf(t.id)).filter((m) => m.a_reg === victim || m.b_reg === victim);
+    assert.ok(theirs.filter((m) => m.round > 1).every((m) => m.status === "cancelled" && m.outcome === "disqualification" && m.winner_reg === null));
+    await playOut(t.id, () => "a");
+    assert.equal((await tournamentRow(t.id)).status, "COMPLETED");
+    const table = await assertPlacesFollowTable(t.id);
+    const victimRow = table.find((r) => r.id === victim)!;
+    assert.equal(victimRow.rank, null);
+    assert.equal(victimRow.annulled, true);
+    assert.equal(victimRow.points, 0);
+    assert.equal(table.find((r) => r.id === beaten)!.losses, 0, "the loss to the disqualified entrant no longer counts");
+    assert.equal(table.filter((r) => !r.disqualified).every((r) => r.played === 2), true, "everyone else is compared on the same two games");
+  }
+  // forfeit: results already played stand, the remaining matches go to the opponents.
+  {
+    const { t } = await setup(4, { format: "round_robin", settings: { dqRule: "forfeit" } });
+    await transition(db, owner, t.id, "IN_PROGRESS");
+    const round1 = (await matchesOf(t.id)).filter((m) => m.round === 1);
+    for (const m of round1) await officialResult(db, owner, m.id, { scoreA: 2, scoreB: 1, evidenceUrl: "", note: "" });
+    const victim = round1[0].a_reg!;
+    await disqualify(db, owner, t.id, victim, "Cheating report upheld");
+    const theirs = (await matchesOf(t.id)).filter((m) => m.a_reg === victim || m.b_reg === victim);
+    assert.equal(theirs.length, 3);
+    assert.ok(theirs.filter((m) => m.round > 1).every((m) => m.status === "completed" && m.outcome === "disqualification" && m.winner_reg !== victim));
+    await playOut(t.id, () => "a");
+    const table = await assertPlacesFollowTable(t.id);
+    const victimRow = table.find((r) => r.id === victim)!;
+    assert.equal(victimRow.rank, null);
+    assert.equal(victimRow.wins, 1, "results already played stand");
+    assert.equal(victimRow.annulled, false);
+  }
+  // half: disqualified after 2 of 3 matches → forfeits; after 1 of 5 → annulled.
+  {
+    const { t } = await setup(4, { format: "round_robin", settings: { dqRule: "half" } });
+    await transition(db, owner, t.id, "IN_PROGRESS");
+    for (const r of [1, 2]) for (const m of (await matchesOf(t.id)).filter((x) => x.round === r)) await officialResult(db, owner, m.id, { scoreA: 2, scoreB: 1, evidenceUrl: "", note: "" });
+    const victim = (await matchesOf(t.id)).find((m) => m.round === 3)!.a_reg!;
+    await disqualify(db, owner, t.id, victim, "Left the event");
+    const last = (await matchesOf(t.id)).find((m) => m.round === 3 && (m.a_reg === victim || m.b_reg === victim))!;
+    assert.equal(last.status, "completed");
+    assert.equal(last.outcome, "disqualification");
+    await playOut(t.id, () => "a");
+    assert.equal((await assertPlacesFollowTable(t.id)).find((r) => r.id === victim)!.annulled, false);
+  }
+  {
+    const { t } = await setup(6, { format: "round_robin", settings: { dqRule: "half" } });
+    await transition(db, owner, t.id, "IN_PROGRESS");
+    for (const m of (await matchesOf(t.id)).filter((x) => x.round === 1)) await officialResult(db, owner, m.id, { scoreA: 2, scoreB: 1, evidenceUrl: "", note: "" });
+    const victim = (await matchesOf(t.id)).find((m) => m.round === 1)!.a_reg!;
+    await disqualify(db, owner, t.id, victim, "Left the event");
+    assert.ok((await matchesOf(t.id)).filter((m) => m.round > 1 && (m.a_reg === victim || m.b_reg === victim)).every((m) => m.status === "cancelled"));
+    await playOut(t.id, () => "b");
+    assert.equal((await tournamentRow(t.id)).status, "COMPLETED");
+    assert.equal((await assertPlacesFollowTable(t.id)).find((r) => r.id === victim)!.annulled, true);
+  }
+  await rejects(createTournament(db, owner, orgId, base({ format: "round_robin", settings: { dqRule: "lottery" } })), "invalid_input");
 });
 
 test("corrections and overturned disputes re-rank a completed round robin and pay a new champion without claw-back", async () => {

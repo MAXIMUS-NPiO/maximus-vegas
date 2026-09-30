@@ -252,7 +252,13 @@ export function StandingsTable({
                   <td>{r.rank ?? "—"}</td>
                   <td>
                     {who?.team_slug ? <Link href={`/${lang}/teams/${who.team_slug}`}>{label}</Link> : who?.username ? <Link href={`/${lang}/players/${who.username}`}>{label}</Link> : label}
-                    {r.disqualified ? <span className="small muted"> · {ru ? "дисквалифицирован" : "disqualified"}</span> : null}
+                    {r.disqualified ? (
+                      <span className="small muted">
+                        {" "}
+                        · {ru ? "дисквалифицирован" : "disqualified"}
+                        {r.annulled ? (ru ? ", результаты аннулированы" : ", results annulled") : ""}
+                      </span>
+                    ) : null}
                   </td>
                   <td className="num">{r.played}</td>
                   <td className="num">{r.wins}</td>
@@ -295,7 +301,24 @@ export function RoundRules({ lang, format, settings, started }: { lang: Locale; 
       ru ? "Туров" : "Rounds",
       settings.rounds ? String(settings.rounds) : ru ? "автоматически: ⌈log₂ N⌉, не больше N − 1" : "automatic: ⌈log₂ N⌉, at most N − 1",
     ]);
-  } else items.push([ru ? "Круги" : "Legs", settings.legs === 2 ? (ru ? "два (дома и в гостях)" : "two (home and away)") : ru ? "один" : "one"]);
+  } else {
+    items.push([ru ? "Круги" : "Legs", settings.legs === 2 ? (ru ? "два (дома и в гостях)" : "two (home and away)") : ru ? "один" : "one"]);
+    const dq = settings.disqualification ?? "forfeit";
+    items.push([
+      ru ? "Дисквалификация" : "Disqualification",
+      dq === "annul"
+        ? ru
+          ? "все матчи участника аннулируются"
+          : "all of the entrant's matches are annulled"
+        : dq === "half"
+          ? ru
+            ? "аннулируются, если сыграно меньше половины матчей; иначе оставшиеся — соперникам"
+            : "annulled if under half were played; otherwise the rest go to the opponents"
+          : ru
+            ? "сыгранные результаты остаются, оставшиеся матчи — соперникам"
+            : "played results stand, the remaining matches go to the opponents",
+    ]);
+  }
   const order =
     format === "swiss"
       ? ru

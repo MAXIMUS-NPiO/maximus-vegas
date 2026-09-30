@@ -164,6 +164,13 @@ export function TournamentForm({
               <option value="2">{ru ? "Два — дома и в гостях" : "Two — home and away"}</option>
             </select>
           </Field>
+          <Field label={ru ? "Дисквалификация (круговая)" : "Disqualification (round robin)"} hint={ru ? "Что происходит с результатами участника" : "What happens to the entrant's results"}>
+            <select name="dqRule" defaultValue={rs?.disqualification ?? "annul"}>
+              <option value="annul">{ru ? "Аннулировать все его матчи" : "Annul all of their matches"}</option>
+              <option value="forfeit">{ru ? "Оставшиеся матчи — соперникам" : "Remaining matches to opponents"}</option>
+              <option value="half">{ru ? "Правило 50%: аннулировать, если сыграно меньше половины" : "50% rule: annul if under half was played"}</option>
+            </select>
+          </Field>
           <Field label={ru ? "Туров (швейцарская)" : "Rounds (Swiss)"} hint={ru ? `Пусто — автоматически; не больше ${SWISS_MAX_ROUNDS} и N − 1` : `Empty = automatic; at most ${SWISS_MAX_ROUNDS} and N − 1`}>
             <input name="swissRounds" type="number" min={1} max={SWISS_MAX_ROUNDS} defaultValue={rs?.rounds ?? ""} inputMode="numeric" />
           </Field>

@@ -623,6 +623,7 @@ function tournamentInput(c: Ctx) {
             allowDraws: c.form.allowDraws,
             legs: c.form.legs,
             swissRounds: c.form.swissRounds,
+            dqRule: c.form.dqRule,
           }
         : undefined,
     circuit:

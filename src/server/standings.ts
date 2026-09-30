@@ -16,13 +16,20 @@
  *   A bye scores bye points but adds no opponent. Forfeits (no-show, disqualification) count as results.
  *   Score for / against use reported scores of played matches only.
  *
- * Disqualified entrants keep their results — they still count in their opponents' tie-breaks — but are
- * listed last and get no place.
+ * Disqualified entrants are listed last and get no place. What happens to their results is a rule of the
+ * tournament (round robin only; Swiss always keeps played results):
+ *   annul    every match of the entrant is removed from the table, played or not;
+ *   forfeit  results already played stand, the remaining matches are forfeited to the opponents;
+ *   half     annul when the entrant had played fewer than half of their scheduled matches, else forfeit.
+ * The rule is part of the frozen settings, and the decision is recomputed from the matches alone.
  */
 export const STANDINGS_VERSION = "MV-STANDINGS-1";
 
 export type PointsTable = { win: number; draw: number; loss: number; bye: number };
 export const DEFAULT_POINTS: PointsTable = { win: 3, draw: 1, loss: 0, bye: 3 };
+
+export const DQ_RULES = ["annul", "forfeit", "half"] as const;
+export type DisqualificationRule = (typeof DQ_RULES)[number];
 
 export type StandingsEntrant = { id: string; seed: number; disqualified?: boolean };
 export type StandingsMatch = {
@@ -53,16 +60,40 @@ export type StandingsRow = {
   sonnebornBerger: number;
   headToHead: number;
   rank: number | null;
+  /** Disqualified with every result removed from the table (round-robin rule "annul", or "half" below 50%). */
+  annulled: boolean;
 };
 
 type Result = { opponent: string; result: "w" | "d" | "l" };
+
+/**
+ * Disqualified round-robin entrants whose results are removed under the tournament's rule. "Played" means
+ * decided before the disqualification: completed with any outcome other than a disqualification forfeit.
+ */
+export function annulledEntrants(entrants: StandingsEntrant[], matches: StandingsMatch[], rule: DisqualificationRule): Set<string> {
+  const out = new Set<string>();
+  if (rule === "forfeit") return out;
+  for (const e of entrants) {
+    if (!e.disqualified) continue;
+    if (rule === "annul") {
+      out.add(e.id);
+      continue;
+    }
+    const mine = matches.filter((m) => m.a === e.id || m.b === e.id);
+    const played = mine.filter((m) => m.status === "completed" && m.outcome !== "disqualification" && m.outcome !== "bye").length;
+    if (played * 2 < mine.length) out.add(e.id);
+  }
+  return out;
+}
 
 export function computeStandings(
   format: "round_robin" | "swiss",
   entrants: StandingsEntrant[],
   matches: StandingsMatch[],
   points: PointsTable,
+  rules: { disqualification?: DisqualificationRule } = {},
 ): StandingsRow[] {
+  const annulled = format === "round_robin" ? annulledEntrants(entrants, matches, rules.disqualification ?? "forfeit") : new Set<string>();
   const rows = new Map<string, StandingsRow>();
   const results = new Map<string, Result[]>();
   for (const e of entrants) {
@@ -84,11 +115,13 @@ export function computeStandings(
       sonnebornBerger: 0,
       headToHead: 0,
       rank: null,
+      annulled: annulled.has(e.id),
     });
     results.set(e.id, []);
   }
   for (const m of matches) {
     if (m.status !== "completed") continue;
+    if ((m.a && annulled.has(m.a)) || (m.b && annulled.has(m.b))) continue;
     if (m.outcome === "bye") {
       const solo = m.a ?? m.b;
       const row = solo ? rows.get(solo) : undefined;

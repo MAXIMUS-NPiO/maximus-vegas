@@ -4,7 +4,7 @@
  */
 import { fail } from "./errors.ts";
 import { SWISS_MAX_ROUNDS, SWISS_VERSION } from "./swiss.ts";
-import { DEFAULT_POINTS, STANDINGS_VERSION, validPoints, type PointsTable } from "./standings.ts";
+import { DEFAULT_POINTS, DQ_RULES, STANDINGS_VERSION, validPoints, type DisqualificationRule, type PointsTable } from "./standings.ts";
 import { RR_MAX_ENTRANTS } from "./roundrobin.ts";
 import * as v from "./validate.ts";
 
@@ -19,6 +19,8 @@ export type FormatSettings = {
   allowDraws: boolean;
   /** Round robin: one leg, or two (home and away). */
   legs?: 1 | 2;
+  /** Round robin: what a disqualification does to the entrant's results (see standings.ts). */
+  disqualification?: DisqualificationRule;
   /** Swiss: requested rounds (null = automatic); replaced by the number actually played at the start. */
   rounds?: number | null;
   /** Swiss, after the start: the organiser's original request, kept so a regeneration or a clone can recompute. */
@@ -35,6 +37,7 @@ export type FormatSettingsInput = {
   allowDraws?: unknown;
   legs?: unknown;
   swissRounds?: unknown;
+  dqRule?: unknown;
 };
 
 const int = (value: unknown, fallback: number) => {
@@ -55,8 +58,12 @@ export function parseFormatSettings(format: string, input: FormatSettingsInput):
   };
   if (!validPoints(points)) fail("invalid_points");
   const settings: FormatSettings = { v: 1, points, allowDraws: v.bool(input.allowDraws), standings: STANDINGS_VERSION };
-  if (format === "round_robin") settings.legs = String(input.legs ?? "1") === "2" ? 2 : 1;
-  else {
+  if (format === "round_robin") {
+    settings.legs = String(input.legs ?? "1") === "2" ? 2 : 1;
+    const rule = String(input.dqRule ?? "").trim();
+    // New tournaments annul a disqualified entrant's results unless the organiser chooses otherwise.
+    settings.disqualification = rule === "" ? "annul" : (DQ_RULES as readonly string[]).includes(rule) ? (rule as DisqualificationRule) : fail("invalid_input");
+  } else {
     const text = String(input.swissRounds ?? "").trim();
     settings.rounds = text === "" ? null : v.intIn(text, 1, SWISS_MAX_ROUNDS);
     settings.pairing = SWISS_VERSION;
@@ -79,7 +86,11 @@ export function settingsOf(t: { format: string; format_settings?: unknown }): Fo
     out.rounds = raw.rounds ?? null;
     if (raw.requestedRounds !== undefined) out.requestedRounds = raw.requestedRounds;
     out.pairing = raw.pairing ?? SWISS_VERSION;
-  } else out.legs = raw.legs === 2 ? 2 : 1;
+  } else {
+    out.legs = raw.legs === 2 ? 2 : 1;
+    // Settings stored before the rule existed keep the behaviour they were started with.
+    out.disqualification = raw.disqualification && (DQ_RULES as readonly string[]).includes(raw.disqualification) ? raw.disqualification : "forfeit";
+  }
   return out;
 }
 
