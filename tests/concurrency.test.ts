@@ -197,3 +197,62 @@ test("payments, coins, quick match and bracket decisions stay consistent under p
     await db.close();
   }
 });
+
+// ---- Release 3: round robin and Swiss under real concurrency ----
+test("swiss and round robin: results that finish a round together pair the next round and complete the event exactly once", { skip: !url }, async () => {
+  const db: Database = await openDatabase({ url });
+  const run = Date.now().toString(36);
+  const mk = async (name: string): Promise<SessionUser> => {
+    const s = await signUp(db, { email: `${name}${run}@example.com`, username: `${name}${run}`.slice(0, 24), displayName: name, password: "correct horse battery", adult: "on", terms: "on" });
+    return (await sessionUser(db, s.token))!;
+  };
+  try {
+    const org = await mk("swo");
+    const space = await createOrg(db, org, { name: `Swiss ${run}`, description: "" });
+    const start = async (format: "swiss" | "round_robin", n: number) => {
+      const t = await createTournament(db, org, space.id, {
+        name: `${format} ${run}`, game: "cs2", format, participantType: "solo", teamSize: 1, maxParticipants: 16,
+        checkInRequired: "", region: "", startsAt: "2030-01-01T12:00", timeZone: "UTC", description: "", rules: "",
+      });
+      await transition(db, org, t.id, "PUBLISHED");
+      await transition(db, org, t.id, "REGISTRATION_OPEN");
+      for (let i = 0; i < n; i++) await register(db, await mk(`${format.slice(0, 2)}${i}`), t.id);
+      await transition(db, org, t.id, "REGISTRATION_CLOSED");
+      await transition(db, org, t.id, "IN_PROGRESS");
+      return t;
+    };
+    const t = await start("swiss", 8);
+    for (let round = 1; round <= 3; round++) {
+      const games = await db.query<{ id: string }>("select id from matches where tournament_id = $1 and round = $2 and status = 'ready'", [t.id, round]);
+      assert.equal(games.length, 4, `round ${round} has four games`);
+      // Every game of the round decided at the same moment, each by ten racing requests. The requests are
+      // interleaved across games so that the pool's connections work on different games at once.
+      const all = await Promise.allSettled(
+        Array.from({ length: 10 }, () => games.map((g) => officialResult(db, org, g.id, { scoreA: 2, scoreB: 1, evidenceUrl: "", note: "" }))).flat(),
+      );
+      assert.equal(all.filter((r) => r.status === "fulfilled").length, 4, "one decision per game");
+      const [next] = await db.query<{ n: number }>("select count(*)::int as n from matches where tournament_id = $1 and round = $2", [t.id, round + 1]);
+      assert.equal(next.n, round < 3 ? 4 : 0, `round ${round + 1} paired exactly once`);
+    }
+    const ms = await db.query<{ a_reg: string; b_reg: string }>("select a_reg, b_reg from matches where tournament_id = $1", [t.id]);
+    assert.equal(new Set(ms.map((m) => [m.a_reg, m.b_reg].sort().join("|"))).size, 12, "no rematch");
+    const [done] = await db.query<{ status: string }>("select status from tournaments where id = $1", [t.id]);
+    assert.equal(done.status, "COMPLETED");
+    const [paired] = await db.query<{ n: number }>("select count(*)::int as n from audit_log where entity_id = $1 and action = 'tournament.swiss_round_paired'", [t.id]);
+    assert.equal(paired.n, 3);
+    // Round robin: the last three games decided together complete the event once.
+    const rr = await start("round_robin", 4);
+    const rrGames = await db.query<{ id: string; round: number }>("select id, round from matches where tournament_id = $1 order by round, position", [rr.id]);
+    for (const g of rrGames.slice(0, 3)) await officialResult(db, org, g.id, { scoreA: 1, scoreB: 0, evidenceUrl: "", note: "" });
+    await Promise.allSettled(
+      Array.from({ length: 5 }, () => rrGames.slice(3).map((g) => officialResult(db, org, g.id, { scoreA: 0, scoreB: 1, evidenceUrl: "", note: "" }))).flat(),
+    );
+    const [completed] = await db.query<{ n: number }>("select count(*)::int as n from audit_log where entity_id = $1 and action = 'tournament.completed'", [rr.id]);
+    assert.equal(completed.n, 1, "completed exactly once");
+    const places = await db.query<{ placement: number }>("select placement from registrations where tournament_id = $1 order by placement", [rr.id]);
+    assert.deepEqual(places.map((p) => p.placement), [1, 2, 3, 4]);
+    assert.equal((await verifyAuditChain(db)).valid, true);
+  } finally {
+    await db.close();
+  }
+});

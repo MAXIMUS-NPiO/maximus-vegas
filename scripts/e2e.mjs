@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // End-to-end check over real HTTP against a running build:
-// public pages → sign-up → onboarding → team → single- and double-elimination tournaments → results →
+// public pages → sign-up → onboarding → team → single- and double-elimination, round-robin and Swiss tournaments →
+// a circuit season (points, qualification, close) → results →
 // challenges and quick match → objectives → membership application → staff second factor (with OWNER_CODE).
 // Usage: BASE=http://127.0.0.1:3100 [OWNER_CODE=…] node scripts/e2e.mjs   (creates uniquely named test records)
 // Never point it at production: it creates accounts and records.
@@ -114,7 +115,7 @@ async function playOut(players, maxPasses = 40) {
 
 // ---------- Public surface ----------
 const guest = new Client("guest");
-const pages = ["", "/tournaments", "/games", "/games/cs2", "/rankings", "/players", "/teams", "/membership", "/matchmaking", "/challenges", "/partners", "/organizer",
+const pages = ["", "/tournaments", "/circuits", "/games", "/games/cs2", "/rankings", "/players", "/teams", "/membership", "/matchmaking", "/challenges", "/partners", "/organizer",
   "/innovations", "/trust", "/help", "/contact", "/status", "/terms", "/privacy", "/explore", "/search?q=cup", "/search?q=xp", "/academy", "/cloud-gaming", "/shop",
   "/signin", "/signup", "/signup/check-email", "/forgot-password", "/verify-email", "/activate?token=short", "/reset-password"];
 for (const lang of ["ru", "en"])
@@ -216,6 +217,73 @@ const dePasses = await playOut(players.slice(0, 4), 60);
 const dePage = (await guest.get(`/ru/tournaments/${deSlug}`)).text;
 assert.ok(dePage.includes("Нижняя сетка") && dePage.includes("Завершён"), "double elimination completed with a losers bracket");
 log(`double elimination played through winners, losers and grand final in ${dePasses} passes`);
+
+// ---------- Round robin, Swiss, a circuit, cloning and regeneration ----------
+const circ = await org.post("circuit.create", {
+  org: orgId, name: `E2E Series`, season: `S${RUN}`, game: "cs2", participantType: "solo", pointsTable: "100, 70, 50, 30",
+  participationPoints: "10", qualifyTop: "2", divisions: "1", promote: "0", relegate: "0", description: "e2e",
+});
+assert.equal(circ.ok, "circuit_created", circ.location);
+const cSlug = circ.path.split("/").pop();
+const circuitId = uuidAfter((await org.get(circ.path)).text, "circuit");
+assert.ok(circuitId, "circuit id on its page");
+const roundsBase = { org: orgId, game: "cs2", participantType: "solo", teamSize: "5", maxParticipants: "8", startsAt: tomorrow, tz: "Asia/Dubai", description: "e2e", rules: "bo1", formatSettings: "1" };
+assert.equal((await org.post("tournament.create", { ...roundsBase, name: `E2E Too Big ${RUN}`, format: "round_robin", maxParticipants: "40" })).e, "round_robin_limit");
+const rr = await org.post("tournament.create", {
+  ...roundsBase, name: `E2E Round Robin ${RUN}`, format: "round_robin", pointsWin: "3", pointsDraw: "1", pointsLoss: "0", allowDraws: "on", legs: "1",
+  circuitFields: "1", circuitId, circuitWeight: "200", circuitDivision: "", qualifierCircuitId: "",
+});
+assert.equal(rr.ok, "tournament_created", rr.location);
+const rrSlug = rr.path.split("/").pop();
+const rrId = uuidAfter((await org.get(rr.path)).text, "tournament");
+for (const to of ["PUBLISHED", "REGISTRATION_OPEN"]) assert.equal((await org.post("tournament.transition", { tournament: rrId, to })).ok, "status_changed");
+for (const p of players.slice(0, 4)) assert.equal((await p.post("tournament.register", { tournament: rrId })).ok, "registered");
+const rrPreview = (await guest.get(`/ru/tournaments/${rrSlug}`)).text;
+assert.ok(rrPreview.includes("Предварительное расписание") && rrPreview.includes("Тур 3"), "round-robin schedule preview");
+assert.ok((await org.get(rr.path)).text.includes("Предпросмотр структуры"), "structure preview for the organiser");
+for (const to of ["REGISTRATION_CLOSED", "IN_PROGRESS"]) assert.equal((await org.post("tournament.transition", { tournament: rrId, to })).ok, "status_changed");
+const firstRr = /\/ru\/matches\/([0-9a-f-]{36})/.exec((await org.get(rr.path)).text)?.[1];
+assert.ok(firstRr, "open round-robin match listed for the organiser");
+assert.equal((await org.post("match.official", { match: firstRr, scoreA: "1", scoreB: "1", back: `/ru/matches/${firstRr}` })).ok, "result_confirmed", "a draw is accepted");
+const drawPage = (await guest.get(`/ru/matches/${firstRr}`)).text;
+assert.ok(drawPage.includes("Ничья"), "the draw is shown on the match page");
+const drawUser = /\/ru\/players\/([A-Za-z0-9_]+)/.exec(drawPage)?.[1];
+assert.ok(drawUser, "a side of the drawn match");
+const rrPasses = await playOut(players.slice(0, 4));
+const rrPage = (await guest.get(`/ru/tournaments/${rrSlug}`)).text;
+assert.ok(rrPage.includes("Круговая система") && rrPage.includes("Завершён") && rrPage.includes("ЛВ") && rrPage.includes("MV-STANDINGS-1"), "round robin completed with its table and rules");
+log(`round robin with a draw played out in ${rrPasses} passes; table with head-to-head and versioned rules`);
+
+const sw = await org.post("tournament.create", { ...roundsBase, name: `E2E Swiss ${RUN}`, format: "swiss", pointsWin: "3", pointsLoss: "0", pointsDraw: "1", swissRounds: "", circuitFields: "1", circuitId, circuitWeight: "100" });
+assert.equal(sw.ok, "tournament_created", sw.location);
+const swSlug = sw.path.split("/").pop();
+const swId = uuidAfter((await org.get(sw.path)).text, "tournament");
+for (const to of ["PUBLISHED", "REGISTRATION_OPEN"]) assert.equal((await org.post("tournament.transition", { tournament: swId, to })).ok, "status_changed");
+for (const p of players) assert.equal((await p.post("tournament.register", { tournament: swId })).ok, "registered");
+for (const to of ["REGISTRATION_CLOSED", "IN_PROGRESS"]) assert.equal((await org.post("tournament.transition", { tournament: swId, to })).ok, "status_changed");
+assert.equal((await org.post("tournament.regenerate", { tournament: swId })).ok, "bracket_regenerated", "round 1 can be rebuilt before any result");
+const swPasses = await playOut(players, 60);
+const swPage = (await guest.get(`/ru/tournaments/${swSlug}`)).text;
+assert.ok(swPage.includes("Швейцарская система") && swPage.includes("Завершён") && swPage.includes("МБх") && swPage.includes("MV-SWISS-1"), "Swiss completed with Buchholz columns");
+assert.ok(swPage.includes("Тур 3"), "three rounds for five entrants");
+assert.equal((await org.post("tournament.regenerate", { tournament: swId })).e, "invalid_transition", "no regeneration after completion");
+log(`Swiss for 5 entrants: 3 rounds with byes played in ${swPasses} passes`);
+
+const cPage = (await guest.get(`/ru/circuits/${cSlug}`)).text;
+assert.ok(cPage.includes("Квалификация") && cPage.includes(`E2E Round Robin ${RUN}`), "circuit table with qualification and its events");
+assert.ok((await guest.get("/ru/circuits")).text.includes(`S${RUN}`), "circuit listed publicly");
+const copy = await org.post("tournament.clone", { tournament: rrId, name: `E2E Copy ${RUN}` });
+assert.equal(copy.ok, "tournament_cloned", copy.location);
+const copyId = uuidAfter((await org.get(copy.path)).text, "tournament");
+assert.equal((await org.post("circuit.close", { circuit: circuitId, nextSeason: `S${RUN}b`, createNext: "on" })).e, "circuit_open_events", "a linked draft blocks the close");
+assert.equal((await org.post("tournament.transition", { tournament: copyId, to: "CANCELLED" })).ok, "status_changed");
+const closed = await org.post("circuit.close", { circuit: circuitId, nextSeason: `S${RUN}b`, createNext: "on" });
+assert.equal(closed.ok, "season_closed", closed.location);
+assert.ok(closed.path.startsWith("/ru/organizer/c/"), "lands on the next season");
+assert.ok((await guest.get(`/ru/circuits/${cSlug}`)).text.includes("Сезон закрыт"), "closed season is frozen");
+assert.ok((await guest.get(`/ru/players/${players[0].username}`)).text.includes("Сезоны серий"), "passport shows the closed season");
+assert.ok((await guest.get(`/ru/players/${drawUser}`)).text.includes("Ничья"), "passport shows the draw");
+log("circuit points and qualification, clone blocks the close until cancelled, season closed into the next one, passport history");
 
 const profile = (await guest.get(`/ru/players/${players[0].username}`)).text;
 assert.ok(profile.includes("Игровой паспорт") && profile.includes("Репутация"), "profile shows passport and reputation");
