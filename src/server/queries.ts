@@ -67,7 +67,12 @@ export type TournamentDetail = TournamentCard & {
   completed_at: Date | null;
   waitlisted: number;
   checked_in: number;
-  format: "single_elimination" | "double_elimination" | "leaderboard";
+  format: "single_elimination" | "double_elimination" | "round_robin" | "swiss" | "leaderboard";
+  format_settings: unknown;
+  circuit_id: string | null;
+  circuit_division: number | null;
+  circuit_weight: number;
+  qualifier_circuit_id: string | null;
   scoring: Record<string, number> | null;
   best_of: number | null;
   submission_hours: number | null;
@@ -120,7 +125,7 @@ export async function participants(db: Queryable, tournamentId: string) {
 
 export type BracketMatch = {
   id: string;
-  bracket?: "W" | "L" | "GF";
+  bracket?: "W" | "L" | "GF" | "RR" | "SW";
   a_void?: boolean;
   b_void?: boolean;
   round: number;
@@ -178,6 +183,7 @@ export async function getMatch(db: Queryable, id: string) {
       org_id: string;
       rounds: number;
       t_format: string;
+      t_settings: unknown;
       w_rounds: number;
       l_rounds: number;
       a_checked_in_at: Date | null;
@@ -185,7 +191,7 @@ export async function getMatch(db: Queryable, id: string) {
       loser_next_match_id: string | null;
     }
   >(
-    `select m.*, t.slug as t_slug, t.name as t_name, t.status as t_status, t.game as t_game, t.org_id, t.format as t_format,
+    `select m.*, t.slug as t_slug, t.name as t_name, t.status as t_status, t.game as t_game, t.org_id, t.format as t_format, t.format_settings as t_settings,
             (select max(round) from matches x where x.tournament_id = m.tournament_id and x.bracket = m.bracket)::int as rounds,
             coalesce((select max(round) from matches x where x.tournament_id = m.tournament_id and x.bracket = 'W'), 0)::int as w_rounds,
             coalesce((select max(round) from matches x where x.tournament_id = m.tournament_id and x.bracket = 'L'), 0)::int as l_rounds
@@ -303,11 +309,11 @@ export async function playerProfile(db: Queryable, username: string, viewer: Ses
     [u.id],
   );
   const history = await db.query<{
-    id: string; completed_at: Date; t_slug: string; t_name: string; t_game: string; won: boolean; opponent: string | null;
+    id: string; completed_at: Date; t_slug: string; t_name: string; t_game: string; won: boolean; drawn: boolean; opponent: string | null;
     my_score: number | null; their_score: number | null; outcome: string; source: string | null; versions: number;
   }>(
     `select m.id, m.completed_at, t.slug as t_slug, t.name as t_name, t.game as t_game,
-            (m.winner_reg = re.registration_id) as won,
+            coalesce(m.winner_reg = re.registration_id, false) as won, (m.winner_reg is null) as drawn,
             case when m.a_reg = re.registration_id then coalesce(tb.name, ub.display_name) else coalesce(ta.name, ua.display_name) end as opponent,
             case when m.a_reg = re.registration_id then m.score_a else m.score_b end as my_score,
             case when m.a_reg = re.registration_id then m.score_b else m.score_a end as their_score,
@@ -411,32 +417,45 @@ export async function orgBySlug(db: Queryable, slug: string) {
   return { org, members, tournaments };
 }
 
+/**
+ * Per-game rankings from matches confirmed on the portal. Titles are first places of completed events
+ * (placements), so a double-elimination reset or a round-robin match never counts as a title. A draw is
+ * neither a win nor a loss.
+ */
 export async function rankings(db: Queryable, game: string) {
-  const solo = await db.query<{ name: string; link: string; wins: number; losses: number; titles: number }>(
+  const solo = await db.query<{ name: string; link: string; wins: number; draws: number; losses: number; titles: number }>(
     `with results as (
-       select r.user_id, (m.winner_reg = r.id) as won, (m.next_match_id is null and m.winner_reg = r.id) as title
+       select r.user_id, m.winner_reg is null as drawn, (m.winner_reg = r.id) as won
          from matches m join tournaments t on t.id = m.tournament_id
          join registrations r on r.id in (m.a_reg, m.b_reg)
-        where t.game = $1 and m.status = 'completed' and m.outcome <> 'bye' and r.user_id is not null)
+        where t.game = $1 and m.status = 'completed' and m.outcome <> 'bye' and r.user_id is not null),
+     titles as (
+       select r.user_id, count(*)::int as n from registrations r join tournaments t on t.id = r.tournament_id
+        where t.game = $1 and t.status in ('COMPLETED','ARCHIVED') and r.placement = 1 and r.user_id is not null group by r.user_id)
      select u.display_name as name, u.username as link,
-            count(*) filter (where won)::int as wins, count(*) filter (where not won)::int as losses,
-            count(*) filter (where title)::int as titles
-       from results x join users u on u.id = x.user_id
+            count(*) filter (where won)::int as wins, count(*) filter (where drawn)::int as draws,
+            count(*) filter (where not drawn and not won)::int as losses,
+            coalesce(max(ti.n), 0)::int as titles
+       from results x join users u on u.id = x.user_id left join titles ti on ti.user_id = u.id
       where u.status = 'active' and u.profile_public
-      group by u.id order by titles desc, wins desc, losses asc limit 100`,
+      group by u.id order by titles desc, wins desc, draws desc, losses asc limit 100`,
     [game],
   );
-  const teams = await db.query<{ name: string; link: string; wins: number; losses: number; titles: number }>(
+  const teams = await db.query<{ name: string; link: string; wins: number; draws: number; losses: number; titles: number }>(
     `with results as (
-       select r.team_id, (m.winner_reg = r.id) as won, (m.next_match_id is null and m.winner_reg = r.id) as title
+       select r.team_id, m.winner_reg is null as drawn, (m.winner_reg = r.id) as won
          from matches m join tournaments t on t.id = m.tournament_id
          join registrations r on r.id in (m.a_reg, m.b_reg)
-        where t.game = $1 and m.status = 'completed' and m.outcome <> 'bye' and r.team_id is not null)
+        where t.game = $1 and m.status = 'completed' and m.outcome <> 'bye' and r.team_id is not null),
+     titles as (
+       select r.team_id, count(*)::int as n from registrations r join tournaments t on t.id = r.tournament_id
+        where t.game = $1 and t.status in ('COMPLETED','ARCHIVED') and r.placement = 1 and r.team_id is not null group by r.team_id)
      select tm.name, tm.slug as link,
-            count(*) filter (where won)::int as wins, count(*) filter (where not won)::int as losses,
-            count(*) filter (where title)::int as titles
-       from results x join teams tm on tm.id = x.team_id
-      group by tm.id order by titles desc, wins desc, losses asc limit 100`,
+            count(*) filter (where won)::int as wins, count(*) filter (where drawn)::int as draws,
+            count(*) filter (where not drawn and not won)::int as losses,
+            coalesce(max(ti.n), 0)::int as titles
+       from results x join teams tm on tm.id = x.team_id left join titles ti on ti.team_id = tm.id
+      group by tm.id order by titles desc, wins desc, draws desc, losses asc limit 100`,
     [game],
   );
   return { solo, teams };

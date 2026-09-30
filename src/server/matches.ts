@@ -3,15 +3,25 @@ import type { SessionUser } from "./auth.ts";
 import { audit } from "./audit.ts";
 import { notify } from "./access.ts";
 import { fail } from "./errors.ts";
-import { canRefereeTournament, completeMatch, regLeaders, regMembers, type MatchRow } from "./tournaments.ts";
+import { canRefereeTournament, completeMatch, isRoundBracket, regLeaders, regMembers, type MatchRow } from "./tournaments.ts";
 import { rewriteWinner } from "./decisions.ts";
+import { settingsOf } from "./format-settings.ts";
 import * as v from "./validate.ts";
 
-type Locked = MatchRow & { t_status: string; org_id: string; t_name: string; t_slug: string };
+type Locked = MatchRow & { t_status: string; org_id: string; t_name: string; t_slug: string; t_format: string; t_settings: unknown };
 
+/**
+ * Locks the tournament row, then the match. Every writer takes the tournament first (transitions,
+ * disqualification, regeneration), so the order is the same everywhere and the results of one tournament
+ * are applied one at a time: two results that finish a Swiss round together pair the next round once.
+ */
 export async function lockMatchWithTournament(q: Queryable, matchId: string): Promise<Locked> {
+  if (!/^[0-9a-f-]{36}$/i.test(matchId)) fail("not_found");
+  const [ref] = await q.query<{ tournament_id: string }>("select tournament_id from matches where id = $1", [matchId]);
+  if (!ref) fail("not_found");
+  await q.query("select id from tournaments where id = $1 for update", [ref.tournament_id]);
   const [m] = await q.query<Locked>(
-    `select m.*, t.status as t_status, t.org_id, t.name as t_name, t.slug as t_slug
+    `select m.*, t.status as t_status, t.org_id, t.name as t_name, t.slug as t_slug, t.format as t_format, t.format_settings as t_settings
        from matches m join tournaments t on t.id = m.tournament_id
       where m.id = $1 for update of m`,
     [matchId],
@@ -19,6 +29,9 @@ export async function lockMatchWithTournament(q: Queryable, matchId: string): Pr
   if (!m) fail("not_found");
   return m;
 }
+
+/** Draws are accepted only in round robin and Swiss, and only when the organiser allowed them. */
+export const drawAllowed = (m: Locked) => isRoundBracket(m.bracket) && settingsOf({ format: m.t_format, format_settings: m.t_settings }).allowDraws;
 
 export async function sideOf(q: Queryable, m: { a_reg: string | null; b_reg: string | null }, userId: string): Promise<"a" | "b" | null> {
   if ((await regLeaders(q, m.a_reg)).includes(userId)) return "a";
@@ -32,11 +45,12 @@ function live(m: Locked) {
   if (m.t_status !== "IN_PROGRESS") fail("tournament_not_live");
 }
 
-function scores(input: { scoreA: unknown; scoreB: unknown }, m: MatchRow) {
+function scores(input: { scoreA: unknown; scoreB: unknown }, m: Locked) {
   const scoreA = v.intIn(input.scoreA, 0, 999);
   const scoreB = v.intIn(input.scoreB, 0, 999);
-  if (scoreA === scoreB) fail("draw_not_allowed");
-  return { scoreA, scoreB, winner: scoreA > scoreB ? m.a_reg! : m.b_reg! };
+  if (scoreA === scoreB && !drawAllowed(m)) fail("draw_not_allowed");
+  const winner: string | null = scoreA === scoreB ? null : scoreA > scoreB ? m.a_reg! : m.b_reg!;
+  return { scoreA, scoreB, winner };
 }
 
 export async function nextVersion(q: Queryable, matchId: string) {
@@ -66,7 +80,7 @@ export async function submitResult(db: Database, user: SessionUser, matchId: str
     const { scoreA, scoreB, winner } = scores(input, m);
     const evidence = v.optionalUrl(input.evidenceUrl);
     const note = v.clean(input.note, 1000);
-    const pending = await q.query<{ id: string; side: string; score_a: number; score_b: number; winner_reg: string }>(
+    const pending = await q.query<{ id: string; side: string; score_a: number; score_b: number; winner_reg: string | null }>(
       "select * from match_results where match_id = $1 and status = 'pending' order by version desc",
       [m.id],
     );
@@ -110,7 +124,7 @@ export async function confirmResult(db: Database, user: SessionUser, matchId: st
     if (m.status === "completed") fail("already_completed");
     const side = await sideOf(q, m, user.id);
     if (!side) fail("not_participant");
-    const [pending] = await q.query<{ id: string; side: string; score_a: number; score_b: number; winner_reg: string }>(
+    const [pending] = await q.query<{ id: string; side: string; score_a: number; score_b: number; winner_reg: string | null }>(
       "select * from match_results where match_id = $1 and status = 'pending' order by version desc limit 1",
       [m.id],
     );
@@ -208,7 +222,10 @@ export async function correctResult(db: Database, user: SessionUser, matchId: st
     const { scoreA, scoreB, winner } = scores(input, m);
     const note = v.clean(input.note, 1000);
     if (note.length < 5) fail("invalid_input");
-    await rewriteWinner(q, m.id, winner, { scoreA, scoreB, outcome: "played" }, user.id);
+    if (isRoundBracket(m.bracket)) {
+      const { rewriteRoundResult } = await import("./rounds.ts");
+      await rewriteRoundResult(q, m, { winner, scoreA, scoreB, outcome: "played" });
+    } else await rewriteWinner(q, m.id, winner!, { scoreA, scoreB, outcome: "played" }, user.id);
     await q.query("update match_results set status = 'superseded' where match_id = $1 and status = 'confirmed'", [m.id]);
     const version = await nextVersion(q, m.id);
     await q.query(

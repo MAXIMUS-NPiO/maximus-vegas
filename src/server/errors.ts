@@ -106,6 +106,17 @@ export const ERROR_CODES = [
   "terms_required",
   "refunds_disabled",
   "provider_error",
+  // Round robin, Swiss and circuits
+  "round_robin_limit",
+  "invalid_points",
+  "invalid_points_table",
+  "points_table_locked",
+  "circuit_closed",
+  "circuit_mismatch",
+  "circuit_open_events",
+  "not_in_division",
+  "not_qualified",
+  "regeneration_blocked",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 

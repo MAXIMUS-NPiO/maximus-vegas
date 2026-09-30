@@ -646,4 +646,90 @@ export const migrations: Migration[] = [
          'MAXIMUS VEGAS L.L.C-FZ')`,
     ],
   },
+  {
+    id: 6,
+    name: "round_robin_swiss_circuits",
+    statements: [
+      // Round robin and Swiss. Constraint changes only widen what is allowed; release 2 code keeps working.
+      // Every existing check on the column is dropped by definition, not by an assumed name, so an
+      // older narrower check can never survive next to the new one.
+      `do $$ declare r record; begin
+         for r in select conname from pg_constraint
+                   where conrelid = 'tournaments'::regclass and contype = 'c' and pg_get_constraintdef(oid) like '%format%' loop
+           execute format('alter table tournaments drop constraint %I', r.conname);
+         end loop;
+         for r in select conname from pg_constraint
+                   where conrelid = 'matches'::regclass and contype = 'c' and pg_get_constraintdef(oid) like '%bracket%' loop
+           execute format('alter table matches drop constraint %I', r.conname);
+         end loop;
+       end $$`,
+      `alter table tournaments add constraint tournaments_format_check check (format in ('single_elimination','double_elimination','leaderboard','round_robin','swiss'))`,
+      `alter table tournaments add column format_settings jsonb`,
+      `alter table matches add constraint matches_bracket_check check (bracket in ('W','L','GF','RR','SW'))`,
+      // A draw has no winner. Only round robin and Swiss accept draws, and only when the organiser allows them.
+      `alter table match_results alter column winner_reg drop not null`,
+      // Circuits: a season of linked tournaments with cumulative points, qualification and divisions.
+      `create table circuits (
+        id uuid primary key default gen_random_uuid(),
+        slug text not null unique,
+        org_id uuid not null references organizations(id),
+        name text not null,
+        season text not null,
+        game text not null,
+        participant_type text not null check (participant_type in ('solo','team')),
+        description text not null default '',
+        points_table int[] not null,
+        participation_points int not null default 0 check (participation_points between 0 and 1000),
+        qualify_top int not null default 0 check (qualify_top between 0 and 256),
+        divisions int not null default 1 check (divisions between 1 and 5),
+        promote int not null default 0 check (promote between 0 and 64),
+        relegate int not null default 0 check (relegate between 0 and 64),
+        status text not null default 'active' check (status in ('active','closed')),
+        rules_version text not null default 'MV-CIRCUIT-1',
+        previous_id uuid references circuits(id),
+        created_by uuid not null references users(id),
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now(),
+        closed_at timestamptz
+      )`,
+      `create unique index circuits_next_season on circuits(previous_id) where previous_id is not null`,
+      `create index circuits_org on circuits(org_id, created_at desc)`,
+      `create table circuit_members (
+        circuit_id uuid not null references circuits(id) on delete cascade,
+        division int not null check (division between 1 and 5),
+        user_id uuid references users(id),
+        team_id uuid references teams(id),
+        source text not null default 'assigned' check (source in ('assigned','promoted','relegated','stayed')),
+        added_by uuid references users(id),
+        added_at timestamptz not null default now(),
+        check ((user_id is null) <> (team_id is null))
+      )`,
+      `create unique index circuit_members_user on circuit_members(circuit_id, user_id) where user_id is not null`,
+      `create unique index circuit_members_team on circuit_members(circuit_id, team_id) where team_id is not null`,
+      // The frozen table of a closed season: never recomputed, so history stays exactly as published.
+      `create table circuit_results (
+        circuit_id uuid not null references circuits(id) on delete cascade,
+        division int not null,
+        rank int not null,
+        user_id uuid references users(id),
+        team_id uuid references teams(id),
+        name text not null,
+        points int not null,
+        events int not null,
+        titles int not null,
+        best int,
+        member boolean not null default false,
+        qualified boolean not null default false,
+        movement text check (movement in ('promoted','relegated','stayed')),
+        primary key (circuit_id, division, rank)
+      )`,
+      `create index circuit_results_user on circuit_results(user_id) where user_id is not null`,
+      `create index circuit_results_team on circuit_results(team_id) where team_id is not null`,
+      `alter table tournaments add column circuit_id uuid references circuits(id)`,
+      `alter table tournaments add column circuit_division int check (circuit_division between 1 and 5)`,
+      `alter table tournaments add column circuit_weight int not null default 100 check (circuit_weight between 10 and 1000)`,
+      `alter table tournaments add column qualifier_circuit_id uuid references circuits(id)`,
+      `create index tournaments_circuit on tournaments(circuit_id) where circuit_id is not null`,
+    ],
+  },
 ];
