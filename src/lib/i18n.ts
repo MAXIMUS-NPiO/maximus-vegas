@@ -717,7 +717,9 @@ const ru = {
     now: "Работает сейчас",
     nowItems: [
       "Пространство организатора с ролями владельца, администратора и судьи",
-      "Турниры single elimination с посевом, check-in, листом ожидания и проходами без игры",
+      "Турниры single и double elimination с посевом, check-in, листом ожидания и проходами без игры",
+      "Круговая и швейцарская системы с тай-брейками Бухгольца, медианного Бухгольца и Зоннеборна-Бергера",
+      "Серии и сезоны: накопительные очки, квалификация, дивизионы с повышением и понижением",
       "Отчёт участника, подтверждение соперника, споры и решения судьи",
       "Исправления с версиями и журнал с hash-цепочкой",
       "Отчёт по событию: заявки, check-in, матчи, споры, неявки",
@@ -727,7 +729,7 @@ const ru = {
       "Собственный домен и оформление (white-label)",
       "API, подписанные webhooks и встраиваемые виджеты сетки и регистрации",
       "Кабинет спонсора с методикой атрибуции",
-      "Форматы double elimination, round robin, Swiss, группы, лиги",
+      "Форматы: группы с плей-офф, лиги, gauntlet, FFA и многоэтапные турниры",
     ],
     scenarios: [
       ["Организаторы и федерации", "Серии соревнований с прозрачным судейством и историей решений."],
@@ -1547,7 +1549,9 @@ const en: BaseDict = {
     now: "Works today",
     nowItems: [
       "Organiser space with owner, administrator and referee roles",
-      "Single-elimination tournaments with seeding, check-in, waitlist and byes",
+      "Single- and double-elimination tournaments with seeding, check-in, waitlist and byes",
+      "Round robin and Swiss with Buchholz, Median Buchholz and Sonneborn-Berger tie-breaks",
+      "Circuits and seasons: cumulative points, qualification, divisions with promotion and relegation",
       "Participant reports, opponent confirmation, disputes and referee decisions",
       "Versioned corrections and a hash-chained log",
       "Event report: entries, check-ins, matches, disputes, no-shows",
@@ -1557,7 +1561,7 @@ const en: BaseDict = {
       "Own domain and branding (white-label)",
       "API, signed webhooks and embeddable bracket and registration widgets",
       "Sponsor workspace with an attribution methodology",
-      "Double elimination, round robin, Swiss, groups and league formats",
+      "Formats: groups with playoffs, leagues, gauntlet, FFA and multi-stage events",
     ],
     scenarios: [
       ["Organisers and federations", "Competition series with transparent refereeing and a decision history."],

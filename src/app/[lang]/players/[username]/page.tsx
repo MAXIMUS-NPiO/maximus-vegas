@@ -8,6 +8,7 @@ import { viewer } from "@/server/viewer.ts";
 import { playerProfile } from "@/server/queries.ts";
 import { avatarColor, hasActiveMembership, rankFor, totalXp } from "@/server/progression.ts";
 import { reputation } from "@/server/disputes.ts";
+import { seasonHistory } from "@/server/circuits.ts";
 import { Badge, DbDown, Empty } from "@/components/ui";
 import { LocalTime } from "@/components/time";
 
@@ -42,7 +43,13 @@ export default async function Player({ params }: { params: Promise<{ lang: strin
     );
   const wins = p.history.filter((h) => h.won).length;
   const ru = lang === "ru";
-  const [xp, rep, member] = await Promise.all([totalXp(db, p.user.id), reputation(db, p.user.id), hasActiveMembership(db, p.user.id)]);
+  const [xp, rep, member, seasons] = await Promise.all([
+    totalXp(db, p.user.id),
+    reputation(db, p.user.id),
+    hasActiveMembership(db, p.user.id),
+    seasonHistory(db, { userId: p.user.id, teamId: null }),
+  ]);
+  const draws = p.history.filter((h) => h.drawn).length;
   const { rank } = rankFor(xp);
   const color = avatarColor(p.user.avatar_color);
   return (
@@ -81,6 +88,12 @@ export default async function Player({ params }: { params: Promise<{ lang: strin
             <dt>{d.players.win}</dt>
             <dd>{wins}</dd>
           </div>
+          {draws ? (
+            <div>
+              <dt>{ru ? "Ничьи" : "Draws"}</dt>
+              <dd>{draws}</dd>
+            </div>
+          ) : null}
           <div>
             <dt>{d.players.tournaments}</dt>
             <dd>{p.tournaments.length}</dd>
@@ -132,13 +145,37 @@ export default async function Player({ params }: { params: Promise<{ lang: strin
         )}
       </section>
 
+      {seasons.length ? (
+        <section className="section-tight">
+          <h2 className="h3">{ru ? "Сезоны серий" : "Circuit seasons"}</h2>
+          <ul className="list">
+            {seasons.map((s) => (
+              <li key={`${s.slug}-${s.division}`}>
+                <span className="grow">
+                  <Link href={`/${lang}/circuits/${s.slug}`}>
+                    {s.name} · {s.season}
+                  </Link>
+                  <span className="small muted">
+                    {" "}
+                    · {s.divisions > 1 ? `${ru ? "дивизион" : "division"} ${s.division} · ` : ""}
+                    {ru ? `${s.rank}-е место, ${s.points} очк.` : `#${s.rank}, ${s.points} pts`}
+                  </span>
+                </span>
+                {s.qualified ? <Badge status="ok">{ru ? "Квалификация" : "Qualified"}</Badge> : null}
+                {s.movement === "promoted" ? <Badge status="ok">{ru ? "Повышение" : "Promoted"}</Badge> : s.movement === "relegated" ? <Badge status="warn">{ru ? "Понижение" : "Relegated"}</Badge> : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <section className="section-tight">
         <h2 className="h3">{d.players.history}</h2>
         {p.history.length ? (
           <ul className="list">
             {p.history.map((h) => (
               <li key={h.id} className="history-row">
-                <span className={h.won ? "result-pill win" : "result-pill loss"}>{h.won ? d.players.win : d.players.loss}</span>
+                <span className={h.drawn ? "result-pill draw" : h.won ? "result-pill win" : "result-pill loss"}>{h.drawn ? (ru ? "Ничья" : "Draw") : h.won ? d.players.win : d.players.loss}</span>
                 <span className="grow">
                   <Link href={`/${lang}/matches/${h.id}`}>
                     {h.opponent ? `${d.common.vs} ${h.opponent}` : d.match.title}

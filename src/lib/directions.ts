@@ -17,18 +17,6 @@ export type Direction = {
 /** Sections that are part of the target architecture but not yet live. Each page is honest about it. */
 export const DIRECTIONS: Direction[] = [
   {
-    slug: "circuits",
-    kind: "organizer",
-    state: "dev",
-    title: { ru: "Серии и сезоны", en: "Circuits and seasons" },
-    lead: { ru: "Накопительные результаты нескольких турниров, квалификации и переходы между дивизионами.", en: "Cumulative results across tournaments, qualifiers and division moves." },
-    scope: {
-      ru: ["Версионируемые формулы очков и tie-breakers", "Buchholz, Median Buchholz и Sonneborn-Berger для подходящих форматов", "Квалификация в следующий этап", "История сезонов"],
-      en: ["Versioned points formulas and tie-breakers", "Buchholz, Median Buchholz and Sonneborn-Berger for suitable formats", "Qualification to the next stage", "Season history"],
-    },
-    now: { ru: "Итоговые места каждого турнира уже фиксируются и видны в игровом паспорте участников.", en: "Final placements of every tournament are already recorded and shown in participants' gaming passports." },
-  },
-  {
     slug: "academy",
     kind: "academy",
     state: "dev",
@@ -176,9 +164,12 @@ export const MODULES: ModuleEntry[] = [
   { state: "works", name: { ru: "Команды", en: "Teams" }, note: { ru: "Владелец, капитан, приглашения, передача полномочий, логотип и баннер.", en: "Owner, captain, invitations, role transfer, logo and banner." } },
   { state: "works", name: { ru: "Пространства организаторов и со-организаторы", en: "Organiser spaces and co-organisers" }, note: { ru: "Роли владельца, администратора и судьи; со-организаторы отдельного турнира; ограничение по странам.", en: "Owner, administrator and referee roles; per-tournament co-organisers; country restrictions." } },
   { state: "works", name: { ru: "Олимпийская система и double elimination", en: "Single and double elimination" }, note: { ru: "Проходы без игры для верхних посевов, нижняя сетка, гранд-финал и перезапуск финала; посев по ручным номерам, затем по XP, затем по порядку регистрации.", en: "Byes for top seeds, losers bracket, grand final and bracket reset; seeding by manual seeds, then XP, then registration order." } },
+  { state: "works", name: { ru: "Круговая и швейцарская системы", en: "Round robin and Swiss" }, note: { ru: "Один или два круга; швейцарские пары по очкам без повторных встреч и bye по правилам; ничьи по выбору организатора. Tie-breakers Buchholz, Median Buchholz и Sonneborn-Berger (MV-STANDINGS-1, MV-SWISS-1), настройки фиксируются при старте.", en: "One or two legs; Swiss pairings by points without rematches and rule-based byes; draws at the organiser's choice. Buchholz, Median Buchholz and Sonneborn-Berger tie-breaks (MV-STANDINGS-1, MV-SWISS-1), settings frozen at the start." } },
+  { state: "works", name: { ru: "Серии и сезоны", en: "Circuits and seasons" }, note: { ru: "Накопительные очки с весом турниров, квалификация в финалы, дивизионы с повышением и понижением, зафиксированная история сезонов в игровом паспорте (MV-CIRCUIT-1).", en: "Cumulative weighted points, qualification to finals, divisions with promotion and relegation, frozen season history in the gaming passport (MV-CIRCUIT-1)." } },
+  { state: "works", name: { ru: "Копирование и безопасное пересоздание", en: "Cloning and safe regeneration" }, note: { ru: "Копия турнира в черновик с настройками; пересоздание сетки или тура только до первого результата; предпросмотр структуры до старта.", en: "Copy a tournament into a draft with its settings; regenerate a bracket or round only before the first result; structure preview before the start." } },
   { state: "works", name: { ru: "Leaderboard-турниры", en: "Leaderboard tournaments" }, note: { ru: "Веса статистики, лучшие N результатов, окно отправки, tie-break по KDA и убийствам, проверка неправдоподобных строк (не античит).", en: "Stat weights, best-of-N, submission window, KDA and kills tie-breaks, review of implausible lines (not anti-cheat)." } },
   { state: "works", name: { ru: "Игровой день, результаты и споры", en: "Game Day, results and disputes" }, note: { ru: "Отчёт, подтверждение, check-in к матчу, решение судьи, неявка, дисквалификация, исправление с версиями, оспаривание решённого матча.", en: "Report, confirmation, match check-in, referee decision, no-show, disqualification, versioned correction, disputes of decided matches." } },
-  { state: "works", name: { ru: "Итоги, рейтинги и награды", en: "Standings, rankings and awards" }, note: { ru: "Итоговые места из подтверждённых матчей; награда победителю в монетах назначается оператором и выплачивается один раз каждому чемпиону.", en: "Final placements from confirmed matches; a winner's award in coins is set by the operator and paid once per champion." } },
+  { state: "works", name: { ru: "Итоги, рейтинги и награды", en: "Standings, rankings and awards" }, note: { ru: "Итоговые места из подтверждённых матчей; титулы в рейтинге — первые места завершённых турниров; награда победителю в монетах назначается оператором и выплачивается один раз каждому чемпиону.", en: "Final placements from confirmed matches; ranking titles are first places of completed events; a winner's award in coins is set by the operator and paid once per champion." } },
   { state: "works", name: { ru: "Прогрессия: XP, ранги, цели, сезонный пропуск", en: "Progression: XP, ranks, objectives, season pass" }, note: { ru: "Начисления только за подтверждённую активность, без двойных начислений.", en: "Credits only for confirmed activity, never twice." } },
   { state: "works", name: { ru: "Монеты и косметика", en: "Coins and cosmetics" }, note: { ru: "Монеты без денежной стоимости: не покупаются, не выводятся, не передаются и не ставятся на исход.", en: "Coins with no cash value: never bought, withdrawn, transferred or staked." } },
   { state: "works", name: { ru: "Вызовы 1v1 и быстрый матч", en: "1v1 challenges and quick match" }, note: { ru: "Без ставок; быстрый матч соединяет только с реальными игроками из очереди.", en: "No stakes; quick match pairs only with real players from the queue." } },
@@ -196,8 +187,7 @@ export const MODULES: ModuleEntry[] = [
   { state: "connect", name: { ru: "Вход через Google, Steam, Epic", en: "Sign-in with Google, Steam, Epic" }, note: { ru: "Нужны зарегистрированные приложения у провайдеров. Кнопки не показываются, пока вход не настоящий.", en: "Requires registered apps with each provider. The buttons are not shown until sign-in is real." } },
   { state: "connect", name: { ru: "Серверный контур CS2", en: "CS2 server contour" }, note: { ru: "Provisioning, RCON, demo и восстановление матчей — на отдельной инфраструктуре.", en: "Provisioning, RCON, demos and match recovery run on separate infrastructure." } },
   { state: "connect", name: { ru: "White-label домены", en: "White-label domains" }, note: { ru: "Собственный домен и оформление партнёра.", en: "Partner's own domain and branding." } },
-  { state: "dev", name: { ru: "Форматы: round robin, Swiss, группы, лиги, FFA", en: "Formats: round robin, Swiss, groups, leagues, FFA" }, note: { ru: "Включая Buchholz, Median Buchholz и Sonneborn-Berger.", en: "Including Buchholz, Median Buchholz and Sonneborn-Berger." } },
-  { state: "dev", name: { ru: "Серии и сезоны турниров", en: "Tournament circuits and seasons" }, note: { ru: "Накопительные результаты, квалификации, дивизионы.", en: "Cumulative results, qualifiers, divisions." } },
+  { state: "dev", name: { ru: "Форматы: группы с плей-офф, лиги, gauntlet, FFA, многоэтапные", en: "Formats: groups with playoffs, leagues, gauntlet, FFA, multi-stage" }, note: { ru: "Этапы с переходом участников между ними и наследованием настроек счёта.", en: "Stages that pass entrants between them, with inherited scoring settings." } },
   { state: "dev", name: { ru: "Party, ready check, LFG, LFT, рекрутинг", en: "Parties, ready check, LFG, LFT, recruiting" }, note: { ru: "Групповой поиск и история рейтинга.", en: "Group queueing and rating history." } },
   { state: "dev", name: { ru: "Академия и тренеры", en: "Academy and coaches" }, note: { ru: "Программы, бронирование, разборы.", en: "Programmes, booking, reviews." } },
   { state: "dev", name: { ru: "Медиа и трансляции", en: "Media and broadcasts" }, note: { ru: "Live-центр, VOD, клипы, оверлеи.", en: "Live centre, VODs, clips, overlays." } },

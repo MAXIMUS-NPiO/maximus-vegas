@@ -10,6 +10,10 @@ import { bracket, getTournament, participants, type BracketMatch, type Participa
 import { canManageTournament } from "@/server/tournaments.ts";
 import { planSingleElimination } from "@/server/bracket.ts";
 import { planDoubleElimination } from "@/server/double.ts";
+import { roundRobinSchedule } from "@/server/roundrobin.ts";
+import { pairSwissRound } from "@/server/swiss.ts";
+import { isRoundFormat, settingsOf, type FormatSettings } from "@/server/format-settings.ts";
+import { roundStandings } from "@/server/rounds.ts";
 import { leaderboardStandings, scoreLog } from "@/server/leaderboard.ts";
 import { DEFAULT_WEIGHTS, mergeWeights, WEIGHT_KEYS } from "@/server/scoring.ts";
 import { tournamentSponsors } from "@/server/sponsors.ts";
@@ -17,7 +21,7 @@ import { mediaUrl } from "@/server/media.ts";
 import type { Database } from "@/server/db.ts";
 import type { SessionUser } from "@/server/auth.ts";
 import { ActionForm, Badge, DbDown, Empty, Field, Flash, SignInPrompt, type SearchParams } from "@/components/ui";
-import { BracketView, formatLabel } from "@/components/tournament";
+import { BracketView, formatLabel, RoundRules, StandingsTable, type StandingName } from "@/components/tournament";
 import { Countdown, LocalTime } from "@/components/time";
 import { reviewLabel } from "@/lib/labels.ts";
 
@@ -53,11 +57,44 @@ async function eligibleTeams(db: Database, user: SessionUser, game: string, size
   ).then((rows) => rows.filter((r) => r.members >= size && r.members <= size + 3));
 }
 
-function preview(list: Participant[], format: string): BracketMatch[] {
+/** Rounds shown in a round-robin preview before the start; the full schedule appears at the start. */
+const PREVIEW_ROUNDS = 5;
+
+function preview(list: Participant[], format: string, settings: FormatSettings): BracketMatch[] {
   const seeded = list
     .filter((p) => p.status === "registered")
     .sort((a, b) => (a.seed ?? 1e9) - (b.seed ?? 1e9) || new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
   if (seeded.length < 2) return [];
+  const game = (id: string, bracketKey: "RR" | "SW", round: number, position: number, a: Participant, b: Participant | null): BracketMatch => ({
+    id,
+    bracket: bracketKey,
+    a_void: false,
+    b_void: !b,
+    round,
+    position,
+    status: "pending",
+    outcome: b ? null : "bye",
+    a_reg: a.id,
+    b_reg: b?.id ?? null,
+    a_name: a.name,
+    b_name: b?.name ?? null,
+    winner_reg: null,
+    score_a: null,
+    score_b: null,
+    scheduled_at: null,
+  });
+  if (format === "round_robin")
+    return roundRobinSchedule(seeded, settings.legs ?? 1)
+      .matches.filter((m) => m.round <= PREVIEW_ROUNDS)
+      .map((m) => game(`p-RR-${m.round}-${m.position}`, "RR", m.round, m.position, m.a, m.b));
+  if (format === "swiss") {
+    // Round 1 only: later rounds depend on results. Everyone starts on zero points, so seeds decide.
+    const byId = new Map(seeded.map((p) => [p.id, p]));
+    const pairing = pairSwissRound(seeded.map((p, i) => ({ id: p.id, seed: i + 1, points: 0, byes: 0 })), () => false);
+    const out = pairing.pairs.map(([a, b], i) => game(`p-SW-1-${i}`, "SW", 1, i, byId.get(a)!, byId.get(b)!));
+    if (pairing.bye) out.push(game("p-SW-1-bye", "SW", 1, out.length, byId.get(pairing.bye)!, null));
+    return out;
+  }
   const base = (m: { round: number; position: number; a: Participant | null; b: Participant | null }, bracketKey: "W" | "L" | "GF", aVoid = false, bVoid = false) => ({
     id: `p-${bracketKey}-${m.round}-${m.position}`,
     bracket: bracketKey,
@@ -104,14 +141,25 @@ export default async function TournamentPage({ params, searchParams }: { params:
   const manager = await canManageTournament(db, t, user);
   if (t.status === "DRAFT" && !manager) notFound();
   const leaderboard = t.format === "leaderboard";
+  const rounds = isRoundFormat(t.format) ? t.format : null;
+  const settings = settingsOf(t);
   const [list, matches, sponsorsList] = await Promise.all([participants(db, t.id), leaderboard ? Promise.resolve([]) : bracket(db, t.id), tournamentSponsors(db, t.id)]);
   const entry = user ? await myEntry(db, t.id, user) : null;
   const teams = user && !entry && t.participant_type === "team" && t.status === "REGISTRATION_OPEN" ? await eligibleTeams(db, user, t.game, t.team_size) : [];
   const game = gameBySlug(t.game);
   const back = `/${lang}/tournaments/${t.slug}`;
   const started = matches.length > 0;
-  const previewMatches = !started && !leaderboard ? preview(list, t.format) : [];
+  const previewMatches = !started && !leaderboard ? preview(list, t.format, settings) : [];
+  const previewRounds = rounds === "round_robin" ? roundRobinSchedule(list.filter((p) => p.status === "registered"), settings.legs ?? 1).rounds : 0;
   const standings = t.status === "COMPLETED" ? list.filter((p) => p.placement !== null).sort((a, b) => (a.placement ?? 0) - (b.placement ?? 0)) : [];
+  const roundTable = rounds && started ? await roundStandings(db, t) : [];
+  const names = new Map<string, StandingName>(list.map((p) => [p.id, { name: p.name, username: p.username, team_slug: p.team_slug }]));
+  const linked = await db.query<{ id: string; slug: string; name: string; season: string }>(
+    "select id, slug, name, season from circuits where id = any($1)",
+    [[t.circuit_id, t.qualifier_circuit_id].filter(Boolean)],
+  );
+  const circuit = linked.find((c) => c.id === t.circuit_id) ?? null;
+  const qualifier = linked.find((c) => c.id === t.qualifier_circuit_id) ?? null;
   const full = t.registered >= t.max_participants;
   const hidden = { tournament: t.id };
   const table = leaderboard && ["IN_PROGRESS", "PAUSED", "COMPLETED", "ARCHIVED"].includes(t.status) ? await leaderboardStandings(db, t) : [];
@@ -178,6 +226,29 @@ export default async function TournamentPage({ params, searchParams }: { params:
             <dt>{d.tournaments.organizer}</dt>
             <dd>{t.org_name}</dd>
           </div>
+          {circuit ? (
+            <div>
+              <dt>{ru ? "Серия" : "Circuit"}</dt>
+              <dd>
+                <Link href={`/${lang}/circuits/${circuit.slug}`}>
+                  {circuit.name} · {circuit.season}
+                </Link>
+                {t.circuit_division ? ` · ${ru ? "дивизион" : "division"} ${t.circuit_division}` : ""}
+                {t.circuit_weight !== 100 ? ` · ×${(t.circuit_weight / 100).toLocaleString(ru ? "ru-RU" : "en-US")}` : ""}
+              </dd>
+            </div>
+          ) : null}
+          {qualifier ? (
+            <div>
+              <dt>{ru ? "Отбор" : "Qualification"}</dt>
+              <dd>
+                {ru ? "Только квалифицированные из " : "Only qualified from "}
+                <Link href={`/${lang}/circuits/${qualifier.slug}`}>
+                  {qualifier.name} · {qualifier.season}
+                </Link>
+              </dd>
+            </div>
+          ) : null}
           {t.prize_coins > 0 ? (
             <div>
               <dt>{ru ? "Награда победителю" : "Winner's award"}</dt>
@@ -285,7 +356,7 @@ export default async function TournamentPage({ params, searchParams }: { params:
       <nav className="tabs" aria-label={t.name}>
         {tabs.map((k) => (
           <a key={k} href={`#${k}`}>
-            {k === "leaderboard" ? (ru ? "Таблица" : "Leaderboard") : d.tournaments.tabs[k as keyof typeof d.tournaments.tabs]}
+            {k === "leaderboard" ? (ru ? "Таблица" : "Leaderboard") : k === "bracket" && rounds ? (ru ? "Туры" : "Rounds") : d.tournaments.tabs[k as keyof typeof d.tournaments.tabs]}
           </a>
         ))}
       </nav>
@@ -313,6 +384,7 @@ export default async function TournamentPage({ params, searchParams }: { params:
       <section id="rules" className="section-tight">
         <h2 className="h3">{d.tournaments.tabs.rules}</h2>
         {t.rules ? <p className="prewrap">{t.rules}</p> : <p className="muted">{d.tournaments.noRules}</p>}
+        {rounds ? <RoundRules lang={lang} format={rounds} settings={settings} started={Boolean(t.started_at)} /> : null}
         {leaderboard ? (
           <div className="card stack-sm">
             <p className="field-label">{ru ? "Как считаются очки" : "How points are counted"}</p>
@@ -495,12 +567,22 @@ export default async function TournamentPage({ params, searchParams }: { params:
         </section>
       ) : (
         <section id="bracket" className="section-tight">
-          <h2 className="h3">{d.tournaments.tabs.bracket}</h2>
+          <h2 className="h3">{rounds ? (ru ? "Туры" : "Rounds") : d.tournaments.tabs.bracket}</h2>
           {started ? (
             <BracketView lang={lang} matches={matches} format={t.format} />
           ) : previewMatches.length ? (
             <>
-              <p className="muted small">{d.tournaments.bracketPreview}</p>
+              <p className="muted small">
+                {rounds === "swiss"
+                  ? ru
+                    ? "Предварительно: пары первого тура по текущему посеву. Следующие туры составляются по очкам после каждого тура."
+                    : "Preview: round 1 pairings by the current seeds. Later rounds are paired by points after each round."
+                  : rounds === "round_robin"
+                    ? ru
+                      ? `Предварительное расписание по текущему посеву: всего туров — ${previewRounds}${previewRounds > PREVIEW_ROUNDS ? `, показаны первые ${PREVIEW_ROUNDS}` : ""}.`
+                      : `Preview schedule by the current seeds: ${previewRounds} rounds in total${previewRounds > PREVIEW_ROUNDS ? `, the first ${PREVIEW_ROUNDS} shown` : ""}.`
+                    : d.tournaments.bracketPreview}
+              </p>
               <BracketView lang={lang} matches={previewMatches} linkMatches={false} format={t.format} />
             </>
           ) : (
@@ -511,7 +593,14 @@ export default async function TournamentPage({ params, searchParams }: { params:
 
       <section id="standings" className="section-tight">
         <h2 className="h3">{d.tournaments.tabs.standings}</h2>
-        {standings.length ? (
+        {rounds && roundTable.length ? (
+          <>
+            {t.status !== "COMPLETED" && t.status !== "ARCHIVED" ? (
+              <p className="small muted">{ru ? "Промежуточная таблица: места фиксируются после последнего тура." : "Provisional table: places are fixed after the last round."}</p>
+            ) : null}
+            <StandingsTable lang={lang} format={rounds} rows={roundTable} names={names} final={t.status === "COMPLETED" || t.status === "ARCHIVED"} />
+          </>
+        ) : standings.length ? (
           <ol className="standings">
             {standings.map((p) => (
               <li key={p.id} className={p.placement === 1 ? "is-first" : undefined}>

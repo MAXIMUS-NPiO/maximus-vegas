@@ -32,6 +32,7 @@ export default async function Rankings({ params, searchParams }: { params: Promi
               <th>{kind === "players" ? d.rankings.solo : d.rankings.teams}</th>
               <th>{d.rankings.titles}</th>
               <th>{d.rankings.wins}</th>
+              <th>{lang === "ru" ? "Ничьи" : "Draws"}</th>
               <th>{d.rankings.losses}</th>
             </tr>
           </thead>
@@ -44,6 +45,7 @@ export default async function Rankings({ params, searchParams }: { params: Promi
                 </td>
                 <td>{r.titles}</td>
                 <td>{r.wins}</td>
+                <td>{r.draws}</td>
                 <td>{r.losses}</td>
               </tr>
             ))}

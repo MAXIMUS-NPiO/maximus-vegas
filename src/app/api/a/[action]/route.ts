@@ -3,6 +3,7 @@ import * as auth from "@/server/auth.ts";
 import * as accounts from "@/server/accounts.ts";
 import * as teams from "@/server/teams.ts";
 import * as tournaments from "@/server/tournaments.ts";
+import * as circuits from "@/server/circuits.ts";
 import * as matches from "@/server/matches.ts";
 import * as disputes from "@/server/disputes.ts";
 import * as leaderboard from "@/server/leaderboard.ts";
@@ -279,6 +280,14 @@ const handlers: Record<string, Handler> = {
     await tournaments.removeCoOrganizer(c.db, u(c), idOf(c.form.tournament), idOf(c.form.member));
     return { ok: "saved" };
   },
+  "tournament.clone": async (c) => {
+    const t = await tournaments.cloneTournament(c.db, u(c), idOf(c.form.tournament), { name: c.form.name, startsAt: c.form.startsAt, timeZone: c.form.tz });
+    return { to: `/${c.lang}/organizer/t/${t.slug}`, ok: "tournament_cloned" };
+  },
+  "tournament.regenerate": async (c) => {
+    await tournaments.regenerateMatches(c.db, u(c), idOf(c.form.tournament));
+    return { ok: "bracket_regenerated" };
+  },
   "tournament.banner": async (c) => {
     const user = u(c);
     const id = idOf(c.form.tournament);
@@ -300,6 +309,28 @@ const handlers: Record<string, Handler> = {
     const user = await staff(c);
     await sponsors.attachSponsor(c.db, user, idOf(c.form.tournament), idOf(c.form.sponsor), c.form.attach === "1");
     return { ok: "saved" };
+  },
+
+  // ---------- Circuits and seasons ----------
+  "circuit.create": async (c) => {
+    const r = await circuits.createCircuit(c.db, u(c), idOf(c.form.org), circuitInput(c));
+    return { to: `/${c.lang}/organizer/c/${r.slug}`, ok: "circuit_created" };
+  },
+  "circuit.update": async (c) => {
+    await circuits.updateCircuit(c.db, u(c), idOf(c.form.circuit), circuitInput(c));
+    return { ok: "saved" };
+  },
+  "circuit.member": async (c) => {
+    await circuits.setCircuitMember(c.db, u(c), idOf(c.form.circuit), c.form.handle, c.form.division);
+    return { ok: "saved" };
+  },
+  "circuit.member_remove": async (c) => {
+    await circuits.removeCircuitMember(c.db, u(c), idOf(c.form.circuit), c.form.handle);
+    return { ok: "saved" };
+  },
+  "circuit.close": async (c) => {
+    const r = await circuits.closeSeason(c.db, u(c), idOf(c.form.circuit), { nextSeason: c.form.nextSeason, createNext: c.form.createNext });
+    return r.nextSlug ? { to: `/${c.lang}/organizer/c/${r.nextSlug}`, ok: "season_closed" } : { ok: "season_closed" };
   },
 
   // ---------- Matches, disputes, leaderboard ----------
@@ -581,6 +612,39 @@ function tournamentInput(c: Ctx) {
     weights,
     prizeText: c.form.prizeText,
     livestreamUrl: c.form.livestreamUrl,
+    // Present only when the form rendered these fieldsets; otherwise the stored values are kept.
+    settings:
+      "formatSettings" in c.form
+        ? {
+            pointsWin: c.form.pointsWin,
+            pointsDraw: c.form.pointsDraw,
+            pointsLoss: c.form.pointsLoss,
+            pointsBye: c.form.pointsBye,
+            allowDraws: c.form.allowDraws,
+            legs: c.form.legs,
+            swissRounds: c.form.swissRounds,
+          }
+        : undefined,
+    circuit:
+      "circuitFields" in c.form
+        ? { circuitId: c.form.circuitId, circuitDivision: c.form.circuitDivision, circuitWeight: c.form.circuitWeight, qualifierCircuitId: c.form.qualifierCircuitId }
+        : undefined,
+  };
+}
+
+function circuitInput(c: Ctx) {
+  return {
+    name: c.form.name,
+    season: c.form.season,
+    game: c.form.game,
+    participantType: c.form.participantType,
+    description: c.form.description,
+    pointsTable: c.form.pointsTable,
+    participationPoints: c.form.participationPoints,
+    qualifyTop: c.form.qualifyTop,
+    divisions: c.form.divisions,
+    promote: c.form.promote,
+    relegate: c.form.relegate,
   };
 }
 

@@ -7,13 +7,54 @@ import { flagLabel, reviewLabel } from "@/lib/labels.ts";
 import { viewer } from "@/server/viewer.ts";
 import { bracket, getTournament, participants } from "@/server/queries.ts";
 import { canManageOrg } from "@/server/access.ts";
-import { allowedTransitions, canManageTournament, canRefereeTournament, type TournamentStatus } from "@/server/tournaments.ts";
+import { allowedTransitions, canManageTournament, canRefereeTournament, isMatchFormat, type TournamentStatus } from "@/server/tournaments.ts";
 import { roundName } from "@/server/bracket.ts";
 import { deRoundName } from "@/server/double.ts";
 import { scoreLog } from "@/server/leaderboard.ts";
+import { isRoundFormat, settingsOf } from "@/server/format-settings.ts";
+import { effectiveSwissRounds } from "@/server/swiss.ts";
+import { roundStandings } from "@/server/rounds.ts";
+import { listCircuits } from "@/server/circuits.ts";
 import { ActionForm, Badge, DbDown, Field, Flash, type SearchParams } from "@/components/ui";
 import { TournamentForm } from "@/components/tournament-form";
-import { BracketView, formatLabel } from "@/components/tournament";
+import { BracketView, formatLabel, roundLabel, StandingsTable, type StandingName } from "@/components/tournament";
+import { LocalDateTimeInput, TimeZoneField } from "@/components/time";
+
+/** What the structure will look like for n entrants, before anything is generated. */
+function structurePreview(format: string, n: number, settings: ReturnType<typeof settingsOf>, ru: boolean): Array<[string, string]> {
+  if (n < 2) return [[ru ? "Участников" : "Entrants", String(n)]];
+  const size = 2 ** Math.ceil(Math.log2(n));
+  if (format === "single_elimination" || format === "double_elimination") {
+    const rows: Array<[string, string]> = [
+      [ru ? "Размер сетки" : "Bracket size", String(size)],
+      [ru ? "Проходов без игры (bye)" : "Byes", String(size - n)],
+      [ru ? "Раундов верхней сетки" : "Winners rounds", String(Math.log2(size))],
+    ];
+    rows.push(
+      format === "single_elimination"
+        ? [ru ? "Матчей" : "Matches", String(n - 1)]
+        : [ru ? "Матчей" : "Matches", ru ? `${2 * n - 2} (или ${2 * n - 1} с перезапуском финала)` : `${2 * n - 2} (or ${2 * n - 1} with a bracket reset)`],
+    );
+    return rows;
+  }
+  if (format === "round_robin") {
+    const legs = settings.legs ?? 1;
+    return [
+      [ru ? "Туров" : "Rounds", String((n % 2 === 0 ? n - 1 : n) * legs)],
+      [ru ? "Матчей всего" : "Matches in total", String(((n * (n - 1)) / 2) * legs)],
+      [ru ? "Матчей у каждого" : "Matches per entrant", String((n - 1) * legs)],
+      [ru ? "Отдых в туре" : "Rest per round", n % 2 === 1 ? (ru ? "один участник" : "one entrant") : "—"],
+    ];
+  }
+  if (format === "swiss") {
+    return [
+      [ru ? "Туров" : "Rounds", String(effectiveSwissRounds(n, settings.rounds))],
+      [ru ? "Матчей в туре" : "Matches per round", String(Math.floor(n / 2))],
+      ["Bye", n % 2 === 1 ? (ru ? "один участник в каждом туре" : "one entrant each round") : "—"],
+    ];
+  }
+  return [[ru ? "Участников" : "Entrants", String(n)]];
+}
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string; slug: string }> }): Promise<Metadata> {
   const { lang, slug } = await params;
@@ -47,8 +88,11 @@ export default async function ManageTournament({ params, searchParams }: { param
         <p className="notice notice-warn">{o.notAllowed}</p>
       </div>
     );
-  const primary = t.created_by === user.id || user.roles.includes("admin") || (await canManageOrg(db, t.org_id, user));
+  const orgManager = await canManageOrg(db, t.org_id, user);
+  const primary = t.created_by === user.id || user.roles.includes("admin") || orgManager;
   const leaderboard = t.format === "leaderboard";
+  const rounds = isRoundFormat(t.format) ? t.format : null;
+  const settings = settingsOf(t);
   const [list, matches] = await Promise.all([participants(db, t.id), leaderboard ? Promise.resolve([]) : bracket(db, t.id)]);
   const [stats] = await db.query<{ disputes: number; no_shows: number; entries: number; pending: number }>(
     `select (select count(*)::int from disputes x join matches m on m.id = x.match_id where m.tournament_id = $1) as disputes,
@@ -75,7 +119,25 @@ export default async function ManageTournament({ params, searchParams }: { param
   const wRounds = Math.max(0, ...matches.filter((m) => (m.bracket ?? "W") === "W").map((m) => m.round));
   const lRounds = Math.max(0, ...matches.filter((m) => m.bracket === "L").map((m) => m.round));
   const label = (m: (typeof matches)[number]) =>
-    t.format === "double_elimination" ? deRoundName((m.bracket ?? "W") as "W" | "L" | "GF", m.round, wRounds, lRounds, lang) : roundName(m.round, wRounds, lang);
+    rounds
+      ? roundLabel(m.round, lang)
+      : t.format === "double_elimination"
+        ? deRoundName((m.bracket ?? "W") as "W" | "L" | "GF", m.round, wRounds, lRounds, lang)
+        : roundName(m.round, wRounds, lang);
+  const roundTable = rounds && matches.length ? await roundStandings(db, t) : [];
+  const names = new Map<string, StandingName>(list.map((p) => [p.id, { name: p.name, username: p.username, team_slug: p.team_slug }]));
+  const running = ["IN_PROGRESS", "PAUSED"].includes(status) && isMatchFormat(t.format);
+  const [regen] = running
+    ? await db.query<{ blocking: number }>(
+        `select (select count(*)::int from match_results r join matches m on m.id = r.match_id where m.tournament_id = $1)
+              + (select count(*)::int from disputes x join matches m on m.id = x.match_id where m.tournament_id = $1)
+              + (select count(*)::int from matches where tournament_id = $1 and (status in ('in_progress','result_submitted','disputed')
+                   or (status = 'completed' and coalesce(outcome, '') not in ('bye','disqualification')))) as blocking`,
+        [t.id],
+      )
+    : [];
+  const circuitOptions = manager ? await listCircuits(db, { orgId: t.org_id }) : [];
+  const registeredCount = list.filter((p) => p.status === "registered").length;
   const openMatches = matches.filter((m) => ["ready", "in_progress", "result_submitted", "disputed"].includes(m.status));
   const report: Array<[string, number]> = leaderboard
     ? [
@@ -113,7 +175,11 @@ export default async function ManageTournament({ params, searchParams }: { param
         <section className="card section-card">
           <h2 className="h3">{o.lifecycle}</h2>
           <p className="small muted">
-            {o.lifecycleNote}
+            {rounds
+              ? ru
+                ? "Разрешены только допустимые переходы. Завершение наступает автоматически после последнего тура."
+                : "Only valid transitions are offered. Completion happens automatically after the last round."
+              : o.lifecycleNote}
             {leaderboard ? (ru ? " Leaderboard завершается вручную, когда все отмеченные результаты проверены." : " A leaderboard is completed manually once every flagged result is reviewed.") : ""}
           </p>
           <div className="row">
@@ -125,6 +191,26 @@ export default async function ManageTournament({ params, searchParams }: { param
               </ActionForm>
             ))}
           </div>
+          {running ? (
+            <div className="stack-sm">
+              {(regen?.blocking ?? 0) === 0 ? (
+                <ActionForm action="tournament.regenerate" lang={lang} back={back} hidden={hidden} className="inline-form">
+                  <button className="btn btn-ghost btn-sm">{rounds === "swiss" ? (ru ? "Пересоздать первый тур" : "Regenerate round 1") : rounds ? (ru ? "Пересоздать расписание" : "Regenerate the schedule") : ru ? "Пересоздать сетку" : "Regenerate the bracket"}</button>
+                  <span className="small muted">
+                    {ru
+                      ? "Строится заново из текущих участников в порядке посева (дисквалифицированные исключаются). Доступно, пока нет ни одного результата."
+                      : "Rebuilt from the current entrants in seed order (disqualified entrants are left out). Available until the first result."}
+                  </span>
+                </ActionForm>
+              ) : (
+                <p className="small muted">
+                  {ru
+                    ? "Пересоздание недоступно: уже есть результат, спор или сыгранный матч. Исправления вносятся через матчи — с версиями и журналом."
+                    : "Regeneration is unavailable: a result, dispute or played match exists. Corrections go through the matches, versioned and logged."}
+                </p>
+              )}
+            </div>
+          ) : null}
           {["REGISTRATION_OPEN", "REGISTRATION_CLOSED"].includes(status) ? (
             <div className="row">
               <span className="field-label">{o.checkInWindow}:</span>
@@ -134,6 +220,25 @@ export default async function ManageTournament({ params, searchParams }: { param
               </ActionForm>
             </div>
           ) : null}
+        </section>
+      ) : null}
+
+      {manager && (editable || status === "DRAFT") && !leaderboard ? (
+        <section className="section-tight">
+          <h2 className="h3">{ru ? "Предпросмотр структуры" : "Structure preview"}</h2>
+          <p className="small muted">
+            {ru
+              ? `Для ${registeredCount} зарегистрированных сейчас. При обязательном check-in в старт попадут только отметившиеся; посев фиксируется при старте.`
+              : `For the ${registeredCount} entrants registered now. With check-in required only checked-in entrants start; seeds are fixed at the start.`}
+          </p>
+          <ul className="kv-list">
+            {structurePreview(t.format, registeredCount, settings, ru).map(([k, v]) => (
+              <li key={k}>
+                <span>{k}</span>
+                <strong>{v}</strong>
+              </li>
+            ))}
+          </ul>
         </section>
       ) : null}
 
@@ -412,6 +517,13 @@ export default async function ManageTournament({ params, searchParams }: { param
         </section>
       ) : null}
 
+      {rounds && roundTable.length ? (
+        <section className="section-tight">
+          <h2 className="h3">{d.tournaments.tabs.standings}</h2>
+          <StandingsTable lang={lang} format={rounds} rows={roundTable} names={names} final={status === "COMPLETED" || status === "ARCHIVED"} />
+        </section>
+      ) : null}
+
       {manager ? (
         <section className="section-tight">
           <h2 className="h3">{ru ? "Со-организаторы" : "Co-organisers"}</h2>
@@ -468,7 +580,30 @@ export default async function ManageTournament({ params, searchParams }: { param
       {manager && editable ? (
         <section className="section-tight">
           <h2 className="h3">{o.edit}</h2>
-          <TournamentForm lang={lang} back={back} t={t} structuralLocked={list.length > 0} />
+          <TournamentForm lang={lang} back={back} t={t} structuralLocked={list.length > 0} circuits={circuitOptions} />
+        </section>
+      ) : null}
+
+      {orgManager ? (
+        <section className="section-tight">
+          <h2 className="h3">{ru ? "Копия турнира" : "Copy this tournament"}</h2>
+          <p className="small muted">
+            {ru
+              ? "Создаёт черновик с теми же форматом, настройками, правилами и связью с активной серией. Участники, матчи, со-организаторы, спонсоры и награда оператора не копируются."
+              : "Creates a draft with the same format, settings, rules and active circuit link. Entrants, matches, co-organisers, sponsors and the operator's award are not copied."}
+          </p>
+          <ActionForm action="tournament.clone" lang={lang} back={back} hidden={hidden} className="stack-sm">
+            <TimeZoneField />
+            <div className="form-grid">
+              <Field label={o.tName}>
+                <input name="name" required minLength={2} maxLength={80} defaultValue={`${t.name} (2)`.slice(0, 80)} />
+              </Field>
+              <Field label={o.startsAt} hint={ru ? "Пусто — через неделю" : "Empty = in a week"}>
+                <LocalDateTimeInput name="startsAt" />
+              </Field>
+            </div>
+            <button className="btn btn-ghost btn-sm">{ru ? "Создать копию" : "Create a copy"}</button>
+          </ActionForm>
         </section>
       ) : null}
     </div>

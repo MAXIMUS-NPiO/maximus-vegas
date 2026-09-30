@@ -8,6 +8,7 @@ import { getMatch } from "@/server/queries.ts";
 import { canRefereeTournament } from "@/server/tournaments.ts";
 import { roundName } from "@/server/bracket.ts";
 import { deRoundName } from "@/server/double.ts";
+import { settingsOf } from "@/server/format-settings.ts";
 import { mediaUrl } from "@/server/media.ts";
 import { ActionForm, Badge, DbDown, Field, Flash, type SearchParams } from "@/components/ui";
 import { LocalDateTimeInput, LocalTime, TimeZoneField } from "@/components/time";
@@ -35,11 +36,30 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
   const { match: m, a, b, results, disputes } = data;
   const referee = await canRefereeTournament(db, { id: m.tournament_id, org_id: m.org_id }, user);
   const ru = lang === "ru";
-  const roundLabel = m.t_format === "double_elimination" ? deRoundName((m.bracket ?? "W") as "W" | "L" | "GF", m.round, m.w_rounds, m.l_rounds, lang) : roundName(m.round, m.rounds, lang);
+  const inRounds = m.bracket === "RR" || m.bracket === "SW";
+  const roundLabel = inRounds
+    ? ru
+      ? `Тур ${m.round}`
+      : `Round ${m.round}`
+    : m.t_format === "double_elimination"
+      ? deRoundName((m.bracket ?? "W") as "W" | "L" | "GF", m.round, m.w_rounds, m.l_rounds, lang)
+      : roundName(m.round, m.rounds, lang);
+  const drawsOk = inRounds && settingsOf({ format: m.t_format, format_settings: m.t_settings }).allowDraws;
+  const drawn = m.status === "completed" && !m.winner_reg && Boolean(m.a_reg && m.b_reg);
+  const drawNote = inRounds
+    ? drawsOk
+      ? ru
+        ? "Ничья допускается: укажите равный счёт."
+        : "Draws are allowed: enter an equal score."
+      : ru
+        ? "Ничьи в этом турнире не допускаются."
+        : "Draws are not allowed in this tournament."
+    : null;
 
   const mySide = user ? (a?.leaders.includes(user.id) ? "a" : b?.leaders.includes(user.id) ? "b" : null) : null;
   const openPost = disputes.find((x) => x.kind === "post_result" && x.status === "open");
-  const canFilePost = Boolean(mySide) && m.status === "completed" && m.outcome !== "bye" && ["IN_PROGRESS", "PAUSED", "COMPLETED"].includes(m.t_status) && !openPost;
+  // A decided winner can be disputed; a draw is corrected by the referee (versioned, logged).
+  const canFilePost = Boolean(mySide) && m.status === "completed" && m.outcome !== "bye" && Boolean(m.winner_reg) && ["IN_PROGRESS", "PAUSED", "COMPLETED"].includes(m.t_status) && !openPost;
   const live = m.t_status === "IN_PROGRESS";
   const pending = results.find((r) => r.status === "pending");
   const confirmed = results.find((r) => r.status === "confirmed");
@@ -102,6 +122,7 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
           <p className="field-label">{d.match.whatNow}</p>
           <p>{m.t_status === "PAUSED" ? d.statuses.tournament.PAUSED : d.match.explain[m.status]}</p>
           {m.outcome && m.outcome !== "played" ? <p className="small muted">{d.statuses.outcome[m.outcome]}</p> : null}
+          {drawn ? <p className="small muted">{ru ? "Ничья: обе стороны получают очки за ничью." : "A draw: both sides earn draw points."}</p> : null}
         </div>
         <div className="card">
           <p className="field-label">{d.match.scheduled}</p>
@@ -195,6 +216,7 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
                     <input name="scoreB" type="number" min={0} max={999} required inputMode="numeric" />
                   </Field>
                 </div>
+                {drawNote ? <p className="small muted">{drawNote}</p> : null}
                 <Field label={d.match.evidence}>
                   <input name="evidence" type="url" maxLength={500} placeholder="https://" />
                 </Field>
@@ -230,6 +252,7 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
                     <input name="scoreB" type="number" min={0} max={999} required defaultValue={pending?.score_b ?? undefined} />
                   </Field>
                 </div>
+                {drawNote ? <p className="small muted">{drawNote}</p> : null}
                 <Field label={d.match.resolution}>
                   <textarea name="resolution" rows={2} maxLength={1000} />
                 </Field>
@@ -274,6 +297,7 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
                     <input name="scoreB" type="number" min={0} max={999} required defaultValue={m.score_b ?? undefined} />
                   </Field>
                 </div>
+                {drawNote ? <p className="small muted">{drawNote}</p> : null}
                 <Field label={d.match.correctReason}>
                   <textarea name="note" required minLength={5} rows={2} maxLength={1000} />
                 </Field>

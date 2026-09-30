@@ -13,5 +13,6 @@ export function notificationLink(lang: Locale, data: Record<string, string>) {
   if (data.slug) return `/${lang}/tournaments/${data.slug}`;
   if (data.teamSlug) return `/${lang}/teams/${data.teamSlug}`;
   if (data.orgSlug) return `/${lang}/organizer/${data.orgSlug}`;
+  if (data.circuitSlug) return `/${lang}/circuits/${data.circuitSlug}`;
   return `/${lang}/hub`;
 }

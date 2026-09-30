@@ -7,8 +7,10 @@ import { pageMeta } from "@/lib/meta.ts";
 import { viewer } from "@/server/viewer.ts";
 import { orgBySlug } from "@/server/queries.ts";
 import { canManageOrg, orgRole } from "@/server/access.ts";
+import { listCircuits } from "@/server/circuits.ts";
 import { ActionForm, Badge, DbDown, Empty, Flash, type SearchParams } from "@/components/ui";
 import { TournamentForm } from "@/components/tournament-form";
+import { CircuitForm } from "@/components/circuit-form";
 import { LocalTime } from "@/components/time";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string; slug: string }> }): Promise<Metadata> {
@@ -38,6 +40,8 @@ export default async function OrgPage({ params, searchParams }: { params: Promis
   if (!role && !user.roles.includes("admin")) notFound();
   const owner = role === "owner" || user.roles.includes("admin");
   const back = `/${lang}/organizer/${slug}`;
+  const ru = lang === "ru";
+  const circuits = await listCircuits(db, { orgId: data.org.id });
   return (
     <div className="container page">
       <p className="eyebrow">
@@ -85,11 +89,60 @@ export default async function OrgPage({ params, searchParams }: { params: Promis
         )}
       </section>
 
+      <section className="section-tight">
+        <h2 className="h3">{ru ? "Серии и сезоны" : "Circuits and seasons"}</h2>
+        <p className="small muted">
+          {ru
+            ? "Серия объединяет турниры сезона: накопительные очки, квалификация в финал, дивизионы с повышением и понижением. Закрытый сезон фиксируется и не пересчитывается."
+            : "A circuit links a season's tournaments: cumulative points, qualification to finals, divisions with promotion and relegation. A closed season is frozen and never recomputed."}
+        </p>
+        {circuits.length ? (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>{ru ? "Серия" : "Circuit"}</th>
+                  <th>{o.game}</th>
+                  <th>{o.status}</th>
+                  <th>{ru ? "Турниры" : "Events"}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {circuits.map((c) => (
+                  <tr key={c.id}>
+                    <td>
+                      <Link href={`/${lang}/organizer/c/${c.slug}`}>
+                        {c.name} · {c.season}
+                      </Link>
+                    </td>
+                    <td>{gameBySlug(c.game)?.name ?? c.game}</td>
+                    <td>
+                      <Badge status={c.status === "active" ? "ok" : "muted"}>{c.status === "active" ? (ru ? "Идёт" : "Active") : ru ? "Закрыт" : "Closed"}</Badge>
+                    </td>
+                    <td>
+                      {c.completed} / {c.events}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="muted small">{ru ? "Серий пока нет." : "No circuits yet."}</p>
+        )}
+        {manager ? (
+          <details className="disclosure">
+            <summary>{ru ? "Создать серию" : "Create a circuit"}</summary>
+            <CircuitForm lang={lang} back={back} orgId={data.org.id} />
+          </details>
+        ) : null}
+      </section>
+
       <div className="split">
         {manager ? (
           <section>
             <h2 className="h3">{o.newTournament}</h2>
-            <TournamentForm lang={lang} back={back} orgId={data.org.id} />
+            <TournamentForm lang={lang} back={back} orgId={data.org.id} circuits={circuits} />
           </section>
         ) : null}
         <section>

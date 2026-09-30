@@ -22,6 +22,10 @@ const okRu: Record<string, string> = {
   refund_requested: "Запрос на возврат отправлен провайдеру. Статус обновится после подтверждения.",
   outbox_drained: "Очередь писем обработана.",
   email_not_configured: "Сервис email не подключён: письма остаются в очереди.",
+  tournament_cloned: "Копия создана как черновик — проверьте дату и опубликуйте.",
+  bracket_regenerated: "Сетка пересоздана из текущих участников.",
+  circuit_created: "Серия создана.",
+  season_closed: "Сезон закрыт, таблица зафиксирована.",
 };
 
 const okEn: Record<string, string> = {
@@ -46,11 +50,15 @@ const okEn: Record<string, string> = {
   refund_requested: "Refund requested from the provider. The status updates once confirmed.",
   outbox_drained: "Email queue processed.",
   email_not_configured: "Email service is not connected: messages stay queued.",
+  tournament_cloned: "Copy created as a draft — check the date and publish it.",
+  bracket_regenerated: "The bracket was regenerated from the current entrants.",
+  circuit_created: "Circuit created.",
+  season_closed: "Season closed; the table is frozen.",
 };
 
 const errorsRu: Record<string, string> = {
   invalid_game: "Выберите игру, которая поддерживает этот формат.",
-  format_not_supported: "Эта игра не поддерживает турнирную сетку — выберите формат leaderboard.",
+  format_not_supported: "Эта игра не поддерживает матчи «сторона против стороны» — выберите формат leaderboard.",
   invalid_country: "Укажите страны кодами ISO из списка.",
   country_required: "Турнир открыт только для отдельных стран: укажите страну в настройках профиля (для команды — у каждого игрока).",
   region_locked: "Турнир недоступен для вашей страны.",
@@ -98,11 +106,21 @@ const errorsRu: Record<string, string> = {
   terms_required: "Подтвердите, что принимаете условия предложения.",
   refunds_disabled: "Возвраты через портал не включены.",
   provider_error: "Платёжный провайдер не ответил. Попробуйте позже.",
+  round_robin_limit: "В круговой системе не больше 32 участников.",
+  invalid_points: "Очки — целые числа от 0 до 100: победа больше поражения, ничья между ними.",
+  invalid_points_table: "Таблица очков: от 1 до 64 целых чисел 0–1000 через запятую, без роста к нижним местам; очки за участие не выше последнего значения.",
+  points_table_locked: "Таблица очков заблокирована: в серии уже есть завершённый турнир.",
+  circuit_closed: "Сезон серии закрыт — изменения недоступны.",
+  circuit_mismatch: "Серия не подходит: нужны та же организация, игра и тип участия; для очков — активный сезон и формат с матчами, для отбора — заданное число квалифицирующихся.",
+  circuit_open_events: "Сначала завершите или отмените все турниры серии, включая черновики.",
+  not_in_division: "Турнир открыт только для участников своего дивизиона серии.",
+  not_qualified: "Турнир открыт только для прошедших квалификацию в серии.",
+  regeneration_blocked: "Пересоздать сетку можно только до первого результата: уже есть отправленный результат, спор или сыгранный матч.",
 };
 
 const errorsEn: Record<string, string> = {
   invalid_game: "Choose a game that supports this format.",
-  format_not_supported: "This game does not support a bracket — choose the leaderboard format.",
+  format_not_supported: "This game does not support head-to-head matches — choose the leaderboard format.",
   invalid_country: "Use ISO country codes from the list.",
   country_required: "This tournament is limited to certain countries: set your country in your profile settings (for a team, every player).",
   region_locked: "This tournament is not available in your country.",
@@ -150,6 +168,16 @@ const errorsEn: Record<string, string> = {
   terms_required: "Confirm that you accept the offer's terms.",
   refunds_disabled: "Refunds through the portal are not enabled.",
   provider_error: "The payment provider did not respond. Please try later.",
+  round_robin_limit: "Round robin allows at most 32 entrants.",
+  invalid_points: "Points are whole numbers from 0 to 100: a win above a loss, a draw between them.",
+  invalid_points_table: "Points table: 1 to 64 whole numbers 0–1000 separated by commas, never rising for lower places; participation points no higher than the last value.",
+  points_table_locked: "The points table is locked: an event of this circuit has already been completed.",
+  circuit_closed: "This circuit season is closed — it can no longer be changed.",
+  circuit_mismatch: "This circuit does not fit: it needs the same space, game and entry type; for points an active season and a match format, for qualification a set number of qualifiers.",
+  circuit_open_events: "Complete or cancel every tournament of the circuit first, drafts included.",
+  not_in_division: "This tournament is open only to members of its circuit division.",
+  not_qualified: "This tournament is open only to entrants qualified through the circuit.",
+  regeneration_blocked: "The bracket can be regenerated only before the first result: a result, dispute or played match already exists.",
 };
 
 const kindsRu: Record<string, string> = {
@@ -173,6 +201,11 @@ const kindsRu: Record<string, string> = {
   membership_application_status: "Статус заявки {reference} изменён",
   invoice_issued: "Выставлен счёт {number}",
   payment_received: "Оплата по счёту {number} подтверждена",
+  swiss_bye: "Турнир «{tournament}», тур {round}: у вас bye — очки без игры",
+  circuit_qualified: "Вы прошли квалификацию в серии «{circuit}»",
+  circuit_promoted: "Серия «{circuit}»: повышение в дивизион {division}",
+  circuit_relegated: "Серия «{circuit}»: понижение в дивизион {division}",
+  bracket_regenerated: "Турнир «{tournament}»: сетка пересоздана — проверьте свой матч",
 };
 
 const kindsEn: Record<string, string> = {
@@ -196,6 +229,11 @@ const kindsEn: Record<string, string> = {
   membership_application_status: "Application {reference} status changed",
   invoice_issued: "Invoice {number} issued",
   payment_received: "Payment for invoice {number} confirmed",
+  swiss_bye: "“{tournament}”, round {round}: you have a bye — points without a game",
+  circuit_qualified: "You qualified through the circuit “{circuit}”",
+  circuit_promoted: "“{circuit}”: promoted to division {division}",
+  circuit_relegated: "“{circuit}”: relegated to division {division}",
+  bracket_regenerated: "“{tournament}”: the bracket was regenerated — check your match",
 };
 
 export const extRu = {
