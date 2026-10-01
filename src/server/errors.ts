@@ -177,6 +177,12 @@ export const ERROR_CODES = [
   // Scouting
   "filter_limit",
   "watch_limit",
+  // Transfers
+  "transfer_no_team",
+  "transfer_closed",
+  "transfer_blocked_event",
+  "transfer_dispute_exists",
+  "transfer_player_owner",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 

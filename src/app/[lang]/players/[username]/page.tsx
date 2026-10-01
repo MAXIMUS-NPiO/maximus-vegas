@@ -10,6 +10,8 @@ import { avatarColor, hasActiveMembership, rankFor, totalXp } from "@/server/pro
 import { reputation } from "@/server/disputes.ts";
 import { seasonHistory } from "@/server/circuits.ts";
 import { ratingHistory, ratingsFor } from "@/server/rating.ts";
+import { playerHistory } from "@/server/transfers.ts";
+import { transferText } from "@/lib/transfer-text.ts";
 import { RatingBlock } from "@/components/rating-block";
 import { Badge, DbDown, Empty } from "@/components/ui";
 import { LocalTime } from "@/components/time";
@@ -53,6 +55,7 @@ export default async function Player({ params }: { params: Promise<{ lang: strin
     ratingsFor(db, p.user.id),
     ratingHistory(db, p.user.id, "", 120),
   ]);
+  const teamEvents = await playerHistory(db, p.user.id);
   const draws = p.history.filter((h) => h.drawn).length;
   const { rank } = rankFor(xp);
   const color = avatarColor(p.user.avatar_color);
@@ -179,6 +182,24 @@ export default async function Player({ params }: { params: Promise<{ lang: strin
       ) : null}
 
       {ratings.length || p.self ? <RatingBlock lang={lang} ratings={ratings} history={ratingEvents} /> : null}
+
+      {teamEvents.length ? (
+        <section className="section-tight" id="teams-history">
+          <h2 className="h3">{transferText[lang].teams}</h2>
+          <ul className="list small">
+            {teamEvents.map((h, i) => (
+              <li key={i}>
+                <span className="grow">
+                  <Link href={`/${lang}/teams/${h.team_slug}`}>{h.team_name}</Link> — {transferText[lang].events[h.event] ?? h.event}
+                </span>
+                <span className="muted">
+                  <LocalTime iso={h.at} lang={lang} dateOnly />
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <section className="section-tight">
         <h2 className="h3">{d.players.history}</h2>

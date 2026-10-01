@@ -359,6 +359,10 @@ export async function exportAccount(db: Database, user: SessionUser) {
       "select kind, protective, rule_code, rule_version, confidence, evidence, decision, starts_at, ends_at, revoked_at, revoke_reason, created_at from sanctions where user_id = $1 order by created_at",
     ),
     appeals: await q("select a.statement, a.evidence_url, a.status, a.decision, a.created_at, a.decided_at from sanction_appeals a where a.user_id = $1 order by a.created_at"),
+    teamHistory: await q("select t.name as team, h.event, h.at from team_history h join teams t on t.id = h.team_id where h.user_id = $1 order by h.at"),
+    transfers: await q(
+      "select ft.name as from_team, tt.name as to_team, tr.status, tr.note, tr.created_at, tr.completed_at from team_transfers tr join teams ft on ft.id = tr.from_team join teams tt on tt.id = tr.to_team where tr.player_id = $1 order by tr.created_at",
+    ),
     scoutFilters: await q("select name, query, created_at from scout_filters where user_id = $1 order by created_at"),
     watchlist: await q("select u.username as player, w.note, w.created_at from scout_watch w join users u on u.id = w.player_id where w.user_id = $1 order by w.created_at"),
     reportsFiled: await q(
@@ -464,6 +468,8 @@ export async function deleteAccount(db: Database, user: SessionUser, confirmPass
     await q.query("delete from ratings where user_id = $1", [user.id]);
     await q.query("delete from quick_dodges where user_id = $1", [user.id]);
     await q.query("update ready_check_players set region = '' where user_id = $1", [user.id]);
+    // Transfer proposals still open for the account lapse with it.
+    await q.query("update team_transfers set status = 'cancelled' where player_id = $1 and status = 'proposed'", [user.id]);
     // Scouting: the account's filters and watchlist go, and it leaves every other watchlist.
     await q.query("delete from scout_filters where user_id = $1", [user.id]);
     await q.query("delete from scout_watch where user_id = $1 or player_id = $1", [user.id]);

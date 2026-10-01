@@ -60,6 +60,15 @@ const okRu: Record<string, string> = {
   watch_added: "Игрок в списке наблюдения.",
   watch_updated: "Игрок уже в списке; заметка обновлена.",
   watch_removed: "Игрок убран из списка наблюдения.",
+  transfer_proposed: "Предложение перехода отправлено игроку и его команде; у них 7 дней на ответ.",
+  transfer_exists: "Такое предложение уже ждёт ответа.",
+  transfer_agreed: "Согласие записано. Переход состоится, когда согласится вторая сторона.",
+  transfer_completed: "Переход состоялся: игрок в новой команде, история составов обновлена.",
+  transfer_declined: "Переход отклонён.",
+  transfer_cancelled: "Предложение отозвано.",
+  transfer_disputed: "Спор о переходе передан команде портала.",
+  transfer_upheld: "Решение: переход в силе.",
+  transfer_reversed: "Решение: переход отменён, игрок вернулся в прежнюю команду.",
   application_saved: "Заявка сохранена. Номер показан ниже.",
   invoice_issued: "Счёт выставлен.",
   refund_requested: "Запрос на возврат отправлен провайдеру. Статус обновится после подтверждения.",
@@ -149,6 +158,15 @@ const okEn: Record<string, string> = {
   watch_added: "Player added to your watchlist.",
   watch_updated: "The player is already on your list; the note was updated.",
   watch_removed: "Player removed from your watchlist.",
+  transfer_proposed: "Transfer proposal sent to the player and their team; they have 7 days to answer.",
+  transfer_exists: "Such a proposal is already waiting for an answer.",
+  transfer_agreed: "Agreement recorded. The transfer happens when the other side agrees.",
+  transfer_completed: "Transfer done: the player is in the new team and the roster history is updated.",
+  transfer_declined: "Transfer declined.",
+  transfer_cancelled: "Proposal withdrawn.",
+  transfer_disputed: "The transfer dispute has been passed to the portal team.",
+  transfer_upheld: "Decision: the transfer stands.",
+  transfer_reversed: "Decision: the transfer is reversed and the player is back in their previous team.",
   application_saved: "Application saved. Its reference is shown below.",
   invoice_issued: "Invoice issued.",
   refund_requested: "Refund requested from the provider. The status updates once confirmed.",
@@ -294,6 +312,11 @@ const errorsRu: Record<string, string> = {
   appeal_needs_other_reviewer: "Апелляцию рассматривает сотрудник, который не выносил исходное решение.",
   filter_limit: "Можно сохранить до 20 фильтров: удалите ненужный.",
   watch_limit: "В списке наблюдения до 200 игроков: уберите кого-нибудь.",
+  transfer_no_team: "Игрок не состоит в команде этой игры — пригласите его обычным приглашением.",
+  transfer_closed: "Предложение уже закрыто, истекло или переход нельзя оспорить (прошло больше 14 дней).",
+  transfer_blocked_event: "Игрок в заявленном составе идущего турнира своей команды: переход возможен после окончания турнира.",
+  transfer_dispute_exists: "По этому переходу уже открыт спор.",
+  transfer_player_owner: "Игрок — владелец своей команды: сначала он передаёт владение другому участнику.",
 };
 
 const errorsEn: Record<string, string> = {
@@ -412,6 +435,11 @@ const errorsEn: Record<string, string> = {
   appeal_needs_other_reviewer: "An appeal is decided by a staff member who did not take the original decision.",
   filter_limit: "You can save up to 20 filters: delete one you no longer need.",
   watch_limit: "A watchlist holds up to 200 players: remove someone first.",
+  transfer_no_team: "The player is not in a team of this game — invite them with a regular invitation.",
+  transfer_closed: "The proposal is closed or expired, or the transfer can no longer be disputed (more than 14 days).",
+  transfer_blocked_event: "The player is on their team's roster for a running event: the transfer can happen after it ends.",
+  transfer_dispute_exists: "A dispute about this transfer is already open.",
+  transfer_player_owner: "The player owns their team: they transfer ownership to another member first.",
 };
 
 const kindsRu: Record<string, string> = {
@@ -491,6 +519,13 @@ const kindsRu: Record<string, string> = {
   sanction_revoked: "Санкция по вашему аккаунту отменена",
   appeal_decided: "Решение по вашей апелляции принято",
   report_closed: "Ваше обращение рассмотрено",
+  transfer_proposed_player: "Команда «{team}» предлагает вам переход из «{from}»",
+  transfer_proposed_team: "Команда «{to}» предлагает переход вашему игроку @{user}",
+  transfer_declined: "Переход в «{team}» отклонён",
+  transfer_cancelled: "Предложение перехода в «{team}» отозвано",
+  transfer_completed: "Переход состоялся: из «{from}» в «{team}»",
+  transfer_disputed: "Новый спор о переходе — нужно решение",
+  transfer_dispute_decided: "Решение по спору о переходе принято",
 };
 
 const kindsEn: Record<string, string> = {
@@ -570,6 +605,13 @@ const kindsEn: Record<string, string> = {
   sanction_revoked: "A sanction on your account was revoked",
   appeal_decided: "Your appeal has been decided",
   report_closed: "Your report has been reviewed",
+  transfer_proposed_player: "Team “{team}” proposes a transfer from “{from}”",
+  transfer_proposed_team: "Team “{to}” proposes a transfer of your player @{user}",
+  transfer_declined: "The transfer to “{team}” was declined",
+  transfer_cancelled: "The transfer proposal to “{team}” was withdrawn",
+  transfer_completed: "Transfer done: from “{from}” to “{team}”",
+  transfer_disputed: "New transfer dispute — a decision is needed",
+  transfer_dispute_decided: "The transfer dispute has been decided",
 };
 
 export const extRu = {

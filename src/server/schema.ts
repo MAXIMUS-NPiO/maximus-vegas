@@ -1258,4 +1258,77 @@ export const migrations: Migration[] = [
       `create index scout_watch_player on scout_watch(player_id)`,
     ],
   },
+  {
+    id: 17,
+    name: "transfers_roster_history",
+    statements: [
+      // Roster history of every team: written by a trigger on team_members, so no path can skip it.
+      `create table team_history (
+        id bigserial primary key,
+        team_id uuid not null references teams(id) on delete cascade,
+        user_id uuid not null references users(id) on delete cascade,
+        event text not null check (event in ('joined','left','removed','transferred_in','transferred_out','returned_in','returned_out')),
+        transfer_id uuid,
+        at timestamptz not null default now()
+      )`,
+      `create index team_history_team on team_history(team_id, at desc, id desc)`,
+      `create index team_history_user on team_history(user_id, at desc, id desc)`,
+      `insert into team_history (team_id, user_id, event, at) select team_id, user_id, 'joined', joined_at from team_members`,
+      // The reason travels in a transaction-local setting: "removed", "transfer:<id>" or "return:<id>".
+      `create function team_history_record() returns trigger language plpgsql as $fn$
+       declare
+         reason text := coalesce(current_setting('mv.membership', true), '');
+         tid uuid := case when reason ~ '^(transfer|return):[0-9a-f-]{36}$' then split_part(reason, ':', 2)::uuid end;
+       begin
+         if tg_op = 'INSERT' then
+           insert into team_history (team_id, user_id, event, transfer_id)
+           values (new.team_id, new.user_id,
+                   case when reason like 'transfer:%' then 'transferred_in' when reason like 'return:%' then 'returned_in' else 'joined' end, tid);
+           return new;
+         end if;
+         -- A team being deleted takes its history with it.
+         if not exists (select 1 from teams where id = old.team_id) then
+           return old;
+         end if;
+         insert into team_history (team_id, user_id, event, transfer_id)
+         values (old.team_id, old.user_id,
+                 case when reason like 'transfer:%' then 'transferred_out' when reason like 'return:%' then 'returned_out'
+                      when reason = 'removed' then 'removed' else 'left' end, tid);
+         return old;
+       end $fn$`,
+      `create trigger team_members_history after insert or delete on team_members for each row execute function team_history_record()`,
+      // A transfer: proposed by the receiving team, agreed by the player and the releasing team.
+      `create table team_transfers (
+        id uuid primary key default gen_random_uuid(),
+        player_id uuid not null references users(id),
+        from_team uuid not null references teams(id) on delete cascade,
+        to_team uuid not null references teams(id) on delete cascade,
+        proposed_by uuid not null references users(id),
+        note text not null default '' check (char_length(note) <= 300),
+        player_ok_at timestamptz,
+        from_ok_at timestamptz,
+        from_ok_by uuid references users(id),
+        status text not null default 'proposed' check (status in ('proposed','completed','declined','cancelled','expired','reversed')),
+        declined_by uuid references users(id),
+        created_at timestamptz not null default now(),
+        expires_at timestamptz not null,
+        completed_at timestamptz,
+        check (from_team <> to_team)
+      )`,
+      `create unique index team_transfers_open on team_transfers(player_id, to_team) where status = 'proposed'`,
+      `create index team_transfers_teams on team_transfers(from_team, to_team, created_at desc)`,
+      `create table transfer_disputes (
+        id uuid primary key default gen_random_uuid(),
+        transfer_id uuid not null references team_transfers(id) on delete cascade,
+        opened_by uuid not null references users(id),
+        reason text not null check (char_length(reason) between 20 and 2000),
+        status text not null default 'open' check (status in ('open','upheld','reversed')),
+        decided_by uuid references users(id),
+        decision text not null default '',
+        created_at timestamptz not null default now(),
+        decided_at timestamptz
+      )`,
+      `create unique index transfer_disputes_one_open on transfer_disputes(transfer_id) where status = 'open'`,
+    ],
+  },
 ];

@@ -30,7 +30,7 @@ class Person {
   }
   async go(path) {
     const res = await this.pg.goto(BASE + path);
-    await this.pg.waitForLoadState("networkidle");
+    await this.pg.waitForLoadState("load");
     if (res && res.status() >= 400) problems.push(`[${this.name}] ${path} HTTP ${res.status()}`);
     return res;
   }
@@ -54,7 +54,7 @@ class Person {
       this.pg.waitForNavigation(),
       (await button.isVisible()) ? button.click() : f.evaluate((form) => form.requestSubmit()),
     ]);
-    await this.pg.waitForLoadState("networkidle");
+    await this.pg.waitForLoadState("load");
     const url = new URL(this.pg.url());
     const ok = url.searchParams.get("ok");
     const e = url.searchParams.get("e");
@@ -145,6 +145,18 @@ async function main(browser) {
   await b.submit("team.invite", { username: c.username });
   await c.go("/ru/hub");
   await c.submit("team.respond", {}, { form: c.formWith("team.respond", "accept", "1") });
+
+  step("transfer between two teams");
+  const ownTeam = new URL(b.pg.url()).pathname;
+  await a.go("/ru/teams/new");
+  await a.submit("team.create", { name: `Smoke Rival ${RUN}`, tag: "SR", game: "cs2" });
+  const rivalTeam = new URL(a.pg.url()).pathname;
+  await a.pg.locator("details:has(form[action^='/api/a/transfer.propose?']) summary").first().click();
+  await a.submit("transfer.propose", { username: c.username, note: "Smoke transfer" });
+  await c.go(rivalTeam);
+  await c.submit("transfer.answer", {}, { form: c.formWith("transfer.answer", "answer", "accept") });
+  await b.go(ownTeam);
+  await b.submit("transfer.answer", {}, { form: b.formWith("transfer.answer", "answer", "accept") });
 
   step("team finder");
   await b.go("/ru/finder?kind=lfg");
