@@ -81,6 +81,7 @@ const ru = {
         items: [
           ["players", "Игроки", "Профили и игровая история"],
           ["teams", "Команды", "Составы, приглашения и результаты"],
+          ["finder", "Поиск команды", "Вакансии в составах, LFT и LFG"],
           ["membership", "Членство", "Премиальный пропуск и косметика — без преимущества в игре"],
           ["community", "Сообщества", "Клубы по играм и интересам"],
           ["venues", "Площадки", "Клубы и игровые пространства"],
@@ -915,6 +916,7 @@ const en: BaseDict = {
         items: [
           ["players", "Players", "Profiles and match history"],
           ["teams", "Teams", "Rosters, invitations and results"],
+          ["finder", "Team finder", "Roster vacancies, LFT and LFG"],
           ["membership", "Membership", "Premium pass and cosmetics — no in-game advantage"],
           ["community", "Communities", "Clubs by game and interest"],
           ["venues", "Venues", "Gaming clubs and spaces"],

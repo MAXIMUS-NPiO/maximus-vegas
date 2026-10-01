@@ -2456,3 +2456,37 @@ button:disabled {
   flex-wrap: wrap;
   gap: 6px;
 }
+
+/* Team finder */
+.tabs a.is-active {
+  color: var(--text);
+  background: var(--surface);
+}
+/* Three short tabs: they wrap on a phone instead of hiding the last one behind a scroll. */
+.finder-tabs {
+  position: static;
+  flex-wrap: wrap;
+}
+.finder-filter {
+  margin-block: 14px 18px;
+}
+.finder-post h3 {
+  margin: 0;
+}
+.finder-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 6px 14px;
+  margin: 0;
+}
+.finder-facts dt {
+  color: var(--dim);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.finder-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

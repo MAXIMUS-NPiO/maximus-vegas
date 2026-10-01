@@ -22,6 +22,7 @@ import * as gameday from "@/server/gameday.ts";
 import * as liveops from "@/server/liveops.ts";
 import * as repair from "@/server/repair.ts";
 import * as veto from "@/server/veto.ts";
+import * as finder from "@/server/finder.ts";
 import { storeUpload } from "@/server/media.ts";
 import { drainOutbox, mailConfigured } from "@/server/mail.ts";
 import { fail } from "@/server/errors.ts";
@@ -517,6 +518,38 @@ const handlers: Record<string, Handler> = {
   "incident.resolve": async (c) => {
     const r = await liveops.resolveIncident(c.db, u(c), idOf(c.form.incident), c.form.note);
     return { ok: r.closed ? "incident_resolved" : "saved" };
+  },
+  "finder.post": async (c) => {
+    await finder.createPost(c.db, u(c), {
+      kind: c.form.kind,
+      game: c.form.game,
+      teamId: c.form.team,
+      region: c.form.region,
+      roles: c.form.roles,
+      languages: c.form.languages,
+      level: c.form.level,
+      schedule: c.form.schedule,
+      note: c.form.note,
+      slots: c.form.slots,
+    });
+    return { ok: "finder_posted" };
+  },
+  "finder.close": async (c) => {
+    await finder.closePost(c.db, u(c), idOf(c.form.post));
+    return { ok: "saved" };
+  },
+  "finder.apply": async (c) => {
+    const r = await finder.applyToPost(c.db, u(c), idOf(c.form.post), c.form.message);
+    return { ok: r.created ? "finder_applied" : "finder_already_applied" };
+  },
+  "finder.withdraw": async (c) => {
+    await finder.withdrawApplication(c.db, u(c), idOf(c.form.application));
+    return { ok: "saved" };
+  },
+  "finder.decide": async (c) => {
+    const accept = c.form.accept === "1";
+    const r = await finder.decideApplication(c.db, u(c), idOf(c.form.application), accept);
+    return { ok: r.changed ? (accept ? "finder_accepted" : "finder_declined") : "saved" };
   },
   "match.veto": async (c) => {
     const id = idOf(c.form.match);

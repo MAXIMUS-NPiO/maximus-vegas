@@ -334,6 +334,12 @@ export async function exportAccount(db: Database, user: SessionUser) {
     tournamentFeedback: await q(
       "select t.slug as tournament, f.rating, f.comment, f.created_at, f.updated_at from tournament_feedback f join tournaments t on t.id = f.tournament_id where f.user_id = $1 order by f.created_at",
     ),
+    finderPosts: await q(
+      "select kind, game, region, roles, languages, level, schedule, note, slots, status, created_at, expires_at, closed_at from finder_posts where user_id = $1 order by created_at",
+    ),
+    finderApplications: await q(
+      "select a.status, a.message, a.created_at, a.decided_at, p.kind, p.game from finder_applications a join finder_posts p on p.id = a.post_id where a.user_id = $1 order by a.created_at",
+    ),
     challenges: await q(
       `select c.kind, c.game, c.status, (c.challenger_id = $1) as sent_by_me, case when c.challenger_id = $1 then uo.username else uc.username end as opponent,
               c.score_challenger, c.score_opponent, (c.winner_id = $1) as won, c.created_at, c.completed_at
@@ -409,6 +415,9 @@ export async function deleteAccount(db: Database, user: SessionUser, confirmPass
     // Registration answers may hold contact details: erased with the account that gave them.
     await q.query("update registrations set answers = null where registered_by = $1 and answers is not null", [user.id]);
     await q.query("delete from tournament_feedback where user_id = $1", [user.id]);
+    // Team finder posts and applications are free text the account wrote: erased with it.
+    await q.query("delete from finder_applications where user_id = $1", [user.id]);
+    await q.query("delete from finder_posts where user_id = $1", [user.id]);
     await q.query("delete from team_members where user_id = $1", [user.id]);
     await q.query("delete from user_roles where user_id = $1", [user.id]);
     await q.query("delete from tournament_organizers where user_id = $1", [user.id]);

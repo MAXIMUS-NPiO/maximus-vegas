@@ -53,6 +53,11 @@ const okRu: Record<string, string> = {
   veto_saved: "Ход вето записан, ход переходит сопернику.",
   veto_done: "Вето завершено: карты матча определены.",
   veto_reset: "Вето сброшено, стороны начинают заново.",
+  finder_posted: "Объявление опубликовано на 30 дней.",
+  finder_applied: "Отклик отправлен. Ответ придёт уведомлением.",
+  finder_already_applied: "Ваш отклик уже ждёт ответа.",
+  finder_accepted: "Отклик принят.",
+  finder_declined: "Отклик отклонён.",
 };
 
 const okEn: Record<string, string> = {
@@ -108,6 +113,11 @@ const okEn: Record<string, string> = {
   veto_saved: "Veto turn recorded; it is your opponent's turn.",
   veto_done: "Veto complete: the maps of the match are set.",
   veto_reset: "Veto reset; the sides start again.",
+  finder_posted: "Post published for 30 days.",
+  finder_applied: "Application sent. The answer arrives as a notification.",
+  finder_already_applied: "Your application is already waiting for an answer.",
+  finder_accepted: "Application accepted.",
+  finder_declined: "Application declined.",
 };
 
 const errorsRu: Record<string, string> = {
@@ -201,6 +211,8 @@ const errorsRu: Record<string, string> = {
   veto_unavailable: "Вето недоступно: у турнира нет пула карт или он меньше длины серии.",
   veto_complete: "Вето уже завершено.",
   not_your_turn: "Сейчас ход другой стороны (или действовать может только капитан или владелец команды).",
+  finder_closed: "Объявление закрыто или истекло.",
+  finder_limit: "У команды уже три открытые вакансии: закройте одну, чтобы открыть новую.",
 };
 
 const errorsEn: Record<string, string> = {
@@ -294,6 +306,8 @@ const errorsEn: Record<string, string> = {
   veto_unavailable: "No veto: the event has no map pool, or it is smaller than the series.",
   veto_complete: "The veto is already complete.",
   not_your_turn: "It is the other side's turn (or only the team's captain or owner can act).",
+  finder_closed: "The post is closed or has expired.",
+  finder_limit: "The team already has three open vacancies: close one to open another.",
 };
 
 const kindsRu: Record<string, string> = {
@@ -351,6 +365,10 @@ const kindsRu: Record<string, string> = {
   veto_turn: "Турнир «{tournament}»: ваш ход в вето карт",
   veto_done: "Турнир «{tournament}»: вето завершено — карты: {maps}",
   veto_reset: "Турнир «{tournament}»: судья сбросил вето вашего матча",
+  finder_application: "@{user} откликнулся на ваше объявление ({game})",
+  finder_accepted: "Вас приняли в команду «{team}»",
+  finder_lfg_accepted: "@{user} принял ваш отклик ({game}) — профиль игрока по ссылке",
+  finder_declined: "Ваш отклик отклонён ({game})",
 };
 
 const kindsEn: Record<string, string> = {
@@ -408,6 +426,10 @@ const kindsEn: Record<string, string> = {
   veto_turn: "“{tournament}”: your turn in the map veto",
   veto_done: "“{tournament}”: veto complete — maps: {maps}",
   veto_reset: "“{tournament}”: a referee reset your match's veto",
+  finder_application: "@{user} answered your post ({game})",
+  finder_accepted: "You joined the team “{team}”",
+  finder_lfg_accepted: "@{user} accepted your answer ({game}) — their profile is linked",
+  finder_declined: "Your application was declined ({game})",
 };
 
 export const extRu = {

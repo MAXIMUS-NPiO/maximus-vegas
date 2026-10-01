@@ -990,4 +990,43 @@ export const migrations: Migration[] = [
       )`,
     ],
   },
+  {
+    id: 13,
+    name: "team_finder",
+    statements: [
+      // Team finder: players looking for a team (lft) or a group (lfg), and teams' roster vacancies.
+      `create table finder_posts (
+        id uuid primary key default gen_random_uuid(),
+        kind text not null check (kind in ('lft','lfg','vacancy')),
+        user_id uuid not null references users(id) on delete cascade,
+        team_id uuid references teams(id) on delete cascade,
+        game text not null,
+        region text not null default '',
+        roles text not null default '',
+        languages text not null default '',
+        level text not null default '',
+        schedule text not null default '',
+        note text not null default '' check (char_length(note) <= 500),
+        slots int not null default 1 check (slots between 1 and 5),
+        status text not null default 'open' check (status in ('open','closed')),
+        created_at timestamptz not null default now(),
+        expires_at timestamptz not null,
+        closed_at timestamptz,
+        check ((kind = 'vacancy') = (team_id is not null))
+      )`,
+      `create index finder_posts_open on finder_posts(kind, game, created_at desc) where status = 'open'`,
+      `create unique index finder_one_open_post on finder_posts(user_id, kind, game) where status = 'open' and kind in ('lft','lfg')`,
+      `create table finder_applications (
+        id uuid primary key default gen_random_uuid(),
+        post_id uuid not null references finder_posts(id) on delete cascade,
+        user_id uuid not null references users(id) on delete cascade,
+        message text not null default '' check (char_length(message) <= 500),
+        status text not null default 'pending' check (status in ('pending','accepted','declined','withdrawn')),
+        decided_by uuid references users(id),
+        created_at timestamptz not null default now(),
+        decided_at timestamptz
+      )`,
+      `create unique index finder_one_pending on finder_applications(post_id, user_id) where status = 'pending'`,
+    ],
+  },
 ];
