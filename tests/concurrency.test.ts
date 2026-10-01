@@ -256,3 +256,49 @@ test("swiss and round robin: results that finish a round together pair the next 
     await db.close();
   }
 });
+
+// ---- Release 4: the end of a main stage under real concurrency ----
+test("groups: the last group results decided together create the playoff exactly once", { skip: !url }, async () => {
+  const db: Database = await openDatabase({ url });
+  const run = Date.now().toString(36);
+  const mk = async (name: string): Promise<SessionUser> => {
+    const s = await signUp(db, { email: `${name}${run}@example.com`, username: `${name}${run}`.slice(0, 24), displayName: name, password: "correct horse battery", adult: "on", terms: "on" });
+    return (await sessionUser(db, s.token))!;
+  };
+  try {
+    const org = await mk("gpo");
+    const space = await createOrg(db, org, { name: `Groups ${run}`, description: "" });
+    const t = await createTournament(db, org, space.id, {
+      name: `groups ${run}`, game: "cs2", format: "groups", participantType: "solo", teamSize: 1, maxParticipants: 16,
+      checkInRequired: "", region: "", startsAt: "2030-01-01T12:00", timeZone: "UTC", description: "", rules: "",
+      settings: { groupCount: "4", groupAdvance: "2", playoffFormat: "double_elimination" },
+    });
+    await transition(db, org, t.id, "PUBLISHED");
+    await transition(db, org, t.id, "REGISTRATION_OPEN");
+    for (let i = 0; i < 12; i++) await register(db, await mk(`gp${i}`), t.id);
+    await transition(db, org, t.id, "REGISTRATION_CLOSED");
+    await transition(db, org, t.id, "IN_PROGRESS");
+    const games = await db.query<{ id: string; group_no: number }>("select id, group_no from matches where tournament_id = $1 order by round, group_no, position", [t.id]);
+    assert.equal(games.length, 12, "four groups of three: three games each");
+    // All but the last game of every group first; then the four last games, each by eight racing requests.
+    const last = new Map<number, string>();
+    for (const g of games) last.set(g.group_no, g.id);
+    for (const g of games.filter((g) => ![...last.values()].includes(g.id))) await officialResult(db, org, g.id, { scoreA: 2, scoreB: 0, evidenceUrl: "", note: "" });
+    const all = await Promise.allSettled(
+      Array.from({ length: 8 }, () => [...last.values()].map((id) => officialResult(db, org, id, { scoreA: 2, scoreB: 1, evidenceUrl: "", note: "" }))).flat(),
+    );
+    assert.equal(all.filter((r) => r.status === "fulfilled").length, 4, "one decision per game");
+    const [state] = await db.query<{ stage: number; entries: number; playoff: number; started: number }>(
+      `select t.stage,
+              (select count(*)::int from stage_entries e where e.tournament_id = t.id) as entries,
+              (select count(*)::int from matches m where m.tournament_id = t.id and m.stage = 2) as playoff,
+              (select count(*)::int from audit_log a where a.entity_id = t.id::text and a.action = 'tournament.playoff_started') as started
+         from tournaments t where t.id = $1`,
+      [t.id],
+    );
+    assert.deepEqual(state, { stage: 2, entries: 8, playoff: 14, started: 1 }, "one playoff of eight, double elimination without a reset yet");
+    assert.equal((await verifyAuditChain(db)).valid, true);
+  } finally {
+    await db.close();
+  }
+});

@@ -285,6 +285,45 @@ assert.ok((await guest.get(`/ru/players/${players[0].username}`)).text.includes(
 assert.ok((await guest.get(`/ru/players/${drawUser}`)).text.includes("Ничья"), "passport shows the draw");
 log("circuit points and qualification, clone blocks the close until cancelled, season closed into the next one, passport history");
 
+// ---------- Groups → playoff, gauntlet ----------
+const gr = await org.post("tournament.create", {
+  ...roundsBase, name: `E2E Groups ${RUN}`, format: "groups", pointsWin: "3", pointsDraw: "1", pointsLoss: "0",
+  groupCount: "2", groupAdvance: "1", playoffFormat: "single_elimination", roundHours: "24",
+});
+assert.equal(gr.ok, "tournament_created", gr.location);
+const grSlug = gr.path.split("/").pop();
+const grId = uuidAfter((await org.get(gr.path)).text, "tournament");
+assert.equal((await org.post("tournament.create", { ...roundsBase, name: `E2E Groups Bad ${RUN}`, format: "groups", groupCount: "4", groupAdvance: "2", maxParticipants: "6" })).e, "stage_too_few");
+for (const to of ["PUBLISHED", "REGISTRATION_OPEN"]) assert.equal((await org.post("tournament.transition", { tournament: grId, to })).ok, "status_changed");
+for (const p of players) assert.equal((await p.post("tournament.register", { tournament: grId })).ok, "registered");
+const grPreview = (await guest.get(`/ru/tournaments/${grSlug}`)).text;
+assert.ok(grPreview.includes("Группа A") && grPreview.includes("Группа B") && grPreview.includes("Затем плей-офф"), "group composition preview");
+assert.ok((await org.get(gr.path)).text.includes("Матчей в группах"), "group structure preview for the organiser");
+for (const to of ["REGISTRATION_CLOSED", "IN_PROGRESS"]) assert.equal((await org.post("tournament.transition", { tournament: grId, to })).ok, "status_changed");
+assert.ok((await org.get(gr.path)).text.includes("Пересоздать группы"), "groups can be rebuilt before results");
+const grMatch = /\/ru\/matches\/([0-9a-f-]{36})/.exec((await org.get(gr.path)).text)?.[1];
+assert.ok((await guest.get(`/ru/matches/${grMatch}`)).text.includes("Группа "), "group match labelled with its group");
+const grPasses = await playOut(players, 60);
+const grPage = (await guest.get(`/ru/tournaments/${grSlug}`)).text;
+assert.ok(grPage.includes("Группы + плей-офф") && grPage.includes("Завершён") && grPage.includes("Плей-офф") && grPage.includes("Финал") && grPage.includes("MV-STAGES-1"), "groups then playoff, completed");
+assert.ok(grPage.includes("Таблица основного этапа"), "final places with the main-stage table");
+const finalId = [...grPage.matchAll(/\/ru\/matches\/([0-9a-f-]{36})/g)].map((m) => m[1]).pop();
+assert.ok((await guest.get(`/ru/matches/${finalId}`)).text.includes("Плей-офф · Финал"), "playoff match labelled");
+log(`groups → playoff for 5 entrants played in ${grPasses} passes; snake groups, automatic playoff, final places`);
+
+const gt = await org.post("tournament.create", { org: orgId, name: `E2E Gauntlet ${RUN}`, game: "cs2", format: "gauntlet", participantType: "solo", teamSize: "5", maxParticipants: "8", startsAt: tomorrow, tz: "Asia/Dubai", description: "e2e", rules: "bo1" });
+assert.equal(gt.ok, "tournament_created", gt.location);
+const gtSlug = gt.path.split("/").pop();
+const gtId = uuidAfter((await org.get(gt.path)).text, "tournament");
+for (const to of ["PUBLISHED", "REGISTRATION_OPEN"]) assert.equal((await org.post("tournament.transition", { tournament: gtId, to })).ok, "status_changed");
+for (const p of players.slice(0, 4)) assert.equal((await p.post("tournament.register", { tournament: gtId })).ok, "registered");
+assert.ok((await guest.get(`/ru/tournaments/${gtSlug}`)).text.includes("Ступень 1"), "gauntlet preview");
+for (const to of ["REGISTRATION_CLOSED", "IN_PROGRESS"]) assert.equal((await org.post("tournament.transition", { tournament: gtId, to })).ok, "status_changed");
+const gtPasses = await playOut(players.slice(0, 4), 40);
+const gtPage = (await guest.get(`/ru/tournaments/${gtSlug}`)).text;
+assert.ok(gtPage.includes("Лесенка") && gtPage.includes("Завершён") && gtPage.includes("Ступень 2"), "gauntlet completed");
+log(`gauntlet for 4 entrants played in ${gtPasses} passes`);
+
 const profile = (await guest.get(`/ru/players/${players[0].username}`)).text;
 assert.ok(profile.includes("Игровой паспорт") && profile.includes("Репутация"), "profile shows passport and reputation");
 
