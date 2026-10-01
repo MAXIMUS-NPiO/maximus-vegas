@@ -12,6 +12,9 @@ import { ActionForm, Badge, DbDown, Field, Flash, type SearchParams } from "@/co
 import { LocalDateTimeInput, LocalTime, TimeZoneField } from "@/components/time";
 import { matchLabel } from "@/components/tournament";
 import { noShowFrom } from "@/server/matches.ts";
+import { depthKey, pointsOf, SERIES_LENGTHS, seriesOf, seriesRulesOf, type SeriesSource } from "@/server/series.ts";
+import { venues as venuesOf } from "@/server/schedule.ts";
+import { seriesText } from "@/components/tournament";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string; id: string }> }): Promise<Metadata> {
   const { lang, id } = await params;
@@ -44,6 +47,21 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
     lang,
   );
   const noShowAt = noShowFrom({ scheduled_at: m.scheduled_at, t_no_show: m.t_no_show });
+  // Series length and points of this match under the tournament's rules (MV-SERIES-1).
+  const seriesRules = seriesRulesOf({ series_rules: m.t_series });
+  const series = seriesOf(seriesRules, m, { main: m.t_format, playoff: tSettings.playoff?.format ?? null }, new Map([[depthKey(m.stage ?? 1, m.bracket ?? "W"), m.rounds]]));
+  const matchPoints = inRounds ? pointsOf(seriesRules, tSettings.points, m) : null;
+  const sourceText: Record<SeriesSource, string> = ru
+    ? { match: "задано для этого матча", round: "по правилу тура", final: "по правилу финала", semifinal: "по правилу полуфиналов", lower: "по правилу нижней сетки", group: "по правилу группы", playoff: "по правилу плей-офф", tournament: "по умолчанию турнира" }
+    : { match: "set for this match", round: "by the round rule", final: "by the final rule", semifinal: "by the semi-final rule", lower: "by the lower-bracket rule", group: "by the group rule", playoff: "by the playoff rule", tournament: "the tournament's default" };
+  const seriesNote =
+    series.bestOf > 1
+      ? ru
+        ? `Счёт — число выигранных игр: победителю нужно ${(series.bestOf + 1) / 2}.`
+        : `The score is games won: the winner needs ${(series.bestOf + 1) / 2}.`
+      : null;
+  const reported = results.some((r) => r.status === "pending" || r.status === "confirmed");
+  const venueList = referee && !["completed", "cancelled"].includes(m.status) ? await venuesOf(db, m.tournament_id) : [];
   // Once the playoff exists, the main stage that seeded it is final.
   const stageLocked = (m.stage ?? 1) === 1 && m.t_stage === 2;
   const drawsOk = inRounds && tSettings.allowDraws;
@@ -126,10 +144,24 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
           <p>{m.t_status === "PAUSED" ? d.statuses.tournament.PAUSED : d.match.explain[m.status]}</p>
           {m.outcome && m.outcome !== "played" ? <p className="small muted">{d.statuses.outcome[m.outcome]}</p> : null}
           {drawn ? <p className="small muted">{ru ? "Ничья: обе стороны получают очки за ничью." : "A draw: both sides earn draw points."}</p> : null}
+          <p className="small">
+            {ru ? "Формат" : "Format"}: <strong>{seriesText(series.bestOf, lang)}</strong> <span className="muted">· {sourceText[series.source]}</span>
+          </p>
+          {matchPoints && matchPoints.source !== "tournament" ? (
+            <p className="small">
+              {ru ? "Очки этого матча" : "Points of this match"}: {matchPoints.points.win} / {matchPoints.points.draw} / {matchPoints.points.loss}{" "}
+              <span className="muted">· {sourceText[matchPoints.source]}</span>
+            </p>
+          ) : null}
         </div>
         <div className="card">
           <p className="field-label">{d.match.scheduled}</p>
           <p>{m.scheduled_at ? <LocalTime iso={m.scheduled_at} lang={lang} /> : <span className="muted">{d.match.notScheduled}</span>}</p>
+          {m.venue_name ? (
+            <p className="small">
+              {ru ? "Площадка" : "Venue"}: <strong>{m.venue_name}</strong>
+            </p>
+          ) : null}
           <p className="small muted">{d.common.timeNote}</p>
         </div>
         <div className="card">
@@ -219,7 +251,7 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
                     <input name="scoreB" type="number" min={0} max={999} required inputMode="numeric" />
                   </Field>
                 </div>
-                {drawNote ? <p className="small muted">{drawNote}</p> : null}
+                {seriesNote ? <p className="small muted">{seriesNote}</p> : drawNote ? <p className="small muted">{drawNote}</p> : null}
                 <Field label={d.match.evidence}>
                   <input name="evidence" type="url" maxLength={500} placeholder="https://" />
                 </Field>
@@ -255,7 +287,7 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
                     <input name="scoreB" type="number" min={0} max={999} required defaultValue={pending?.score_b ?? undefined} />
                   </Field>
                 </div>
-                {drawNote ? <p className="small muted">{drawNote}</p> : null}
+                {seriesNote ? <p className="small muted">{seriesNote}</p> : drawNote ? <p className="small muted">{drawNote}</p> : null}
                 <Field label={d.match.resolution}>
                   <textarea name="resolution" rows={2} maxLength={1000} />
                 </Field>
@@ -283,16 +315,73 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
             </>
           ) : null}
           {open ? (
-            <ActionForm action="match.details" lang={lang} back={back} hidden={hidden} className="inline-form">
+            <ActionForm action="match.details" lang={lang} back={back} hidden={hidden} className="stack-sm">
               <TimeZoneField />
-              <label className="field-label" htmlFor="sched">
-                {d.match.scheduleTitle}
+              <div className="inline-form">
+                <label className="field-label" htmlFor="sched">
+                  {d.match.scheduleTitle}
+                </label>
+                <span id="sched">
+                  <LocalDateTimeInput name="scheduledAt" iso={m.scheduled_at ? new Date(m.scheduled_at).toISOString() : null} />
+                </span>
+                {venueList.length ? (
+                  <select name="venueId" defaultValue={m.venue_id ?? ""} aria-label={ru ? "Площадка" : "Venue"}>
+                    <option value="">{ru ? "Без площадки" : "No venue"}</option>
+                    {venueList.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+                <button className="btn btn-ghost btn-sm">{d.match.save}</button>
+              </div>
+              <label className="check small">
+                <input type="checkbox" name="force" value="1" />
+                <span>{ru ? "Сохранить, даже если площадка или участник заняты в это время" : "Save even if the venue or an entrant is busy at that time"}</span>
               </label>
-              <span id="sched">
-                <LocalDateTimeInput name="scheduledAt" iso={m.scheduled_at ? new Date(m.scheduled_at).toISOString() : null} />
-              </span>
-              <button className="btn btn-ghost btn-sm">{d.match.save}</button>
             </ActionForm>
+          ) : null}
+          {open && ["IN_PROGRESS", "PAUSED"].includes(m.t_status) && !reported ? (
+            <details className="disclosure">
+              <summary>{ru ? "Формат этого матча" : "This match's format"}</summary>
+              <p className="small muted">
+                {ru
+                  ? "До первого результата судья может задать серию и (для матчей таблицы) очки только для этого матча. Пустое значение возвращает правила тура, группы, этапа и турнира."
+                  : "Before the first result a referee may set the series and (for table matches) the points of this match only. Empty values restore the round, group, stage and tournament rules."}
+              </p>
+              <ActionForm action="match.format" lang={lang} back={back} hidden={hidden} className="stack-sm">
+                <Field label={ru ? "Серия" : "Series"}>
+                  <select name="series" defaultValue={m.series_override ? String(m.series_override) : ""}>
+                    <option value="">{ru ? "По правилам турнира" : "By the tournament rules"}</option>
+                    {SERIES_LENGTHS.map((n) => (
+                      <option key={n} value={String(n)}>
+                        {seriesText(n, lang)}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                {inRounds ? (
+                  <div className="form-grid form-grid-4">
+                    {(["Win", "Draw", "Loss", ...(m.t_format === "swiss" ? ["Bye"] : [])] as const).map((k) => (
+                      <Field key={k} label={ru ? ({ Win: "Победа", Draw: "Ничья", Loss: "Поражение", Bye: "Bye" } as Record<string, string>)[k] : k}>
+                        <input
+                          name={`points${k}`}
+                          type="number"
+                          min={0}
+                          max={100}
+                          inputMode="numeric"
+                          defaultValue={
+                            (m.points_override as Record<string, number> | null)?.[k.toLowerCase()] ?? ""
+                          }
+                        />
+                      </Field>
+                    ))}
+                  </div>
+                ) : null}
+                <button className="btn btn-ghost btn-sm">{d.common.save}</button>
+              </ActionForm>
+            </details>
           ) : null}
           {m.status === "completed" && m.outcome !== "bye" && both && stageLocked ? (
             <p className="small muted">
@@ -313,7 +402,7 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
                     <input name="scoreB" type="number" min={0} max={999} required defaultValue={m.score_b ?? undefined} />
                   </Field>
                 </div>
-                {drawNote ? <p className="small muted">{drawNote}</p> : null}
+                {seriesNote ? <p className="small muted">{seriesNote}</p> : drawNote ? <p className="small muted">{drawNote}</p> : null}
                 <Field label={d.match.correctReason}>
                   <textarea name="note" required minLength={5} rows={2} maxLength={1000} />
                 </Field>

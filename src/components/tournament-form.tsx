@@ -5,6 +5,9 @@ import { editableSettings, GAUNTLET_MAX, isRoundFormat, MAX_GROUPS, PLAYOFF_MAX,
 import { DEFAULT_POINTS } from "@/server/standings.ts";
 import { FFA_MAX_GAMES, FFA_MAX_LOBBY, ffaSettingsOf, pointsText } from "@/server/ffa.ts";
 import { fieldsOf, MAX_FIELDS, type RegField } from "@/server/registration.ts";
+import { SERIES_LENGTHS, SERIES_MAX_ROUND, SERIES_ROWS, seriesRulesOf } from "@/server/series.ts";
+import { groupName } from "@/server/stages.ts";
+import { admissionOf } from "@/server/admission.ts";
 import { ActionForm, Check, Field } from "./ui";
 import { LocalDateTimeInput, TimeZoneField } from "./time";
 
@@ -37,6 +40,9 @@ export type TournamentDefaults = {
   registration_closes_at?: Date | string | null;
   roster_locks_at?: Date | string | null;
   no_show_minutes?: number | null;
+  series_rules?: unknown;
+  admission?: unknown;
+  match_minutes?: number | null;
 };
 
 /** A circuit of the organising space, offered for linking. */
@@ -82,6 +88,23 @@ export function TournamentForm({
   const activeCircuits = circuits.filter((c) => c.status === "active");
   const qualifiers = circuits.filter((c) => c.qualify_top > 0);
   const circuitLabel = (c: CircuitOption) => `${c.name} · ${c.season} · ${c.game} · ${c.participant_type === "team" ? o.team : o.solo}`;
+  const series = seriesRulesOf({ series_rules: t?.series_rules ?? null });
+  const admission = admissionOf({ admission: t?.admission ?? null });
+  const lengthOptions = (inherit: boolean) => (
+    <>
+      {inherit ? <option value="">{ru ? "Как выше" : "As above"}</option> : null}
+      {SERIES_LENGTHS.map((n) => (
+        <option key={n} value={String(n)}>
+          {n === 1 ? (ru ? "Bo1 — одна игра" : "Bo1 — one game") : ru ? `Bo${n} — до ${(n + 1) / 2} побед` : `Bo${n} — first to ${(n + 1) / 2}`}
+        </option>
+      ))}
+    </>
+  );
+  const pointCell = (name: string, label: string, value: number | undefined) => (
+    <Field label={label}>
+      <input name={name} type="number" min={0} max={100} defaultValue={value ?? ""} inputMode="numeric" />
+    </Field>
+  );
   return (
     <ActionForm
       action={editing ? "tournament.update" : "tournament.create"}
@@ -229,6 +252,94 @@ export function TournamentForm({
       </fieldset>
 
       <fieldset className="fieldset">
+        <legend>{ru ? "Формат серий и очки по уровням" : "Series format and points by level"}</legend>
+        <input type="hidden" name="seriesFields" value="1" />
+        <p className="small muted">
+          {ru
+            ? "Для матчей «сторона против стороны». Настройка наследуется: турнир → плей-офф → нижняя сетка → группа → тур или стадия → матч; более точная заменяет общую. В серии до N побед счёт — число выигранных игр (Bo3: 2:0 или 2:1). Всё фиксируется при старте; судья может изменить отдельный матч до первого результата. Правила MV-SERIES-1."
+            : "For head-to-head matches. Settings are inherited: tournament → playoff → lower bracket → group → round or stage → match; the more specific one wins. In a series the score is games won (Bo3: 2:0 or 2:1). Everything is frozen at the start; a referee may change one match before its first result. Rules MV-SERIES-1."}
+        </p>
+        <div className="fieldset-body">
+          <div className="form-grid form-grid-4">
+            <Field label={ru ? "Серия по умолчанию" : "Default series"}>
+              <select name="seriesBestOf" defaultValue={String(series.bestOf)}>
+                {lengthOptions(false)}
+              </select>
+            </Field>
+            <Field label={ru ? "Плей-офф" : "Playoff"} hint={ru ? "После групп, круговой, швейцарской" : "After groups, round robin, Swiss"}>
+              <select name="seriesPlayoff" defaultValue={series.playoff ? String(series.playoff) : ""}>
+                {lengthOptions(true)}
+              </select>
+            </Field>
+            <Field label={ru ? "Полуфиналы" : "Semi-finals"} hint={ru ? "Двойное выбывание: финалы верхней и нижней сеток" : "Double elimination: upper and lower finals"}>
+              <select name="seriesSemifinal" defaultValue={series.semifinal ? String(series.semifinal) : ""}>
+                {lengthOptions(true)}
+              </select>
+            </Field>
+            <Field label={ru ? "Финал" : "Final"} hint={ru ? "Двойное выбывание: гранд-финал" : "Double elimination: grand final"}>
+              <select name="seriesFinal" defaultValue={series.final ? String(series.final) : ""}>
+                {lengthOptions(true)}
+              </select>
+            </Field>
+            <Field label={ru ? "Нижняя сетка" : "Lower bracket"} hint={ru ? "Двойное выбывание" : "Double elimination"}>
+              <select name="seriesLower" defaultValue={series.lower ? String(series.lower) : ""}>
+                {lengthOptions(true)}
+              </select>
+            </Field>
+          </div>
+        </div>
+        <details className="disclosure" open={series.rounds.length + series.groups.length > 0}>
+          <summary>{ru ? "Особые туры и группы" : "Specific rounds and groups"}</summary>
+          <p className="small muted">
+            {ru
+              ? `Тур — номер тура основного этапа (круговая, швейцарская, группы), 1–${SERIES_MAX_ROUND}; группа — буква (A, B …). Пустая серия — как выше. Очки — все три или ни одного; bye — только швейцарская (пусто — как за победу).`
+              : `A round is a main-stage round number (round robin, Swiss, groups), 1–${SERIES_MAX_ROUND}; a group is a letter (A, B …). An empty series means as above. Points: all three or none; bye is Swiss only (empty = as a win).`}
+          </p>
+          <div className="fieldset-body">
+            {Array.from({ length: SERIES_ROWS }, (_, i) => {
+              const r = series.rounds[i];
+              const n = i + 1;
+              return (
+                <div key={`r${n}`} className="form-grid form-grid-6 field-row">
+                  <Field label={ru ? `Тур (строка ${n})` : `Round (row ${n})`}>
+                    <input name={`seriesRound${n}`} type="number" min={1} max={SERIES_MAX_ROUND} defaultValue={r?.round ?? ""} inputMode="numeric" />
+                  </Field>
+                  <Field label={ru ? "Серия" : "Series"}>
+                    <select name={`seriesRound${n}BestOf`} defaultValue={r?.bestOf ? String(r.bestOf) : ""}>
+                      {lengthOptions(true)}
+                    </select>
+                  </Field>
+                  {pointCell(`seriesRound${n}Win`, ru ? "Победа" : "Win", r?.points?.win)}
+                  {pointCell(`seriesRound${n}Draw`, ru ? "Ничья" : "Draw", r?.points?.draw)}
+                  {pointCell(`seriesRound${n}Loss`, ru ? "Поражение" : "Loss", r?.points?.loss)}
+                  {pointCell(`seriesRound${n}Bye`, "Bye", t?.format === "swiss" ? r?.points?.bye : undefined)}
+                </div>
+              );
+            })}
+            {Array.from({ length: SERIES_ROWS }, (_, i) => {
+              const g = series.groups[i];
+              const n = i + 1;
+              return (
+                <div key={`g${n}`} className="form-grid form-grid-6 field-row">
+                  <Field label={ru ? `Группа (строка ${n})` : `Group (row ${n})`}>
+                    <input name={`seriesGroup${n}`} maxLength={2} defaultValue={g ? groupName(g.group) : ""} autoCapitalize="characters" />
+                  </Field>
+                  <Field label={ru ? "Серия" : "Series"}>
+                    <select name={`seriesGroup${n}BestOf`} defaultValue={g?.bestOf ? String(g.bestOf) : ""}>
+                      {lengthOptions(true)}
+                    </select>
+                  </Field>
+                  {pointCell(`seriesGroup${n}Win`, ru ? "Победа" : "Win", g?.points?.win)}
+                  {pointCell(`seriesGroup${n}Draw`, ru ? "Ничья" : "Draw", g?.points?.draw)}
+                  {pointCell(`seriesGroup${n}Loss`, ru ? "Поражение" : "Loss", g?.points?.loss)}
+                </div>
+              );
+            })}
+          </div>
+        </details>
+      </fieldset>
+
+      <fieldset className="fieldset">
         <legend>{ru ? "FFA: лобби и очки" : "FFA: lobbies and points"}</legend>
         <p className="small muted">
           {ru
@@ -305,6 +416,33 @@ export function TournamentForm({
             </div>
           );
         })}
+      </fieldset>
+
+      <fieldset className="fieldset">
+        <legend>{ru ? "Допуск и расписание" : "Admission and schedule"}</legend>
+        <input type="hidden" name="admissionFields" value="1" />
+        <p className="small muted">
+          {ru
+            ? "Критерии проверяются у одиночного игрока или у каждого игрока состава — при заявке и при любом изменении состава; после первой заявки не меняются. Опыт и матчи — только подтверждённые в этой игре. Длительность матча нужна площадкам и проверке пересечений в расписании (пусто — 60 минут)."
+            : "Criteria are checked for a solo player or every roster player — at application and whenever a roster changes; they are frozen after the first application. XP and matches count only confirmed activity in this game. The match length drives venues and schedule overlap checks (empty = 60 minutes)."}
+        </p>
+        <Check name="admissionEmail" label={ru ? "Нужен подтверждённый email" : "A confirmed email is required"} defaultChecked={admission?.emailVerified ?? false} />
+        <div className="fieldset-body">
+          <div className="form-grid form-grid-4">
+            <Field label={ru ? "Аккаунт не моложе, дней" : "Account age at least, days"} hint="0–3650">
+              <input name="admissionDays" type="number" min={0} max={3650} defaultValue={admission?.minAccountDays ?? ""} inputMode="numeric" />
+            </Field>
+            <Field label={ru ? "Опыт в этой игре от, XP" : "XP in this game at least"}>
+              <input name="admissionXp" type="number" min={0} max={1000000} defaultValue={admission?.minXp ?? ""} inputMode="numeric" />
+            </Field>
+            <Field label={ru ? "Подтверждённых матчей от" : "Confirmed matches at least"}>
+              <input name="admissionMatches" type="number" min={0} max={10000} defaultValue={admission?.minMatches ?? ""} inputMode="numeric" />
+            </Field>
+            <Field label={ru ? "Длительность матча, минут" : "Match length, minutes"} hint="10–600">
+              <input name="matchMinutes" type="number" min={10} max={600} defaultValue={t?.match_minutes ?? ""} inputMode="numeric" />
+            </Field>
+          </div>
+        </div>
       </fieldset>
 
       {circuits.length ? (

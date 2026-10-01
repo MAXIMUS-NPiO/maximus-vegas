@@ -1353,6 +1353,23 @@ a.b-link:hover {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-weight: 700;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+}
+.b-series {
+  color: var(--accent, var(--text));
+  text-transform: none;
+}
+.b-venue {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 /* Match */
@@ -1717,6 +1734,11 @@ a.b-link:hover {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
 }
+.form-grid-6 {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px 14px;
+}
 .fieldset {
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -1768,6 +1790,16 @@ a.b-link:hover {
 @container (max-width: 340px) {
   .fieldset-body .form-grid-4 {
     grid-template-columns: 1fr;
+  }
+}
+@container (max-width: 760px) {
+  .fieldset-body .form-grid-6 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@container (max-width: 360px) {
+  .fieldset-body .form-grid-6 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 button[aria-busy="true"] {

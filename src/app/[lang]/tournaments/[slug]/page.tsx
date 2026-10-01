@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { dict, isLocale, type Locale } from "@/lib/i18n.ts";
+import { dict, isLocale, ruPlural, type Locale } from "@/lib/i18n.ts";
 import { gameBySlug } from "@/lib/games.ts";
 import { countryName } from "@/lib/countries.ts";
 import { pageMeta } from "@/lib/meta.ts";
@@ -26,9 +26,12 @@ import { mediaUrl } from "@/server/media.ts";
 import type { Database } from "@/server/db.ts";
 import type { SessionUser } from "@/server/auth.ts";
 import { ActionForm, Badge, DbDown, Empty, Field, Flash, SignInPrompt, type SearchParams } from "@/components/ui";
-import { AnswerFields, BracketView, FfaRounds, FfaRules, formatLabel, groupTitle, playoffFormatLabel, RoundRules, StandingsTable, type StandingName } from "@/components/tournament";
+import { AdmissionView, AnswerFields, BracketView, FfaRounds, FfaRules, formatLabel, groupTitle, playoffFormatLabel, RoundRules, SeriesRulesView, StandingsTable, type StandingName } from "@/components/tournament";
 import { Countdown, LocalTime } from "@/components/time";
 import { reviewLabel } from "@/lib/labels.ts";
+import { seriesCustomised, seriesMap, seriesRulesOf } from "@/server/series.ts";
+import { admissionOf, playerStandings, unmetCriteria } from "@/server/admission.ts";
+import { canRate, feedbackSummary, ownFeedback } from "@/server/feedback.ts";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string; slug: string }> }): Promise<Metadata> {
   const { lang, slug } = await params;
@@ -189,6 +192,12 @@ export default async function TournamentPage({ params, searchParams }: { params:
   const standings = t.status === "COMPLETED" ? list.filter((p) => p.placement !== null).sort((a, b) => (a.placement ?? 0) - (b.placement ?? 0)) : [];
   // A main stage (round robin, Swiss or groups) may be followed by a playoff (stage 2).
   const playoff = rounds ? (settings.playoff ?? null) : null;
+  const seriesRules = seriesRulesOf(t);
+  const seriesById =
+    seriesCustomised(seriesRules) || matches.some((m) => m.series_override) ? seriesMap(seriesRules, matches, { main: t.format, playoff: playoff?.format ?? null }) : undefined;
+  const admission = admissionOf(t);
+  const [myStanding] = admission && user ? await playerStandings(db, t.game, [user.id]) : [];
+  const unmet = admission && myStanding ? unmetCriteria(admission, myStanding) : [];
   const mainMatches = matches.filter((m) => (m.stage ?? 1) === 1);
   const playoffMatches = matches.filter((m) => m.stage === 2);
   const roundTable = (rounds === "round_robin" || rounds === "swiss") && started ? await roundStandings(db, t) : [];
@@ -197,6 +206,9 @@ export default async function TournamentPage({ params, searchParams }: { params:
   const plannedGroups = rounds === "groups" && !started && seededList(list).length >= 2 ? snakeGroups(seededList(list), groupCount) : [];
   const groupMinimum = groupCount * Math.max(2, settings.groups?.advance ?? 1);
   const finished = t.status === "COMPLETED" || t.status === "ARCHIVED";
+  const [rating, myRating, rateable] = finished
+    ? await Promise.all([feedbackSummary(db, t.id), ownFeedback(db, t.id, user?.id), canRate(db, t.id, user?.id)])
+    : [null, null, false];
   const names = new Map<string, StandingName>(list.map((p) => [p.id, { name: p.name, username: p.username, team_slug: p.team_slug }]));
   const linked = await db.query<{ id: string; slug: string; name: string; season: string }>(
     "select id, slug, name, season from circuits where id = any($1)",
@@ -360,6 +372,9 @@ export default async function TournamentPage({ params, searchParams }: { params:
           </p>
         ) : t.approval_required && t.status === "REGISTRATION_OPEN" ? (
           <p className="small muted">{ru ? "Заявки рассматривает организатор." : "The organiser reviews applications."}</p>
+        ) : null}
+        {admission && ["PUBLISHED", "REGISTRATION_OPEN", "REGISTRATION_CLOSED"].includes(t.status) ? (
+          <AdmissionView lang={lang} admission={admission} unmet={applying ? unmet : undefined} />
         ) : null}
         {entry ? (
           <div className="stack">
@@ -529,6 +544,8 @@ export default async function TournamentPage({ params, searchParams }: { params:
         {t.rules ? <p className="prewrap">{t.rules}</p> : <p className="muted">{d.tournaments.noRules}</p>}
         {rounds ? <RoundRules lang={lang} format={rounds} settings={settings} started={Boolean(t.started_at)} /> : null}
         {ffa ? <FfaRules lang={lang} settings={ffaRules} started={Boolean(t.started_at)} /> : null}
+        {seriesCustomised(seriesRules) ? <SeriesRulesView lang={lang} rules={seriesRules} format={t.format} playoffFormat={playoff?.format ?? null} /> : null}
+        {admission ? <AdmissionView lang={lang} admission={admission} /> : null}
         {t.no_show_minutes !== null || t.roster_locks_at || t.participant_type === "team" ? (
           <ul className="kv-list card">
             {t.no_show_minutes !== null ? (
@@ -775,12 +792,12 @@ export default async function TournamentPage({ params, searchParams }: { params:
             )
           ) : started ? (
             <>
-              <BracketView lang={lang} matches={rounds ? mainMatches : matches} format={t.format} />
+              <BracketView lang={lang} matches={rounds ? mainMatches : matches} format={t.format} series={seriesById} />
               {playoff ? (
                 <div className="bracket-group">
                   <h3 className="h3">{ru ? "Плей-офф" : "Playoff"}</h3>
                   {playoffMatches.length ? (
-                    <BracketView lang={lang} matches={playoffMatches} format={playoff.format} />
+                    <BracketView lang={lang} matches={playoffMatches} format={playoff.format} series={seriesById} />
                   ) : t.stage === 2 ? (
                     <p className="muted">
                       {ru
@@ -912,6 +929,36 @@ export default async function TournamentPage({ params, searchParams }: { params:
         ) : (
           <p className="muted">{d.tournaments.standingsNotYet}</p>
         )}
+        {finished && rating ? (
+          <div className="card stack-sm feedback-card">
+            <p className="field-label">{ru ? "Оценка участников" : "Participants' rating"}</p>
+            {rating.count ? (
+              <p>
+                <strong className="big-number">{rating.average?.toLocaleString(ru ? "ru-RU" : "en-US")}</strong> <span className="muted">/ 5 · {rating.count} {ru ? ruPlural(rating.count, "оценка", "оценки", "оценок") : rating.count === 1 ? "rating" : "ratings"}</span>
+              </p>
+            ) : (
+              <p className="muted small">{ru ? "Оценок пока нет." : "No ratings yet."}</p>
+            )}
+            {rateable ? (
+              <ActionForm action="tournament.rate" lang={lang} back={`${back}#standings`} hidden={hidden} className="stack-sm">
+                <Field label={ru ? "Ваша оценка" : "Your rating"}>
+                  <select name="rating" defaultValue={myRating ? String(myRating.rating) : "5"}>
+                    {[5, 4, 3, 2, 1].map((n) => (
+                      <option key={n} value={n}>
+                        {"★".repeat(n)}
+                        {"☆".repeat(5 - n)} · {n}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label={ru ? "Комментарий для организатора" : "Comment for the organiser"} hint={ru ? "Необязательно; виден только организаторам турнира" : "Optional; seen by the tournament's organisers only"}>
+                  <textarea name="comment" rows={2} maxLength={500} defaultValue={myRating?.comment ?? ""} />
+                </Field>
+                <button className="btn btn-ghost btn-sm">{myRating ? (ru ? "Обновить оценку" : "Update rating") : ru ? "Оценить" : "Rate"}</button>
+              </ActionForm>
+            ) : null}
+          </div>
+        ) : null}
       </section>
     </div>
   );

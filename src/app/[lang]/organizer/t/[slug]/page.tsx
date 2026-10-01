@@ -1,11 +1,12 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import { dict, isLocale } from "@/lib/i18n.ts";
+import { dict, isLocale, ruPlural } from "@/lib/i18n.ts";
+import { historyLabel } from "@/lib/history-labels.ts";
 import { pageMeta } from "@/lib/meta.ts";
 import { flagLabel, reviewLabel } from "@/lib/labels.ts";
 import { viewer } from "@/server/viewer.ts";
-import { bracket, getTournament, participants } from "@/server/queries.ts";
+import { bracket, getTournament, participants, tournamentHistory } from "@/server/queries.ts";
 import { canManageOrg } from "@/server/access.ts";
 import { allowedTransitions, canManageTournament, canRefereeTournament, isMatchFormat, type TournamentStatus } from "@/server/tournaments.ts";
 import { scoreLog } from "@/server/leaderboard.ts";
@@ -16,11 +17,14 @@ import { listCircuits } from "@/server/circuits.ts";
 import { answerLines, fieldsOf } from "@/server/registration.ts";
 import { ffaActivity, roundTables } from "@/server/lobbies.ts";
 import { ffaSettingsOf, planRounds } from "@/server/ffa.ts";
-import { roundKeyOf } from "@/server/schedule.ts";
+import { roundKeyOf, scheduleConflicts, venues, VENUE_KINDS } from "@/server/schedule.ts";
+import { seriesCustomised, seriesMap, seriesRulesOf } from "@/server/series.ts";
+import { feedbackList, feedbackSummary } from "@/server/feedback.ts";
+import { DEFAULT_MATCH_MINUTES } from "@/server/conflicts.ts";
 import { ActionForm, Badge, DbDown, Field, Flash, type SearchParams } from "@/components/ui";
 import { TournamentForm } from "@/components/tournament-form";
 import { BracketView, FfaRounds, formatLabel, groupTitle, labelContext, matchLabel, playoffFormatLabel, StandingsTable, type StandingName } from "@/components/tournament";
-import { LocalDateTimeInput, TimeZoneField } from "@/components/time";
+import { LocalDateTimeInput, LocalTime, TimeZoneField } from "@/components/time";
 
 /** Matches of a playoff bracket for n entrants (double elimination: without a possible reset). */
 const playoffMatchCount = (format: string, n: number) => (format === "double_elimination" ? 2 * n - 2 : n - 1);
@@ -237,6 +241,28 @@ export default async function ManageTournament({ params, searchParams }: { param
         )
       : [];
   const circuitOptions = manager ? await listCircuits(db, { orgId: t.org_id }) : [];
+  const matchFormat = isMatchFormat(t.format);
+  const venueList = matchFormat ? await venues(db, t.id) : [];
+  const conflicts = running && matchFormat ? await scheduleConflicts(db, t) : [];
+  const conflicted = new Set(conflicts.flatMap((c) => [c.a, c.b]));
+  const seriesRules = seriesRulesOf(t);
+  const seriesById =
+    seriesCustomised(seriesRules) || matches.some((m) => m.series_override) ? seriesMap(seriesRules, matches, { main: t.format, playoff: playoff?.format ?? null }) : undefined;
+  const [rating, comments] = finished && manager ? await Promise.all([feedbackSummary(db, t.id), feedbackList(db, t.id)]) : [null, []];
+  const history = await tournamentHistory(db, t.id);
+  const byId = new Map(matches.map((m) => [m.id, m]));
+  const matchName = (id: string) => {
+    const m = byId.get(id);
+    return m ? `${label(m)}: ${m.a_name ?? d.common.tbd} ${d.common.vs} ${m.b_name ?? d.common.tbd}` : ru ? "матч другого турнира" : "a match of another tournament";
+  };
+  const venueName = new Map(venueList.map((v) => [v.id, v.name]));
+  const upcoming = matches
+    .filter((m) => m.scheduled_at && !["completed", "cancelled"].includes(m.status) && !(m.a_void && m.b_void))
+    .sort((x, y) => new Date(x.scheduled_at!).getTime() - new Date(y.scheduled_at!).getTime())
+    .slice(0, 60);
+  const kindLabel: Record<string, string> = ru
+    ? { stage: "Сцена", station: "Станция", server: "Сервер", table: "Стол", room: "Комната", other: "Другое" }
+    : { stage: "Stage", station: "Station", server: "Server", table: "Table", room: "Room", other: "Other" };
   const registeredCount = list.filter((p) => p.status === "registered").length;
   const openMatches = matches.filter((m) => ["ready", "in_progress", "result_submitted", "disputed"].includes(m.status));
   const report: Array<[string, number]> = leaderboard
@@ -722,11 +748,11 @@ export default async function ManageTournament({ params, searchParams }: { param
               ))}
             </ul>
           ) : null}
-          <BracketView lang={lang} matches={rounds ? mainMatches : matches} format={t.format} />
+          <BracketView lang={lang} matches={rounds ? mainMatches : matches} format={t.format} series={seriesById} />
           {playoff && playoffMatches.length ? (
             <div className="bracket-group">
               <h3 className="h3">{ru ? "Плей-офф" : "Playoff"}</h3>
-              <BracketView lang={lang} matches={playoffMatches} format={playoff.format} />
+              <BracketView lang={lang} matches={playoffMatches} format={playoff.format} series={seriesById} />
             </div>
           ) : null}
         </section>
@@ -758,38 +784,150 @@ export default async function ManageTournament({ params, searchParams }: { param
         </section>
       ) : null}
 
-      {manager && running && openRounds.length ? (
-        <section className="section-tight">
-          <h2 className="h3">{ru ? "Расписание" : "Schedule"}</h2>
+      {manager && matchFormat && !finished && status !== "CANCELLED" ? (
+        <section className="section-tight" id="schedule">
+          <h2 className="h3">{ru ? "Площадки и расписание" : "Venues and schedule"}</h2>
           <p className="small muted">
             {ru
-              ? "Перенос затрагивает только незавершённые матчи; обе стороны каждого перенесённого матча получают уведомление."
-              : "Only unfinished matches move; both sides of every moved match are notified."}
+              ? `Площадка (сцена, станция, сервер) принимает один матч одновременно; участник и игрок не играют два матча сразу — в том числе в другом турнире. Длительность матча — ${t.match_minutes ?? DEFAULT_MATCH_MINUTES} мин (меняется в параметрах турнира). Изменение с пересечением сохраняется только с подтверждением и попадает в журнал (MV-SCHEDULE-1).`
+              : `A venue (stage, station, server) hosts one match at a time; no entrant or player plays two matches at once — in another tournament either. Match length: ${t.match_minutes ?? DEFAULT_MATCH_MINUTES} min (set in the tournament settings). A change that creates an overlap is saved only when confirmed and is logged (MV-SCHEDULE-1).`}
           </p>
-          <div className="grid grid-2">
-            <ActionForm action="tournament.reschedule" lang={lang} back={back} hidden={hidden} className="stack-sm">
-              <TimeZoneField />
-              <Field label={ru ? "Тур или раунд" : "Round"}>
-                <select name="round" required>
-                  {openRounds.map((r) => (
-                    <option key={r.key} value={r.key}>
-                      {r.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label={ru ? "Новое время начала" : "New start time"}>
-                <LocalDateTimeInput name="at" required />
-              </Field>
-              <button className="btn btn-ghost btn-sm">{ru ? "Назначить время тура" : "Set the round time"}</button>
-            </ActionForm>
-            <ActionForm action="tournament.reschedule" lang={lang} back={back} hidden={{ ...hidden, round: "all" }} className="stack-sm">
-              <Field label={ru ? "Сдвинуть все назначенные матчи, минут" : "Shift every scheduled match, minutes"} hint={ru ? "Например 30 или −15" : "For example 30 or −15"}>
-                <input name="shiftMinutes" type="number" min={-1440} max={1440} required inputMode="numeric" />
-              </Field>
-              <button className="btn btn-ghost btn-sm">{ru ? "Сдвинуть расписание" : "Shift the schedule"}</button>
+          <div className="stack-sm">
+            <p className="field-label">{ru ? "Площадки" : "Venues"}</p>
+            {venueList.length ? (
+              <ul className="list">
+                {venueList.map((v) => (
+                  <li key={v.id}>
+                    <span className="grow">
+                      {v.name} <span className="muted small">· {kindLabel[v.kind] ?? v.kind}</span>
+                    </span>
+                    <ActionForm action="tournament.venue_remove" lang={lang} back={`${back}#schedule`} hidden={{ ...hidden, venue: v.id }}>
+                      <button className="btn btn-ghost btn-xs">{ru ? "Удалить" : "Remove"}</button>
+                    </ActionForm>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="muted small">{ru ? "Площадок нет: матчи играются онлайн или без привязки к месту." : "No venues: matches are played online or without a fixed place."}</p>
+            )}
+            <ActionForm action="tournament.venue_add" lang={lang} back={`${back}#schedule`} hidden={hidden} className="inline-form">
+              <input name="name" required maxLength={60} placeholder={ru ? "Например: Сцена 1, Сервер EU-2" : "For example: Stage 1, Server EU-2"} aria-label={ru ? "Название площадки" : "Venue name"} />
+              <select name="kind" defaultValue="station" aria-label={ru ? "Тип площадки" : "Venue type"}>
+                {VENUE_KINDS.map((k) => (
+                  <option key={k} value={k}>
+                    {kindLabel[k]}
+                  </option>
+                ))}
+              </select>
+              <button className="btn btn-ghost btn-sm">{ru ? "Добавить площадку" : "Add venue"}</button>
             </ActionForm>
           </div>
+          {running && openRounds.length ? (
+            <div className="grid grid-3">
+              <ActionForm action="tournament.reschedule" lang={lang} back={`${back}#schedule`} hidden={hidden} className="stack-sm card">
+                <TimeZoneField />
+                <Field label={ru ? "Тур или раунд" : "Round"}>
+                  <select name="round" required>
+                    {openRounds.map((r) => (
+                      <option key={r.key} value={r.key}>
+                        {r.label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label={ru ? "Новое время начала" : "New start time"}>
+                  <LocalDateTimeInput name="at" required />
+                </Field>
+                <label className="check small">
+                  <input type="checkbox" name="force" value="1" />
+                  <span>{ru ? "Сохранить даже с пересечениями" : "Save even with overlaps"}</span>
+                </label>
+                <button className="btn btn-ghost btn-sm">{ru ? "Назначить время тура" : "Set the round time"}</button>
+              </ActionForm>
+              <ActionForm action="tournament.waves" lang={lang} back={`${back}#schedule`} hidden={hidden} className="stack-sm card">
+                <TimeZoneField />
+                <Field label={ru ? "Тур по площадкам" : "Round on venues"} hint={ru ? "Матч i — на площадке i по кругу, волнами" : "Match i on venue i in turn, in waves"}>
+                  <select name="round" required>
+                    {openRounds.map((r) => (
+                      <option key={r.key} value={r.key}>
+                        {r.label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label={ru ? "Начало первой волны" : "First wave starts"}>
+                  <LocalDateTimeInput name="at" required />
+                </Field>
+                <label className="check small">
+                  <input type="checkbox" name="force" value="1" />
+                  <span>{ru ? "Сохранить даже с пересечениями" : "Save even with overlaps"}</span>
+                </label>
+                <button className="btn btn-ghost btn-sm" disabled={!venueList.length}>
+                  {ru ? "Распределить по площадкам" : "Place on venues"}
+                </button>
+              </ActionForm>
+              <ActionForm action="tournament.reschedule" lang={lang} back={`${back}#schedule`} hidden={{ ...hidden, round: "all" }} className="stack-sm card">
+                <Field label={ru ? "Сдвинуть все назначенные матчи, минут" : "Shift every scheduled match, minutes"} hint={ru ? "Например 30 или −15" : "For example 30 or −15"}>
+                  <input name="shiftMinutes" type="number" min={-1440} max={1440} required inputMode="numeric" />
+                </Field>
+                <label className="check small">
+                  <input type="checkbox" name="force" value="1" />
+                  <span>{ru ? "Сохранить даже с пересечениями" : "Save even with overlaps"}</span>
+                </label>
+                <button className="btn btn-ghost btn-sm">{ru ? "Сдвинуть расписание" : "Shift the schedule"}</button>
+              </ActionForm>
+            </div>
+          ) : null}
+          {conflicts.length ? (
+            <div className="notice notice-warn stack-sm" role="status">
+              <strong>
+                {ru ? `Пересечения в расписании: ${conflicts.length}` : `Schedule overlaps: ${conflicts.length}`}
+              </strong>
+              <ul className="list small">
+                {conflicts.slice(0, 30).map((c, i) => (
+                  <li key={i}>
+                    {c.kind === "venue"
+                      ? `${ru ? "Площадка" : "Venue"} «${venueName.get(c.venue ?? "") ?? "—"}»`
+                      : c.kind === "entrant"
+                        ? ru
+                          ? "Один участник в двух матчах"
+                          : "One entrant in two matches"
+                        : ru
+                          ? "Один игрок в двух матчах"
+                          : "One player in two matches"}
+                    : {matchName(c.a)} ↔ {matchName(c.b)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {upcoming.length ? (
+            <div className="table-wrap">
+              <table className="table table-compact">
+                <thead>
+                  <tr>
+                    <th>{ru ? "Время" : "Time"}</th>
+                    <th>{ru ? "Матч" : "Match"}</th>
+                    <th>{ru ? "Площадка" : "Venue"}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {upcoming.map((m) => (
+                    <tr key={m.id} className={conflicted.has(m.id) ? "is-out" : undefined}>
+                      <td className="nowrap">
+                        <LocalTime iso={m.scheduled_at!} lang={lang} />
+                      </td>
+                      <td>
+                        <Link href={`/${lang}/matches/${m.id}`}>{matchName(m.id)}</Link>
+                        {conflicted.has(m.id) ? <span className="small"> · {ru ? "пересечение" : "overlap"}</span> : null}
+                      </td>
+                      <td>{m.venue_name ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
         </section>
       ) : null}
 
@@ -797,6 +935,70 @@ export default async function ManageTournament({ params, searchParams }: { param
         <section className="section-tight">
           <h2 className="h3">{ru ? "Лобби" : "Lobbies"}</h2>
           <FfaRounds lang={lang} lobbies={ffaLobbies} names={names} advance={ffaSettingsOf(t).advance} finished={finished} />
+        </section>
+      ) : null}
+
+      {rating ? (
+        <section className="section-tight">
+          <h2 className="h3">{ru ? "Оценки участников" : "Participants' ratings"}</h2>
+          {rating.count ? (
+            <>
+              <p>
+                <strong>{rating.average?.toLocaleString(ru ? "ru-RU" : "en-US")}</strong> / 5 ·{" "}
+                {rating.count} {ru ? ruPlural(rating.count, "оценка", "оценки", "оценок") : rating.count === 1 ? "rating" : "ratings"}
+              </p>
+              <ul className="list">
+                {comments
+                  .filter((c) => c.comment)
+                  .map((c, i) => (
+                    <li key={i} className="stack-sm">
+                      <span className="small muted">
+                        {"★".repeat(c.rating)}
+                        {"☆".repeat(5 - c.rating)} · @{c.username} · <LocalTime iso={c.updated_at} lang={lang} />
+                      </span>
+                      <span className="prewrap">{c.comment}</span>
+                    </li>
+                  ))}
+              </ul>
+            </>
+          ) : (
+            <p className="muted small">{ru ? "Оценок пока нет: участники могут оценить турнир в течение 30 дней." : "No ratings yet: participants can rate the tournament within 30 days."}</p>
+          )}
+        </section>
+      ) : null}
+
+      {history.length ? (
+        <section className="section-tight">
+          <h2 className="h3">{ru ? "История турнира" : "Tournament history"}</h2>
+          <details className="disclosure">
+            <summary>{ru ? `Последние записи журнала: ${history.length}` : `Latest log records: ${history.length}`}</summary>
+            <div className="table-wrap">
+              <table className="table table-compact">
+                <thead>
+                  <tr>
+                    <th>{ru ? "Когда" : "When"}</th>
+                    <th>{ru ? "Что" : "What"}</th>
+                    <th>{ru ? "Кто" : "Who"}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.map((h) => (
+                    <tr key={h.id}>
+                      <td className="nowrap small">
+                        <LocalTime iso={h.at} lang={lang} />
+                      </td>
+                      <td>
+                        {historyLabel(h.action, lang)}
+                        {h.action === "tournament.status" && h.data?.to ? <span className="muted small"> · {d.statuses.tournament[String(h.data.to)] ?? String(h.data.to)}</span> : null}
+                      </td>
+                      <td className="small">{h.actor ? `@${h.actor}` : ru ? "система" : "system"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="small muted">{ru ? "Полный журнал с hash-цепочкой — в центре управления." : "The full hash-chained log is in the control centre."}</p>
+          </details>
         </section>
       ) : null}
 
@@ -865,8 +1067,8 @@ export default async function ManageTournament({ params, searchParams }: { param
           <h2 className="h3">{ru ? "Копия турнира" : "Copy this tournament"}</h2>
           <p className="small muted">
             {ru
-              ? "Создаёт черновик с теми же форматом, настройками, правилами и связью с активной серией. Участники, матчи, со-организаторы, спонсоры и награда оператора не копируются."
-              : "Creates a draft with the same format, settings, rules and active circuit link. Entrants, matches, co-organisers, sponsors and the operator's award are not copied."}
+              ? "Создаёт черновик с теми же форматом, настройками, правилами, форматом серий, допуском, площадками и связью с активной серией. Участники, матчи, со-организаторы, спонсоры и награда оператора не копируются."
+              : "Creates a draft with the same format, settings, rules, series format, admission, venues and active circuit link. Entrants, matches, co-organisers, sponsors and the operator's award are not copied."}
           </p>
           <ActionForm action="tournament.clone" lang={lang} back={back} hidden={hidden} className="stack-sm">
             <TimeZoneField />
@@ -888,8 +1090,8 @@ export default async function ManageTournament({ params, searchParams }: { param
           <h2 className="h3">{ru ? "Сохранить как шаблон" : "Save as a template"}</h2>
           <p className="small muted">
             {ru
-              ? "Шаблон хранит формат, настройки, правила, вопросы регистрации и сроки относительно старта. Новые турниры создаются из него в пространстве организатора."
-              : "A template keeps the format, settings, rules, registration questions and deadlines relative to the start. New tournaments are created from it in the organiser space."}
+              ? "Шаблон хранит формат, настройки, правила, вопросы регистрации, формат серий, допуск, площадки и сроки относительно старта. Новые турниры создаются из него в пространстве организатора."
+              : "A template keeps the format, settings, rules, registration questions, series format, admission, venues and deadlines relative to the start. New tournaments are created from it in the organiser space."}
           </p>
           <ActionForm action="template.save" lang={lang} back={back} hidden={hidden} className="inline-form">
             <input name="name" required minLength={2} maxLength={80} defaultValue={t.name} aria-label={ru ? "Название шаблона" : "Template name"} />

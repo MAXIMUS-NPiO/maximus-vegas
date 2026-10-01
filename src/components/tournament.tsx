@@ -10,6 +10,8 @@ import type { FormatSettings, RoundFormat } from "@/server/format-settings.ts";
 import { groupName } from "@/server/stages.ts";
 import type { FfaRow, FfaSettings } from "@/server/ffa.ts";
 import type { RegField } from "@/server/registration.ts";
+import type { SeriesRules } from "@/server/series.ts";
+import type { Admission, Unmet } from "@/server/admission.ts";
 import { Badge } from "./ui";
 import { LocalTime } from "./time";
 
@@ -125,6 +127,7 @@ function Rounds({
   label,
   linkMatches,
   grid = false,
+  series,
 }: {
   lang: Locale;
   matches: BracketMatch[];
@@ -132,6 +135,8 @@ function Rounds({
   linkMatches: boolean;
   /** Rounds wrap into a grid instead of bracket columns (round robin, Swiss). */
   grid?: boolean;
+  /** Series length per match id (shown when above best of 1). */
+  series?: Map<string, number>;
 }) {
   const d = dict(lang);
   const ru = lang === "ru";
@@ -168,6 +173,8 @@ function Rounds({
                               ? d.statuses.outcome[m.outcome]
                               : d.statuses.match[m.status]}
                       </span>
+                      {(series?.get(m.id) ?? 1) > 1 ? <span className="b-series">Bo{series!.get(m.id)}</span> : null}
+                      {m.venue_name && m.status !== "completed" ? <span className="b-venue">{m.venue_name}</span> : null}
                     </div>
                   </>
                 );
@@ -195,11 +202,13 @@ export function BracketView({
   matches,
   linkMatches = true,
   format = "single_elimination",
+  series,
 }: {
   lang: Locale;
   matches: BracketMatch[];
   linkMatches?: boolean;
   format?: string;
+  series?: Map<string, number>;
 }) {
   const ru = lang === "ru";
   if (format === "groups") {
@@ -209,14 +218,14 @@ export function BracketView({
         {groups.map((g) => (
           <div key={g} className="bracket-group">
             <h3 className="h4">{g ? groupTitle(g, lang) : ru ? "Матчи" : "Matches"}</h3>
-            <Rounds lang={lang} matches={matches.filter((m) => (m.group_no ?? 0) === g)} label={(r) => roundLabel(r, lang)} linkMatches={linkMatches} grid />
+            <Rounds lang={lang} matches={matches.filter((m) => (m.group_no ?? 0) === g)} label={(r) => roundLabel(r, lang)} linkMatches={linkMatches} grid series={series} />
           </div>
         ))}
       </div>
     );
   }
   if (format === "round_robin" || format === "swiss")
-    return <Rounds lang={lang} matches={matches} label={(r) => roundLabel(r, lang)} linkMatches={linkMatches} grid />;
+    return <Rounds lang={lang} matches={matches} label={(r) => roundLabel(r, lang)} linkMatches={linkMatches} grid series={series} />;
   if (format === "gauntlet") {
     const rounds = Math.max(0, ...matches.map((m) => m.round));
     return (
@@ -226,13 +235,13 @@ export function BracketView({
             ? "Лесенка: первыми играют два нижних посева, победитель каждой ступени встречается со следующим посевом, первый посев играет только финал."
             : "Gauntlet: the two lowest seeds play first, each winner meets the next seed up, and the top seed plays only the final."}
         </p>
-        <Rounds lang={lang} matches={matches} label={(r) => gauntletRoundName(r, rounds, lang)} linkMatches={linkMatches} grid />
+        <Rounds lang={lang} matches={matches} label={(r) => gauntletRoundName(r, rounds, lang)} linkMatches={linkMatches} grid series={series} />
       </div>
     );
   }
   if (format !== "double_elimination") {
     const rounds = Math.max(0, ...matches.map((m) => m.round));
-    return <Rounds lang={lang} matches={matches} label={(r) => roundName(r, rounds, lang)} linkMatches={linkMatches} />;
+    return <Rounds lang={lang} matches={matches} label={(r) => roundName(r, rounds, lang)} linkMatches={linkMatches} series={series} />;
   }
   const w = matches.filter((m) => (m.bracket ?? "W") === "W");
   const l = matches.filter((m) => m.bracket === "L" && !(m.a_void && m.b_void));
@@ -243,13 +252,13 @@ export function BracketView({
     <div className="stack">
       <div className="bracket-group">
         <h3 className="h4">{ru ? "Верхняя сетка" : "Winners bracket"}</h3>
-        <Rounds lang={lang} matches={w} label={(r) => deRoundName("W", r, wRounds, lRounds, lang)} linkMatches={linkMatches} />
+        <Rounds lang={lang} matches={w} label={(r) => deRoundName("W", r, wRounds, lRounds, lang)} linkMatches={linkMatches} series={series} />
       </div>
       {l.length ? (
         <div className="bracket-group">
           <h3 className="h4">{ru ? "Нижняя сетка" : "Losers bracket"}</h3>
           <p className="small muted">{ru ? "Одно поражение переводит в нижнюю сетку; второе — выбывание." : "One loss moves you to the losers bracket; a second one eliminates you."}</p>
-          <Rounds lang={lang} matches={l} label={(r) => deRoundName("L", r, wRounds, lRounds, lang)} linkMatches={linkMatches} />
+          <Rounds lang={lang} matches={l} label={(r) => deRoundName("L", r, wRounds, lRounds, lang)} linkMatches={linkMatches} series={series} />
         </div>
       ) : null}
       <div className="bracket-group">
@@ -259,7 +268,7 @@ export function BracketView({
             ? "Если победитель нижней сетки выигрывает гранд-финал, играется перезапуск финала: у победителя верхней сетки это первое поражение."
             : "If the losers-bracket champion wins the grand final, a bracket reset is played: it is only the winners-bracket champion's first loss."}
         </p>
-        <Rounds lang={lang} matches={gf} label={(r) => deRoundName("GF", r, wRounds, lRounds, lang)} linkMatches={linkMatches} />
+        <Rounds lang={lang} matches={gf} label={(r) => deRoundName("GF", r, wRounds, lRounds, lang)} linkMatches={linkMatches} series={series} />
       </div>
     </div>
   );
@@ -671,6 +680,85 @@ export function AnswerFields({ lang, fields }: { lang: Locale; fields: RegField[
         ),
       )}
       <p className="small muted">{ru ? "Ответы видят только организаторы и судьи турнира." : "Only the tournament's organisers and referees see the answers."}</p>
+    </div>
+  );
+}
+
+/** A series length in words: "одна игра (Bo1)", "до 2 побед (Bo3)". */
+export const seriesText = (n: number, lang: Locale) =>
+  n <= 1 ? (lang === "ru" ? "одна игра (Bo1)" : "one game (Bo1)") : lang === "ru" ? `до ${(n + 1) / 2} побед (Bo${n})` : `first to ${(n + 1) / 2} (Bo${n})`;
+
+const pointsLine = (p: { win: number; draw: number; loss: number; bye: number }, swiss: boolean, lang: Locale) =>
+  lang === "ru"
+    ? `очки ${p.win} / ${p.draw} / ${p.loss}${swiss ? ` · bye ${p.bye}` : ""}`
+    : `points ${p.win} / ${p.draw} / ${p.loss}${swiss ? ` · bye ${p.bye}` : ""}`;
+
+/** The series lengths and point overrides by level, as the tournament applies them (MV-SERIES-1). */
+export function SeriesRulesView({ lang, rules, format, playoffFormat }: { lang: Locale; rules: SeriesRules; format: string; playoffFormat?: string | null }) {
+  const ru = lang === "ru";
+  const de = format === "double_elimination" || playoffFormat === "double_elimination";
+  const items: Array<[string, string]> = [[ru ? "Матчи по умолчанию" : "Matches by default", seriesText(rules.bestOf, lang)]];
+  if (rules.playoff) items.push([ru ? "Плей-офф" : "Playoff", seriesText(rules.playoff, lang)]);
+  if (rules.lower) items.push([ru ? "Нижняя сетка" : "Lower bracket", seriesText(rules.lower, lang)]);
+  if (rules.semifinal) items.push([de ? (ru ? "Финалы верхней и нижней сеток" : "Upper and lower bracket finals") : ru ? "Полуфиналы" : "Semi-finals", seriesText(rules.semifinal, lang)]);
+  if (rules.final) items.push([de ? (ru ? "Гранд-финал" : "Grand final") : ru ? "Финал" : "Final", seriesText(rules.final, lang)]);
+  for (const g of rules.groups)
+    items.push([
+      groupTitle(g.group, lang),
+      [g.bestOf ? seriesText(g.bestOf, lang) : null, g.points ? pointsLine(g.points, false, lang) : null].filter(Boolean).join(" · "),
+    ]);
+  for (const r of rules.rounds)
+    items.push([
+      roundLabel(r.round, lang),
+      [r.bestOf ? seriesText(r.bestOf, lang) : null, r.points ? pointsLine(r.points, format === "swiss", lang) : null].filter(Boolean).join(" · "),
+    ]);
+  return (
+    <div className="card stack-sm">
+      <p className="field-label">{ru ? "Формат серий и очки" : "Series format and points"}</p>
+      <ul className="kv-list">
+        {items.map(([k, val]) => (
+          <li key={k}>
+            <span>{k}</span>
+            <strong>{val}</strong>
+          </li>
+        ))}
+      </ul>
+      <p className="small muted">
+        {ru
+          ? "Более точная настройка заменяет общую: турнир → плей-офф → нижняя сетка → группа → тур или стадия → матч. В серии счёт — число выигранных игр; ничьих в серии нет. Судья может изменить формат отдельного матча до первого результата. Правила MV-SERIES-1."
+          : "The more specific setting wins: tournament → playoff → lower bracket → group → round or stage → match. In a series the score is games won; a series cannot be drawn. A referee may change one match's format before its first result. Rules MV-SERIES-1."}
+      </p>
+    </div>
+  );
+}
+
+const UNMET_TEXT: Record<Unmet, { ru: string; en: string }> = {
+  admission_email: { ru: "нужен подтверждённый email", en: "a confirmed email is required" },
+  admission_account_age: { ru: "аккаунт ещё слишком новый", en: "the account is too new" },
+  admission_xp: { ru: "не хватает опыта (XP) в этой игре", en: "not enough XP in this game" },
+  admission_matches: { ru: "не хватает подтверждённых матчей в этой игре", en: "not enough confirmed matches in this game" },
+};
+
+/** Admission criteria, and — for a signed-in viewer — what they still miss. */
+export function AdmissionView({ lang, admission, unmet }: { lang: Locale; admission: Admission; unmet?: Unmet[] }) {
+  const ru = lang === "ru";
+  const items: string[] = [];
+  if (admission.emailVerified) items.push(ru ? "подтверждённый email" : "a confirmed email");
+  if (admission.minAccountDays) items.push(ru ? `аккаунт не моложе ${admission.minAccountDays} дн.` : `an account at least ${admission.minAccountDays} days old`);
+  if (admission.minXp) items.push(ru ? `не меньше ${admission.minXp} XP в этой игре` : `at least ${admission.minXp} XP in this game`);
+  if (admission.minMatches) items.push(ru ? `не меньше ${admission.minMatches} подтверждённых матчей в этой игре` : `at least ${admission.minMatches} confirmed matches in this game`);
+  return (
+    <div className="stack-sm">
+      <p className="small">
+        <strong>{ru ? "Допуск" : "Admission"}:</strong> {items.join("; ")}.{" "}
+        <span className="muted">{ru ? "Проверяется у каждого игрока состава." : "Checked for every roster player."}</span>
+      </p>
+      {unmet && unmet.length ? (
+        <p className="notice notice-warn small">
+          {ru ? "Сейчас у вас: " : "Right now: "}
+          {unmet.map((u) => UNMET_TEXT[u][lang]).join("; ")}.
+        </p>
+      ) : null}
     </div>
   );
 }

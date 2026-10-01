@@ -162,6 +162,7 @@ export default async function OrgPage({ params, searchParams }: { params: Promis
                       <th>{ru ? "Создано турниров" : "Created"}</th>
                       <th>{ru ? "Завершено" : "Completed"}</th>
                       <th>{ru ? "Участников в среднем" : "Avg entrants"}</th>
+                      <th>{ru ? "Оценка участников" : "Participants' rating"}</th>
                       {manager ? <th /> : null}
                     </tr>
                   </thead>
@@ -178,6 +179,7 @@ export default async function OrgPage({ params, searchParams }: { params: Promis
                           <td>{x.created}</td>
                           <td>{x.completed}</td>
                           <td>{x.avg_entrants ?? "—"}</td>
+                          <td>{x.ratings ? `${x.avg_rating?.toLocaleString(ru ? "ru-RU" : "en-US")} / 5 · ${x.ratings}` : "—"}</td>
                           {manager ? (
                             <td>
                               <details className="disclosure">
