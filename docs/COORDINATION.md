@@ -45,8 +45,8 @@ Status: `open` → `in progress` (branch) → `done` (PR, verification). Take th
 | E-04 | 25 | exp | Performance: image sizes and formats, lazy loading of heavy experience modules | LCP and CLS before and after in the PR, measured on the same pages | open | |
 | E-05 | 21, 23 | exp | Partners and Innovations pages: clear scenarios, working / integration / research split from `src/lib/directions.ts`, no new claims | RU and EN; every statement traceable to the module registry or the owner | open | |
 | E-06 | 6 | exp | Visual consistency of feature pages (profile, team, tournament list) through shared styles only | screenshots at 390 and 1440 px before and after; no markup or data change in `core` files | open | |
-| E-07 | 13 | exp | Live centre and media pages over the C-10 data | as C-10, plus RU and EN screens | blocked: C-10 | |
-| E-08 | 11 | exp | Academy pages over the C-11 data, confirmed coaches and venues only | as C-11 | blocked: C-11 | |
+| E-07 | 13 | exp | Live centre and media pages over the C-10 data | as C-10, plus RU and EN screens | open | |
+| E-08 | 11 | exp | Academy pages over the C-11 data, confirmed coaches and venues only | as C-11 | open | |
 
 ## Needs the owner
 
