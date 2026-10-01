@@ -1,4 +1,5 @@
 import type { SVGProps } from "react";
+import Image from "next/image";
 type Props = SVGProps<SVGSVGElement>;
 
 const base = { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.7, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
@@ -55,9 +56,12 @@ export const Gamepad = (p: Props) => (
 
 export function Brand() {
   return (
-    <span className="brand" aria-hidden="true">
-      <span className="brand-main">MAXIMUS</span>
-      <span className="brand-sub">VEGAS</span>
+    <span className="brand" role="img" aria-label="MAXIMUS VEGAS">
+      <Image className="brand-mark" src="/brand/maximus-lion.jpg" alt="" width={48} height={48} />
+      <span className="brand-wordmark">
+        <span className="brand-main">MAXIMUS</span>
+        <span className="brand-sub">VEGAS</span>
+      </span>
     </span>
   );
 }

@@ -11,7 +11,7 @@ export function Footer({ lang }: { lang: Locale }) {
       <div className="container footer-grid">
         <div className="footer-brand">
           <Brand />
-          <p>{d.footer.tagline}</p>
+          <p className="footer-tagline">{d.footer.tagline}</p>
           <p className="footer-note">{d.footer.noGambling}</p>
         </div>
         {d.footer.columns.map(([title, links]) => (

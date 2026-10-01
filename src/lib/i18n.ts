@@ -6,7 +6,7 @@ export const isLocale = (value: string): value is Locale => value === "ru" || va
 
 const ru = {
   meta: {
-    title: "MAXIMUS VEGAS — турниры, команды и игровая идентичность",
+    title: "MAXIMUS VEGAS — Vegas для своих",
     description:
       "Игровой портал MAXIMUS VEGAS: создайте профиль, соберите команду, участвуйте в турнирах с проверяемыми результатами и стройте свою игровую историю.",
   },
@@ -113,7 +113,7 @@ const ru = {
     language: "Switch to English",
   },
   footer: {
-    tagline: "Турниры, команды и игровая идентичность с проверяемыми результатами.",
+    tagline: "Vegas для своих.",
     company: "MAXIMUS VEGAS L.L.C-FZ · Meydan Free Zone · Dubai, UAE",
     noGambling: "Без ставок, азартных игр и игр на деньги.",
     columns: [
@@ -124,7 +124,7 @@ const ru = {
   },
   home: {
     eyebrow: "ИГРОВОЙ ПОРТАЛ · DUBAI, UAE",
-    title: ["Играй. Побеждай.", "Докажи результат."],
+    title: ["MAXIMUS VEGAS —", "Vegas для своих."],
     lead:
       "MAXIMUS VEGAS объединяет турниры, команды и игровую историю. Каждый результат привязан к конкретному матчу и способу проверки — от заявки до финала.",
     ctaTournaments: "Найти турнир",
@@ -840,7 +840,7 @@ type BaseDict = typeof ru;
 
 const en: BaseDict = {
   meta: {
-    title: "MAXIMUS VEGAS — tournaments, teams and gaming identity",
+    title: "MAXIMUS VEGAS — Vegas для своих",
     description:
       "The MAXIMUS VEGAS gaming portal: create a profile, build a team, compete in tournaments with verifiable results and grow your gaming record.",
   },
@@ -947,7 +947,7 @@ const en: BaseDict = {
     language: "Переключить на русский",
   },
   footer: {
-    tagline: "Tournaments, teams and gaming identity with verifiable results.",
+    tagline: "Vegas для своих.",
     company: "MAXIMUS VEGAS L.L.C-FZ · Meydan Free Zone · Dubai, UAE",
     noGambling: "No betting, gambling or real-money gaming.",
     columns: [
@@ -958,7 +958,7 @@ const en: BaseDict = {
   },
   home: {
     eyebrow: "GAMING PORTAL · DUBAI, UAE",
-    title: ["Play. Win.", "Prove it."],
+    title: ["MAXIMUS VEGAS —", "Vegas для своих."],
     lead:
       "MAXIMUS VEGAS brings tournaments, teams and your gaming record together. Every result is tied to a specific match and the way it was verified — from sign-up to the final.",
     ctaTournaments: "Find a tournament",

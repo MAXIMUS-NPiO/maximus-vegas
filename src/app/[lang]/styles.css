@@ -305,19 +305,37 @@ dd {
 /* Brand */
 .brand {
   display: inline-flex;
-  align-items: baseline;
-  gap: 7px;
+  align-items: center;
+  align-self: flex-start;
+  gap: 12px;
+  width: max-content;
+}
+.brand-mark {
+  display: block;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.brand-wordmark {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  width: max-content;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0;
   line-height: 1;
 }
 .brand-main {
-  font-weight: 800;
-  font-size: 17px;
-  letter-spacing: 0.08em;
+  font-size: 1em;
 }
 .brand-sub {
-  font-weight: 500;
-  font-size: 12px;
-  letter-spacing: 0.34em;
+  /* Manrope 800: MAXIMUS / VEGAS advance widths = 473.8 / 330.8.
+     Increase both dimensions proportionally; never stretch the letters. */
+  font-size: 1.432285em;
   color: var(--accent);
 }
 
@@ -639,6 +657,18 @@ td a:hover,
   font-weight: 700;
   letter-spacing: -0.05em;
   line-height: 1;
+}
+.hero-brand-name {
+  display: block;
+  margin-bottom: 20px;
+  font-size: clamp(18px, 2.4vw, 30px);
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+}
+.hero-tagline {
+  display: block;
+  line-height: 1.1;
+  text-wrap: balance;
 }
 .hero-lead {
   font-size: clamp(17px, 1.6vw, 20px);
@@ -1515,6 +1545,11 @@ a.b-link:hover {
   color: var(--muted);
   font-size: 14px;
   max-width: 320px;
+}
+.footer-brand .footer-tagline {
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 650;
 }
 .footer-note {
   color: var(--dim) !important;

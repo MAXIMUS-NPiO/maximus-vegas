@@ -39,9 +39,8 @@ export default async function Home({ params, searchParams }: { params: Promise<{
           <Flash lang={lang} params={sp} />
           <p className="eyebrow">{d.home.eyebrow}</p>
           <h1 className="hero-title">
-            {d.home.title[0]}
-            <br />
-            <span className="accent">{d.home.title[1]}</span>
+            <span className="hero-brand-name">{d.home.title[0]}</span>
+            <span className="accent hero-tagline">{d.home.title[1]}</span>
           </h1>
           <p className="hero-lead">{d.home.lead}</p>
           <div className="row">
