@@ -1,6 +1,6 @@
 # MAXIMUS VEGAS — shared execution record
 
-Status: IN PROGRESS | Version: 1.0 | Date: 2026-10-01
+Status: IMPLEMENTED AND VERIFIED; PR #1 records integration | Version: 1.1 | Date: 2026-10-01
 
 Canonical source: https://github.com/MAXIMUS-NPiO/maximus-vegas
 Production: https://www.maximus.vegas
@@ -38,3 +38,13 @@ The selected Sites project appgprj_6ab8009a10848191a9be92fc40996593 contains a s
 ## Open limitations
 
 Browser audio requires a user gesture. Sound availability depends on device/browser settings. Warm-up scores are device-local and never become ranked results or XP. Existing payment activation conditions remain unchanged.
+
+## Verification — 1 October 2026
+
+- TypeScript and production build passed. Existing test suite: 127 passed, zero failures, five PostgreSQL-only tests skipped without PG_TEST_URL. GitHub Actions check succeeded for cf889f1d25db25e4ebb4c211585552917fbf6d9b.
+- Browser on the Vercel preview: RU and EN home pages rendered; every visible hero image loaded; Dota 2 selection updated both match and tournament links; mute persisted after reload; all five warm-up rounds completed, average and local best displayed, best persisted after reload; early click produced false-start state. No page errors in captured browser logs (extension-only messages excluded). Desktop width 1363px had no horizontal overflow. Responsive CSS was reviewed; physical iPhone/browser-audio output was not measured.
+- Source comparison: src/server, existing tests, package manifests/lockfile and COPYRIGHT.md are byte-for-byte unchanged from starting main. Official lion blob remains d7527973c9a7fc26bc4ed40f37b48638a8978a2d.
+- Main was still 823c45be1c9aaf501fa914155619e8edb9a65722 at the pre-integration fetch. Merge must use the final expected PR head.
+- Sites update published separately at commit cb0ff801ea3b5c003655ce16731828dd2c8730e9, keeping owner-only access, D1 and all existing CS2 operations; both existing HTTP/transaction tests passed. It now clearly links into the canonical portal.
+- Automatic approval review rejected the main-branch protection change as an access-control change needing specific user approval. Main remains unprotected. This task uses an isolated branch, reviewed changes and an expected-head PR merge; do not claim enforced protection or acknowledgement by Claude.
+- DIFC and MIPA: entity roles and existing payment conditions preserved; internal IP evidence and asset provenance appended; no invented registration number.
