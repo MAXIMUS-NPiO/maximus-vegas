@@ -6,7 +6,8 @@
 // Usage: BASE=http://127.0.0.1:3100 [OWNER_CODE=…] node scripts/e2e.mjs   (creates uniquely named test records)
 // Never point it at production: it creates accounts and records.
 import assert from "node:assert/strict";
-import { createHmac } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { createServer } from "node:http";
 
 const BASE = (process.env.BASE || "http://127.0.0.1:3100").replace(/\/$/, "");
 const RUN = Date.now().toString(36).slice(-5);
@@ -193,6 +194,62 @@ for (const to of ["PUBLISHED", "REGISTRATION_OPEN"]) assert.equal((await org.pos
 assert.equal((await guest.get(`/ru/tournaments/${tSlug}`)).status, 200);
 log("organiser space, draft tournament, publish, open registration");
 
+// ---------- Partner integrations: API key, signed webhook to a local receiver, widgets ----------
+// The receiver checks signatures exactly as the developer documentation shows; it remembers accepted ids.
+const hookLog = [];
+const hookSeen = new Set();
+let hookSecret = "";
+const receiver = createServer((req, res) => {
+  let body = "";
+  req.on("data", (c) => (body += c));
+  req.on("end", () => {
+    const id = req.headers["mv-webhook-id"];
+    const ts = req.headers["mv-webhook-timestamp"];
+    const sig = req.headers["mv-webhook-signature"] || "";
+    const expected = "v1=" + createHmac("sha256", hookSecret).update(`${id}.${ts}.${body}`).digest("hex");
+    const signed = sig.split(" ").some((x) => x.length === expected.length && timingSafeEqual(Buffer.from(x), Buffer.from(expected)));
+    const fresh = Math.abs(Date.now() / 1000 - Number(ts)) <= 300;
+    const verdict = !signed || !fresh ? "bad" : hookSeen.has(id) ? "replayed" : "ok";
+    if (verdict === "ok") hookSeen.add(id);
+    hookLog.push({ id, ts, sig, body, verdict, type: JSON.parse(body || "{}").type });
+    res.writeHead(verdict === "ok" ? 200 : verdict === "replayed" ? 409 : 401).end();
+  });
+});
+await new Promise((resolve) => receiver.listen(0, "127.0.0.1", resolve));
+receiver.unref();
+const hookUrl = `http://127.0.0.1:${receiver.address().port}/hook`;
+const integrations = `${space.path}/integrations`;
+const guestIntegrations = await guest.get(integrations);
+assert.ok([303, 307, 308].includes(guestIntegrations.status) && guestIntegrations.location.includes("/ru/signin"), "integrations need an account");
+assert.ok((await org.get(integrations)).text.includes("API, вебхуки и виджеты"));
+const keyMade = await org.post("integrations.key_create", { org: orgId, name: "e2e site", back: integrations });
+assert.equal(keyMade.ok, "api_key_created");
+const apiKey = /mvk_[A-Za-z0-9_-]{40}/.exec((await org.get(integrations)).text)?.[0];
+assert.ok(apiKey, "the new key is shown once on the integrations page");
+const api = (path, key = apiKey, method = "GET") => fetch(`${BASE}/api/v1${path}`, { method, headers: key ? { authorization: `Bearer ${key}` } : {} });
+const listed = await api("/tournaments");
+assert.equal(listed.status, 200);
+assert.ok((await listed.json()).data.some((x) => x.slug === tSlug), "the key lists its space's tournament");
+assert.equal((await api("/tournaments")).headers.get("x-ratelimit-limit"), "120");
+assert.equal((await api("/tournaments", "")).status, 401);
+assert.equal((await api(`/tournaments/${tSlug}`)).status, 200);
+assert.equal((await api("/tournaments/no-such-event")).status, 404);
+assert.equal((await api("/tournaments", apiKey, "POST")).status, 405);
+assert.equal((await org.post("integrations.secret_hide", { back: integrations })).status, 303);
+assert.ok(!(await org.get(integrations)).text.includes(apiKey), "after 'I have saved it' the key is gone from the page");
+const hookMade = await org.post("integrations.webhook_create", { org: orgId, url: hookUrl, events: ["registration.created", "tournament.status_changed", "match.completed"], back: integrations });
+assert.equal(hookMade.ok, "webhook_created", `${hookMade.location} — the local server must run with MV_WEBHOOK_ALLOW_LOCAL=1`);
+hookSecret = /whsec_[A-Za-z0-9_-]{40,}/.exec((await org.get(integrations)).text)?.[0] ?? "";
+assert.ok(hookSecret, "the signing secret is shown once");
+const embedHead = await fetch(`${BASE}/embed/ru/tournaments/${tSlug}/registration`);
+assert.equal(embedHead.status, 200);
+assert.equal(embedHead.headers.get("x-frame-options"), null, "widgets may be framed");
+assert.equal(embedHead.headers.get("content-security-policy"), "frame-ancestors *");
+assert.ok((await embedHead.text()).includes(`E2E Cup ${RUN}`));
+assert.equal((await fetch(`${BASE}/ru/tournaments/${tSlug}`)).headers.get("x-frame-options"), "DENY", "portal pages refuse framing");
+assert.ok((await (await fetch(`${BASE}/embed/ru/organizer/${space.path.split("/").pop()}/calendar`)).text()).includes(`E2E Cup ${RUN}`), "the calendar widget lists the event");
+log("integrations: API key shown once and scoped (401 without, 404 unknown, 405 on writes), webhook with a signing secret, widgets framable while pages are not");
+
 const players = [];
 for (let i = 1; i <= 5; i++) players.push(await signup(`p${i}`));
 for (const p of players) assert.equal((await p.post("tournament.register", { tournament: tId })).ok, "registered");
@@ -203,6 +260,18 @@ for (const p of players.slice(0, 4)) assert.equal((await p.post("tournament.chec
 assert.equal((await org.post("tournament.transition", { tournament: tId, to: "REGISTRATION_CLOSED" })).ok, "status_changed");
 assert.equal((await org.post("tournament.transition", { tournament: tId, to: "IN_PROGRESS" })).ok, "status_changed");
 log("5 registrations, duplicate refused, 4 check-ins, tournament started");
+// Webhook deliveries run after each action's response: wait for them.
+const started = () => hookLog.some((h) => h.type === "tournament.status_changed" && JSON.parse(h.body).data.to === "IN_PROGRESS");
+for (let i = 0; i < 60 && (hookLog.filter((h) => h.type === "registration.created").length < 5 || !started()); i++) await new Promise((r) => setTimeout(r, 250));
+assert.equal(hookLog.filter((h) => h.type === "registration.created" && h.verdict === "ok").length, 5, "five signed registration events");
+assert.ok(started(), "the start is an event");
+const captured = hookLog.find((h) => h.verdict === "ok");
+const replayed = await fetch(hookUrl, { method: "POST", headers: { "content-type": "application/json", "mv-webhook-id": captured.id, "mv-webhook-timestamp": captured.ts, "mv-webhook-signature": captured.sig }, body: captured.body });
+assert.equal(replayed.status, 409, "a replayed delivery is rejected by the receiver");
+const keyId = uuidAfter((await org.get(integrations)).text, "key");
+assert.equal((await org.post("integrations.key_revoke", { key: keyId, back: integrations })).ok, "api_key_revoked");
+assert.equal((await api("/tournaments")).status, 401, "a revoked key stops working");
+log("webhooks: five registrations and the start delivered signed, a replay refused; the revoked key is refused");
 
 // ---------- Game Day ----------
 const gdGuest = await guest.get("/ru/gameday");

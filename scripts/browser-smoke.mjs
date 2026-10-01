@@ -6,6 +6,7 @@
 // Usage: BASE=http://127.0.0.1:3100 node scripts/browser-smoke.mjs
 //   Chromium: PLAYWRIGHT_BROWSERS_PATH (installed browsers) or CHROMIUM_PATH (an executable).
 // Never point it at production: it creates accounts, a tournament, a team, posts and a report.
+import { createServer } from "node:http";
 import { chromium } from "playwright-core";
 
 const BASE = (process.env.BASE || "http://127.0.0.1:3100").replace(/\/$/, "");
@@ -107,6 +108,7 @@ async function main(browser) {
   step("organiser space, tournament, transitions");
   await a.go("/ru/organizer");
   await a.submit("org.create", { name: `Smoke Space ${RUN}`, description: "Browser smoke run" });
+  const spacePath = new URL(a.pg.url()).pathname;
   const start = new Date(Date.now() + 3 * 86_400_000);
   const pad = (n) => String(n).padStart(2, "0");
   const startsAt = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}T${pad(start.getHours())}:${pad(start.getMinutes())}`;
@@ -138,6 +140,41 @@ async function main(browser) {
     await c.go(href);
     await c.submit("match.confirm");
   }
+
+  step("integrations: an API key shown once, widgets on a third-party page");
+  await a.go(`${spacePath}/integrations`);
+  await a.submit("integrations.key_create", { name: "Smoke site" });
+  if (!(await a.pg.locator("code.secret-value").count())) problems.push("[bsa] the new API key is not shown");
+  await a.submit("integrations.secret_hide");
+  if (await a.pg.locator("code.secret-value").count()) problems.push("[bsa] the API key is still shown after 'I have saved it'");
+  // A partner's page on another site frames two widgets and, wrongly, a portal page.
+  const site = createServer((req, res) => {
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    res.end(`<!doctype html><meta charset="utf-8"><title>Partner site</title><h1>Partner site</h1>
+<iframe id="bracket" src="${BASE}/embed/ru/tournaments/${slug}/bracket" width="960" height="520"></iframe>
+<iframe id="registration" src="${BASE}/embed/ru/tournaments/${slug}/registration" width="600" height="260"></iframe>
+<iframe id="page" src="${BASE}/ru/tournaments/${slug}" width="600" height="260"></iframe>`);
+  });
+  await new Promise((resolve) => site.listen(0, "127.0.0.1", resolve));
+  const partner = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const ppg = await partner.newPage();
+  ppg.on("pageerror", (e) => problems.push(`[partner] page error: ${e.message}`));
+  ppg.on("response", (r) => r.status() >= 500 && problems.push(`[partner] HTTP ${r.status()} ${r.url()}`));
+  await ppg.goto(`http://localhost:${site.address().port}/`);
+  await ppg.waitForLoadState("load");
+  for (const id of ["bracket", "registration"]) {
+    const title = ppg.frameLocator(`#${id}`).locator("h1.embed-title");
+    try {
+      await title.waitFor({ timeout: 10_000 });
+      if (!(await title.textContent())?.includes(`Smoke Cup ${RUN}`)) problems.push(`[partner] the ${id} widget shows another title`);
+    } catch {
+      problems.push(`[partner] the ${id} widget did not render on a third-party page`);
+    }
+  }
+  if (await ppg.frameLocator("#page").locator("main#main").count()) problems.push("[partner] a portal page rendered inside a third-party frame");
+  console.log(`[partner] widgets rendered on http://localhost:${site.address().port}/; a framed portal page is refused`);
+  await partner.close();
+  site.close();
 
   step("team, invitation, acceptance");
   await b.go("/ru/teams/new");

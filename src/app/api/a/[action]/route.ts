@@ -28,6 +28,7 @@ import * as conduct from "@/server/conduct.ts";
 import * as scouting from "@/server/scouting.ts";
 import * as transfers from "@/server/transfers.ts";
 import * as clans from "@/server/clans.ts";
+import * as partner from "@/server/partner.ts";
 import { storeUpload } from "@/server/media.ts";
 import { drainOutbox, mailConfigured } from "@/server/mail.ts";
 import { fail } from "@/server/errors.ts";
@@ -69,6 +70,16 @@ const signupDraft = (c: Ctx) => ({ email: c.form.email ?? "", username: c.form.u
 /** What an account under a suspension sanction may still do: read, appeal, manage its own access and data. */
 const RESTRICTED_OK = new Set(["auth.signout", "conduct.appeal", "notifications.read", "account.session", "account.password", "account.delete", "account.accept_terms"]);
 const conductAdmin = (c: Ctx) => `/${c.lang}/admin?tab=conduct`;
+/**
+ * A new API key or webhook secret is shown once: an HttpOnly cookie for the integrations page only, five
+ * minutes, never in the URL; "I have saved it" clears it.
+ */
+const oneTimeSecret = (c: Ctx, kind: "key" | "webhook", value: string, clear = false) => {
+  const path = new URL(c.back, "http://local").pathname;
+  const secure = process.env.NODE_ENV === "production" && process.env.MV_INSECURE_COOKIES !== "1" ? "; Secure" : "";
+  const body = clear ? "" : Buffer.from(JSON.stringify({ kind, value })).toString("base64url");
+  return `mv_secret=${body}; Path=${path}; HttpOnly; SameSite=Strict; Max-Age=${clear ? 0 : 300}${secure}`;
+};
 
 const handlers: Record<string, Handler> = {
   // ---------- Accounts ----------
@@ -754,6 +765,38 @@ const handlers: Record<string, Handler> = {
     return { to: conductAdmin(c), ok: reverse ? "transfer_reversed" : "transfer_upheld" };
   },
 
+  // ---------- Partner integrations: API keys, webhooks ----------
+  "integrations.key_create": async (c) => {
+    const r = await partner.createApiKey(c.db, u(c), c.form.org, c.form.name);
+    return { ok: "api_key_created", cookie: oneTimeSecret(c, "key", r.key) };
+  },
+  "integrations.key_revoke": async (c) => {
+    await partner.revokeApiKey(c.db, u(c), c.form.key);
+    return { ok: "api_key_revoked" };
+  },
+  "integrations.webhook_create": async (c) => {
+    const r = await partner.createWebhook(c.db, u(c), c.form.org, c.form.url, c.multi.events ?? []);
+    return { ok: "webhook_created", cookie: oneTimeSecret(c, "webhook", r.secret) };
+  },
+  "integrations.webhook_rotate": async (c) => {
+    const r = await partner.rotateWebhookSecret(c.db, u(c), c.form.endpoint);
+    return { ok: "webhook_rotated", cookie: oneTimeSecret(c, "webhook", r.secret) };
+  },
+  "integrations.webhook_toggle": async (c) => {
+    const active = c.form.active === "1";
+    await partner.setWebhookActive(c.db, u(c), c.form.endpoint, active);
+    return { ok: active ? "webhook_enabled" : "webhook_disabled" };
+  },
+  "integrations.webhook_test": async (c) => {
+    await partner.sendTestEvent(c.db, u(c), c.form.endpoint);
+    return { ok: "webhook_test_sent" };
+  },
+  "integrations.delivery_retry": async (c) => {
+    await partner.retryDelivery(c.db, u(c), c.form.delivery);
+    return { ok: "webhook_retry" };
+  },
+  "integrations.secret_hide": async (c) => ({ cookie: oneTimeSecret(c, "key", "", true) }),
+
   // ---------- Clans and clan wars ----------
   "clan.create": async (c) => {
     const clan = await clans.createClan(c.db, u(c), { name: c.form.name, tag: c.form.tag, description: c.form.description });
@@ -1118,6 +1161,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
     return redirect(withParam(`/${fallbackLang}`, "e", errorCode(error)));
   }
   if (mailConfigured()) after(() => drainOutbox(c.db, 10).catch((e) => console.error("[outbox]", (e as Error).message)));
+  // Webhooks: new audit entries become deliveries, and due deliveries are sent, after the response.
+  after(() => partner.pumpWebhooks(c.db).catch((e) => console.error("[webhooks]", (e as Error).message)));
   try {
     // A suspension sanction keeps the account signed in to read and appeal; every other action stops here.
     if (c.user?.restricted && !RESTRICTED_OK.has(action)) fail("account_restricted");

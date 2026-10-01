@@ -204,6 +204,13 @@ export const ERROR_CODES = [
   "war_not_started",
   "war_score",
   "war_own_report",
+  // Partner integrations
+  "api_key_limit",
+  "webhook_url",
+  "webhook_events",
+  "webhook_limit",
+  "webhook_inactive",
+  "webhook_delivered",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
