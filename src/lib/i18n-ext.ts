@@ -10,6 +10,11 @@ const okRu: Record<string, string> = {
   template_saved: "Шаблон сохранён.",
   template_deleted: "Шаблон удалён.",
   lobby_result_saved: "Результат игры записан, таблица лобби обновлена.",
+  match_format_saved: "Формат матча сохранён. Участники получили уведомление.",
+  waves_scheduled: "Тур распределён по площадкам. Участники получили время и площадку.",
+  venue_added: "Площадка добавлена.",
+  venue_removed: "Площадка удалена.",
+  feedback_saved: "Спасибо: оценка сохранена.",
   verification_sent: "Письмо для подтверждения email поставлено в очередь отправки.",
   reset_sent: "Если такой аккаунт есть, письмо со ссылкой отправлено.",
   email_verified: "Email подтверждён.",
@@ -47,6 +52,11 @@ const okEn: Record<string, string> = {
   template_saved: "Template saved.",
   template_deleted: "Template deleted.",
   lobby_result_saved: "Game result recorded; the lobby table is updated.",
+  match_format_saved: "Match format saved. Both sides were notified.",
+  waves_scheduled: "The round is placed on the venues. Entrants were told when and where they play.",
+  venue_added: "Venue added.",
+  venue_removed: "Venue removed.",
+  feedback_saved: "Thank you: your rating is saved.",
   verification_sent: "The confirmation email has been queued for sending.",
   reset_sent: "If an account exists for that address, a link has been sent.",
   email_verified: "Email confirmed.",
@@ -147,6 +157,17 @@ const errorsRu: Record<string, string> = {
   template_exists: "Шаблон с таким названием уже есть.",
   invalid_ffa_settings: "Настройки FFA: лобби 2–100, игр в раунде 1–12, выходят из лобби 1–99, очки за места — до 64 целых чисел 0–1000 без роста к нижним местам, очки за убийство 0–10.",
   invalid_ffa_results: "Результат игры: места сыгравших — 1, 2, 3 … без пропусков и повторов, убийства 0–999; пустое место — не играл.",
+  invalid_series: "Формат серий: выберите Bo1, Bo3, Bo5 или Bo7; тур — число от 1 до 64, группа — буква (A, B …); каждый тур и каждая группа — один раз.",
+  invalid_series_score: "Счёт серии: у победителя ровно нужное число побед (Bo3 — 2, Bo5 — 3, Bo7 — 4), у проигравшего меньше; ничьих в серии нет.",
+  admission_email: "Допуск: нужен подтверждённый email — у вас или у игрока вашего состава.",
+  admission_account_age: "Допуск: аккаунт моложе, чем требует турнир — у вас или у игрока вашего состава.",
+  admission_xp: "Допуск: не хватает опыта (XP) в этой игре — у вас или у игрока вашего состава.",
+  admission_matches: "Допуск: не хватает подтверждённых матчей в этой игре — у вас или у игрока вашего состава.",
+  schedule_conflict: "Пересечение в расписании: площадка или участник заняты в это время (в том числе в другом турнире). Проверьте раздел «Площадки и расписание» или подтвердите изменение с пересечением.",
+  venue_exists: "Площадка с таким названием уже есть.",
+  venue_in_use: "На площадке назначены несыгранные матчи — сначала перенесите их.",
+  no_venues: "Сначала добавьте площадки турнира.",
+  feedback_closed: "Оценить турнир могут игроки его составов в течение 30 дней после завершения.",
 };
 
 const errorsEn: Record<string, string> = {
@@ -222,6 +243,17 @@ const errorsEn: Record<string, string> = {
   template_exists: "A template with this name already exists.",
   invalid_ffa_settings: "FFA settings: lobbies of 2–100, 1–12 games per round, 1–99 advancing per lobby, placement points of up to 64 whole numbers 0–1000 never rising for lower places, 0–10 points per kill.",
   invalid_ffa_results: "Game result: places of those who played are 1, 2, 3 … with no gaps or repeats, kills 0–999; an empty place means did not play.",
+  invalid_series: "Series format: choose Bo1, Bo3, Bo5 or Bo7; a round is a number from 1 to 64, a group a letter (A, B …); each round and group once.",
+  invalid_series_score: "Series score: the winner has exactly the wins needed (Bo3 — 2, Bo5 — 3, Bo7 — 4) and the loser fewer; a series cannot be drawn.",
+  admission_email: "Admission: a confirmed email is required — for you or a player on your roster.",
+  admission_account_age: "Admission: the account is newer than the tournament requires — yours or a player's on your roster.",
+  admission_xp: "Admission: not enough experience (XP) in this game — for you or a player on your roster.",
+  admission_matches: "Admission: not enough confirmed matches in this game — for you or a player on your roster.",
+  schedule_conflict: "Schedule overlap: the venue or an entrant is busy at that time (possibly in another tournament). Check “Venues and schedule” or confirm the change with the overlap.",
+  venue_exists: "A venue with this name already exists.",
+  venue_in_use: "Unplayed matches are assigned to this venue — move them first.",
+  no_venues: "Add the tournament's venues first.",
+  feedback_closed: "Players on the tournament's rosters can rate it within 30 days of its end.",
 };
 
 const kindsRu: Record<string, string> = {
@@ -266,6 +298,8 @@ const kindsRu: Record<string, string> = {
   ffa_advanced: "Турнир «{tournament}»: вы прошли в раунд {round}",
   ffa_eliminated: "Турнир «{tournament}»: вы выбыли перед раундом {round}",
   ffa_dispute_opened: "Турнир «{tournament}»: оспорен результат игры {game} — нужно решение",
+  match_format_changed: "Турнир «{tournament}»: изменён формат вашего матча",
+  match_venue: "Турнир «{tournament}»: ваш матч пройдёт на площадке «{venue}»",
 };
 
 const kindsEn: Record<string, string> = {
@@ -310,6 +344,8 @@ const kindsEn: Record<string, string> = {
   ffa_advanced: "“{tournament}”: you advanced to round {round}",
   ffa_eliminated: "“{tournament}”: you were eliminated before round {round}",
   ffa_dispute_opened: "“{tournament}”: the result of game {game} is disputed — a decision is needed",
+  match_format_changed: "“{tournament}”: the format of your match changed",
+  match_venue: "“{tournament}”: your match is at venue “{venue}”",
 };
 
 export const extRu = {

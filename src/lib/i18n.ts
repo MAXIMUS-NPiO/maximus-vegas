@@ -459,7 +459,7 @@ const ru = {
       tournament_paused: "Турнир «{tournament}» на паузе",
       tournament_resumed: "Турнир «{tournament}» продолжается",
       tournament_cancelled: "Турнир «{tournament}» отменён",
-      tournament_completed: "Турнир «{tournament}» завершён — итоги опубликованы",
+      tournament_completed: "Турнир «{tournament}» завершён — итоги опубликованы, оцените турнир",
       match_ready: "Матч в турнире «{tournament}» готов к игре",
       match_scheduled: "Назначено время матча в турнире «{tournament}»",
       room_code: "Передан код комнаты для матча в турнире «{tournament}»",
@@ -1293,7 +1293,7 @@ const en: BaseDict = {
       tournament_paused: "“{tournament}” is paused",
       tournament_resumed: "“{tournament}” has resumed",
       tournament_cancelled: "“{tournament}” was cancelled",
-      tournament_completed: "“{tournament}” is completed — standings are published",
+      tournament_completed: "“{tournament}” is completed — standings are published; rate the tournament",
       match_ready: "Your match in “{tournament}” is ready",
       match_scheduled: "A match time was set in “{tournament}”",
       room_code: "A room code was shared for your match in “{tournament}”",
@@ -1685,6 +1685,15 @@ function merge(base: BaseDict, ext: Ext): Dict {
 
 export const dictionaries: Record<Locale, Dict> = { ru: merge(ru, extRu), en: merge(en, extEn) };
 export const dict = (lang: Locale): Dict => dictionaries[lang];
+
+/** Russian plural forms: (1, "оценка", "оценки", "оценок") → "оценка"; 2–4 → second; 5–20 and the rest → third. */
+export function ruPlural(n: number, one: string, few: string, many: string): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
+}
 
 export function fill(template: string, values: Record<string, unknown>): string {
   return template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ""));

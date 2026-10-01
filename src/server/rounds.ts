@@ -34,6 +34,7 @@ import {
 } from "./tournaments.ts";
 import { grantXp, XP } from "./progression.ts";
 import { isRoundFormat, roundTime, settingsOf, type FormatSettings } from "./format-settings.ts";
+import { pointsOf, seriesRulesOf, type SeriesRules } from "./series.ts";
 
 export { isRoundFormat, settingsOf, type FormatSettings };
 
@@ -170,6 +171,7 @@ type RoundMatch = {
   score_b: number | null;
   outcome: string | null;
   status: string;
+  points_override: unknown;
 };
 type Entrant = { id: string; seed: number | null; status: string; group_no: number | null };
 
@@ -186,7 +188,7 @@ async function entrantsOf(q: Queryable, tournamentId: string) {
 
 const roundMatches = (q: Queryable, tournamentId: string) =>
   q.query<RoundMatch>(
-    `select id, round, group_no, a_reg, b_reg, winner_reg, score_a, score_b, outcome, status from matches
+    `select id, round, group_no, a_reg, b_reg, winner_reg, score_a, score_b, outcome, status, points_override from matches
       where tournament_id = $1 and stage = 1 and bracket in ('RR','SW') order by group_no, round, position`,
     [tournamentId],
   );
@@ -202,28 +204,45 @@ const asResult = (m: RoundMatch): StandingsMatch => ({
   status: m.status,
 });
 
+type WithRules = { id: string; format: string; format_settings?: unknown; series_rules?: unknown };
+
+/** The tournament's series rules; read from the database when the caller's row does not carry them. */
+async function rulesOf(q: Queryable, t: WithRules): Promise<SeriesRules> {
+  if ("series_rules" in t) return seriesRulesOf(t);
+  const [row] = await q.query<{ series_rules: unknown }>("select series_rules from tournaments where id = $1", [t.id]);
+  return seriesRulesOf(row ?? {});
+}
+
+/** Results with the points of each match: a match, its round or its group may override the tournament's table. */
+function asResults(rules: SeriesRules, settings: FormatSettings, matches: RoundMatch[]): StandingsMatch[] {
+  const custom = rules.rounds.some((r) => r.points) || rules.groups.some((g) => g.points) || matches.some((m) => m.points_override);
+  return matches.map((m) => (custom ? { ...asResult(m), points: pointsOf(rules, settings.points, m).points } : asResult(m)));
+}
+
 /** Live standings of a round-robin or Swiss tournament (groups: see groupStandings). */
-export async function roundStandings(q: Queryable, t: { id: string; format: string; format_settings?: unknown }): Promise<StandingsRow[]> {
+export async function roundStandings(q: Queryable, t: WithRules): Promise<StandingsRow[]> {
   if (t.format !== "round_robin" && t.format !== "swiss") return [];
-  const [entrants, matches] = await Promise.all([entrantsOf(q, t.id), roundMatches(q, t.id)]);
+  const [entrants, matches, rules] = await Promise.all([entrantsOf(q, t.id), roundMatches(q, t.id), rulesOf(q, t)]);
   const settings = settingsOf(t);
-  return computeStandings(t.format, entrants.map(asEntrant), matches.map(asResult), settings.points, { disqualification: settings.disqualification });
+  return computeStandings(t.format, entrants.map(asEntrant), asResults(rules, settings, matches), settings.points, { disqualification: settings.disqualification });
 }
 
 export type GroupTable = { group: number; rows: StandingsRow[] };
 
 /** Live standings of every group: each group is a round robin with the tournament's points and rules. */
-export async function groupStandings(q: Queryable, t: { id: string; format: string; format_settings?: unknown }): Promise<GroupTable[]> {
+export async function groupStandings(q: Queryable, t: WithRules): Promise<GroupTable[]> {
   if (t.format !== "groups") return [];
-  const [entrants, matches] = await Promise.all([entrantsOf(q, t.id), roundMatches(q, t.id)]);
+  const [entrants, all, rules] = await Promise.all([entrantsOf(q, t.id), roundMatches(q, t.id), rulesOf(q, t)]);
   const settings = settingsOf(t);
+  const results = asResults(rules, settings, all);
+  const matches = all.map((m, i) => ({ group_no: m.group_no, result: results[i] }));
   const numbers = [...new Set(entrants.map((e) => e.group_no).filter((g): g is number => g !== null))].sort((a, b) => a - b);
   return numbers.map((group) => ({
     group,
     rows: computeStandings(
       "round_robin",
       entrants.filter((e) => e.group_no === group).map(asEntrant),
-      matches.filter((m) => m.group_no === group).map(asResult),
+      matches.filter((m) => m.group_no === group).map((m) => m.result),
       settings.points,
       { disqualification: settings.disqualification },
     ),
@@ -233,7 +252,7 @@ export async function groupStandings(q: Queryable, t: { id: string; format: stri
 /** Pairs Swiss round `round`. Returns false when fewer than two active entrants remain. */
 async function pairSwiss(q: Queryable, t: StartRow, round: number, actorId: string): Promise<boolean> {
   const settings = settingsOf(t);
-  const [entrants, matches] = await Promise.all([
+  const [entrants, matches, rules] = await Promise.all([
     round === 1
       ? q.query<Entrant>(
           "select id, seed, status, group_no from registrations where tournament_id = $1 and status = 'registered' order by seed asc nulls last, created_at asc, id asc",
@@ -241,10 +260,11 @@ async function pairSwiss(q: Queryable, t: StartRow, round: number, actorId: stri
         )
       : entrantsOf(q, t.id),
     roundMatches(q, t.id),
+    rulesOf(q, t),
   ]);
   const active = entrants.filter((e) => e.status === "registered");
   if (active.length < 2) return false;
-  const table = round === 1 ? [] : computeStandings("swiss", entrants.map(asEntrant), matches.map(asResult), settings.points);
+  const table = round === 1 ? [] : computeStandings("swiss", entrants.map(asEntrant), asResults(rules, settings, matches), settings.points);
   const pointsOf = new Map(table.map((r) => [r.id, r.points]));
   const byesOf = new Map(table.map((r) => [r.id, r.byes]));
   const met = new Set(matches.filter((m) => m.a_reg && m.b_reg).map((m) => pairKey(m.a_reg!, m.b_reg!)));

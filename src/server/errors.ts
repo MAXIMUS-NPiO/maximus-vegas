@@ -131,6 +131,17 @@ export const ERROR_CODES = [
   "template_exists",
   "invalid_ffa_settings",
   "invalid_ffa_results",
+  "invalid_series",
+  "invalid_series_score",
+  "admission_email",
+  "admission_account_age",
+  "admission_xp",
+  "admission_matches",
+  "schedule_conflict",
+  "venue_exists",
+  "venue_in_use",
+  "no_venues",
+  "feedback_closed",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 

@@ -10,6 +10,7 @@ import { audit } from "./audit.ts";
 import { notify } from "./access.ts";
 import { fail, isUniqueViolation } from "./errors.ts";
 import { checkRegion, lockTournament, regLeaders, regMembers, requireManager, type TournamentRow } from "./tournaments.ts";
+import { checkAdmission } from "./admission.ts";
 import * as v from "./validate.ts";
 
 const PRE_START = ["DRAFT", "PUBLISHED", "REGISTRATION_OPEN", "REGISTRATION_CLOSED"];
@@ -66,6 +67,7 @@ export async function setRoster(db: Database, user: SessionUser, tournamentId: s
     const added = wanted.filter((id) => !current.includes(id));
     if (!removed.length && !added.length) return;
     await checkRegion(q, t, added);
+    await checkAdmission(q, t, added);
     for (const id of removed) await q.query("delete from roster_entries where registration_id = $1 and user_id = $2", [reg.id, id]);
     for (const id of added) await addToRoster(q, t, reg.id, id);
     for (const id of removed)
@@ -93,6 +95,7 @@ export async function substitute(db: Database, user: SessionUser, tournamentId: 
     if (!current.includes(outId) || current.includes(inId) || outId === inId) fail("invalid_roster");
     if (!(await activeTeamMembers(q, reg.team_id)).has(inId)) fail("invalid_roster");
     await checkRegion(q, t, [inId]);
+    await checkAdmission(q, t, [inId]);
     await q.query("delete from roster_entries where registration_id = $1 and user_id = $2", [reg.id, outId]);
     await addToRoster(q, t, reg.id, inId);
     await q.query(

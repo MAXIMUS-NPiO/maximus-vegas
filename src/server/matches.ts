@@ -5,7 +5,8 @@ import { notify } from "./access.ts";
 import { fail } from "./errors.ts";
 import { canRefereeTournament, completeMatch, isRoundBracket, regLeaders, regMembers, type MatchRow } from "./tournaments.ts";
 import { rewriteWinner } from "./decisions.ts";
-import { settingsOf } from "./format-settings.ts";
+import { isRoundFormat, settingsOf } from "./format-settings.ts";
+import { depthKey, parseMatchOverride, seriesCustomised, seriesOf, seriesRulesOf, seriesScoreValid } from "./series.ts";
 import * as v from "./validate.ts";
 
 type Locked = MatchRow & {
@@ -17,7 +18,10 @@ type Locked = MatchRow & {
   t_settings: unknown;
   t_stage: number;
   t_no_show: number | null;
+  t_series: unknown;
   scheduled_at: Date | null;
+  series_override: number | null;
+  venue_id: string | null;
 };
 
 /**
@@ -32,7 +36,7 @@ export async function lockMatchWithTournament(q: Queryable, matchId: string): Pr
   await q.query("select id from tournaments where id = $1 for update", [ref.tournament_id]);
   const [m] = await q.query<Locked>(
     `select m.*, t.status as t_status, t.org_id, t.name as t_name, t.slug as t_slug, t.format as t_format, t.format_settings as t_settings,
-            t.stage as t_stage, t.no_show_minutes as t_no_show
+            t.stage as t_stage, t.no_show_minutes as t_no_show, t.series_rules as t_series
        from matches m join tournaments t on t.id = m.tournament_id
       where m.id = $1 for update of m`,
     [matchId],
@@ -61,9 +65,24 @@ function live(m: Locked) {
   if (m.t_status !== "IN_PROGRESS") fail("tournament_not_live");
 }
 
-function scores(input: { scoreA: unknown; scoreB: unknown }, m: Locked) {
+/** Series length of a locked match under the tournament's rules (MV-SERIES-1). */
+export async function seriesLengthOf(q: Queryable, m: Locked): Promise<number> {
+  const rules = seriesRulesOf({ series_rules: m.t_series });
+  if (!seriesCustomised(rules) && !m.series_override) return 1;
+  const [row] = await q.query<{ top: number }>(
+    "select coalesce(max(round), 0)::int as top from matches where tournament_id = $1 and stage = $2 and bracket = $3",
+    [m.tournament_id, m.stage, m.bracket],
+  );
+  const playoff = isRoundFormat(m.t_format) ? (settingsOf({ format: m.t_format, format_settings: m.t_settings }).playoff?.format ?? null) : null;
+  return seriesOf(rules, m, { main: m.t_format, playoff }, new Map([[depthKey(m.stage, m.bracket), row?.top || m.round]])).bestOf;
+}
+
+async function scores(q: Queryable, input: { scoreA: unknown; scoreB: unknown }, m: Locked) {
   const scoreA = v.intIn(input.scoreA, 0, 999);
   const scoreB = v.intIn(input.scoreB, 0, 999);
+  // A best-of-N series ends when one side has won (N + 1) / 2 games.
+  const bestOf = await seriesLengthOf(q, m);
+  if (bestOf > 1 && !seriesScoreValid(bestOf, scoreA, scoreB)) fail("invalid_series_score");
   if (scoreA === scoreB && !drawAllowed(m)) fail("draw_not_allowed");
   const winner: string | null = scoreA === scoreB ? null : scoreA > scoreB ? m.a_reg! : m.b_reg!;
   return { scoreA, scoreB, winner };
@@ -93,7 +112,7 @@ export async function submitResult(db: Database, user: SessionUser, matchId: str
     if (!["ready", "in_progress", "result_submitted"].includes(m.status)) fail(m.status === "completed" ? "already_completed" : "match_not_ready");
     const side = await sideOf(q, m, user.id);
     if (!side) fail("not_participant");
-    const { scoreA, scoreB, winner } = scores(input, m);
+    const { scoreA, scoreB, winner } = await scores(q, input, m);
     const evidence = v.optionalUrl(input.evidenceUrl);
     const note = v.clean(input.note, 1000);
     const pending = await q.query<{ id: string; side: string; score_a: number; score_b: number; winner_reg: string | null }>(
@@ -184,7 +203,7 @@ export async function officialResult(
     live(m);
     if (m.status === "completed") fail("already_completed");
     if (!m.a_reg || !m.b_reg) fail("match_not_ready");
-    const { scoreA, scoreB, winner } = scores(input, m);
+    const { scoreA, scoreB, winner } = await scores(q, input, m);
     const evidence = v.optionalUrl(input.evidenceUrl);
     const note = v.clean(input.note, 1000);
     const resolution = v.clean(input.resolution, 1000);
@@ -245,7 +264,7 @@ export async function correctResult(db: Database, user: SessionUser, matchId: st
     if (!["IN_PROGRESS", "PAUSED", "COMPLETED"].includes(m.t_status)) fail("tournament_not_live");
     if (m.status !== "completed" || m.outcome === "bye" || !m.a_reg || !m.b_reg) fail("not_editable");
     requireStageOpen(m);
-    const { scoreA, scoreB, winner } = scores(input, m);
+    const { scoreA, scoreB, winner } = await scores(q, input, m);
     const note = v.clean(input.note, 1000);
     if (note.length < 5) fail("invalid_input");
     if (isRoundBracket(m.bracket)) {
@@ -274,7 +293,7 @@ export async function updateMatchDetails(
   db: Database,
   user: SessionUser,
   matchId: string,
-  input: { roomCode?: unknown; scheduledAt?: unknown; timeZone?: unknown; live?: unknown },
+  input: { roomCode?: unknown; scheduledAt?: unknown; timeZone?: unknown; live?: unknown; venueId?: unknown; force?: unknown },
 ) {
   await db.tx(async (q) => {
     const m = await lockMatchWithTournament(q, matchId);
@@ -287,11 +306,35 @@ export async function updateMatchDetails(
       await q.query("update matches set room_code = $2, updated_at = now() where id = $1", [m.id, code]);
       await notify(q, [...(await regMembers(q, m.a_reg)), ...(await regMembers(q, m.b_reg))].filter((id) => id !== user.id), "room_code", { matchId: m.id, tournament: m.t_name });
     }
+    let moved = false;
+    const schedule = await import("./schedule.ts");
+    const before = await schedule.scheduleConflicts(q, { id: m.tournament_id }, [m.id]);
     if (input.scheduledAt !== undefined && input.scheduledAt !== "") {
       if (!referee) fail("forbidden");
       const at = v.zonedToUtc(input.scheduledAt, input.timeZone);
       await q.query("update matches set scheduled_at = $2, updated_at = now() where id = $1", [m.id, at.toISOString()]);
       await notify(q, [...(await regMembers(q, m.a_reg)), ...(await regMembers(q, m.b_reg))], "match_scheduled", { matchId: m.id, tournament: m.t_name, at: at.toISOString() });
+      moved = true;
+    }
+    const venueText = input.venueId === undefined ? null : String(input.venueId).trim();
+    const currentVenue = m.venue_id ?? "";
+    if (venueText !== null && venueText !== currentVenue) {
+      if (!referee) fail("forbidden");
+      let venueName = "";
+      if (venueText) {
+        const [venue] = await q.query<{ name: string }>("select name from tournament_venues where id::text = $1 and tournament_id = $2", [venueText, m.tournament_id]);
+        if (!venue) fail("not_found");
+        venueName = venue.name;
+      }
+      await q.query("update matches set venue_id = $2, updated_at = now() where id = $1", [m.id, venueText || null]);
+      if (venueName)
+        await notify(q, [...(await regMembers(q, m.a_reg)), ...(await regMembers(q, m.b_reg))], "match_venue", { matchId: m.id, tournament: m.t_name, venue: venueName, at: "" });
+      moved = true;
+    }
+    // A venue hosts one match at a time and nobody plays two at once, unless the referee confirms the override.
+    if (moved) {
+      const conflicts = await schedule.guardConflicts(q, { id: m.tournament_id }, [m.id], v.bool(input.force), before);
+      if (conflicts.length) await audit(q, { actorId: user.id, action: "match.schedule_override", entity: "match", entityId: m.id, data: { conflicts: conflicts.length, kinds: [...new Set(conflicts.map((c) => c.kind))] } });
     }
     if (v.bool(input.live)) {
       live(m);
@@ -299,5 +342,28 @@ export async function updateMatchDetails(
       await q.query("update matches set status = 'in_progress', updated_at = now() where id = $1", [m.id]);
     }
     await audit(q, { actorId: user.id, action: "match.details_updated", entity: "match", entityId: m.id });
+  });
+}
+
+/**
+ * A referee sets the series length of one match (and, for a table match, its points) before any result is
+ * reported for it. Empty values return the match to what its round, group, stage and tournament say.
+ */
+export async function setMatchFormat(db: Database, user: SessionUser, matchId: string, input: Record<string, unknown>) {
+  await db.tx(async (q) => {
+    const m = await lockMatchWithTournament(q, matchId);
+    if (!(await refereeOf(q, m, user))) fail("forbidden");
+    if (!["IN_PROGRESS", "PAUSED"].includes(m.t_status)) fail("tournament_not_live");
+    if (!["pending", "ready", "in_progress"].includes(m.status)) fail("not_editable");
+    const [reported] = await q.query("select 1 from match_results where match_id = $1 and status in ('pending','confirmed') limit 1", [m.id]);
+    if (reported) fail("not_editable");
+    const { series, points } = parseMatchOverride(input, isRoundBracket(m.bracket), m.t_format === "swiss");
+    await q.query("update matches set series_override = $2, points_override = $3, updated_at = now() where id = $1", [
+      m.id,
+      series,
+      points ? JSON.stringify(points) : null,
+    ]);
+    await notify(q, [...(await regMembers(q, m.a_reg)), ...(await regMembers(q, m.b_reg))], "match_format_changed", { matchId: m.id, tournament: m.t_name });
+    await audit(q, { actorId: user.id, action: "match.format_set", entity: "match", entityId: m.id, data: { series, points } });
   });
 }

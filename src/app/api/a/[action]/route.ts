@@ -17,6 +17,7 @@ import * as rosters from "@/server/rosters.ts";
 import * as templates from "@/server/templates.ts";
 import * as schedule from "@/server/schedule.ts";
 import * as lobbies from "@/server/lobbies.ts";
+import * as feedback from "@/server/feedback.ts";
 import { storeUpload } from "@/server/media.ts";
 import { drainOutbox, mailConfigured } from "@/server/mail.ts";
 import { fail } from "@/server/errors.ts";
@@ -269,8 +270,24 @@ const handlers: Record<string, Handler> = {
     return { ok: "roster_substituted" };
   },
   "tournament.reschedule": async (c) => {
-    await schedule.reschedule(c.db, u(c), idOf(c.form.tournament), { round: c.form.round, at: c.form.at, timeZone: c.form.tz, shiftMinutes: c.form.shiftMinutes });
+    await schedule.reschedule(c.db, u(c), idOf(c.form.tournament), { round: c.form.round, at: c.form.at, timeZone: c.form.tz, shiftMinutes: c.form.shiftMinutes, force: c.form.force });
     return { ok: "rescheduled" };
+  },
+  "tournament.waves": async (c) => {
+    await schedule.scheduleWaves(c.db, u(c), idOf(c.form.tournament), { round: c.form.round, at: c.form.at, timeZone: c.form.tz, force: c.form.force });
+    return { ok: "waves_scheduled" };
+  },
+  "tournament.venue_add": async (c) => {
+    await schedule.addVenue(c.db, u(c), idOf(c.form.tournament), { name: c.form.name, kind: c.form.kind });
+    return { ok: "venue_added" };
+  },
+  "tournament.venue_remove": async (c) => {
+    await schedule.removeVenue(c.db, u(c), idOf(c.form.tournament), idOf(c.form.venue));
+    return { ok: "venue_removed" };
+  },
+  "tournament.rate": async (c) => {
+    await feedback.rateTournament(c.db, u(c), idOf(c.form.tournament), { rating: c.form.rating, comment: c.form.comment });
+    return { ok: "feedback_saved" };
   },
   "template.save": async (c) => {
     await templates.saveTemplate(c.db, u(c), idOf(c.form.tournament), { name: c.form.name, category: c.form.category });
@@ -434,8 +451,21 @@ const handlers: Record<string, Handler> = {
       scheduledAt: c.form.scheduledAt,
       timeZone: c.form.tz,
       live: c.form.live,
+      venueId: "venueId" in c.form ? c.form.venueId : undefined,
+      force: c.form.force,
     });
     return { to: matchPath(c, id), ok: "saved" };
+  },
+  "match.format": async (c) => {
+    const id = idOf(c.form.match);
+    await matches.setMatchFormat(c.db, u(c), id, {
+      series: c.form.series,
+      pointsWin: c.form.pointsWin,
+      pointsDraw: c.form.pointsDraw,
+      pointsLoss: c.form.pointsLoss,
+      pointsBye: c.form.pointsBye,
+    });
+    return { to: matchPath(c, id), ok: "match_format_saved" };
   },
   "match.checkin": async (c) => {
     const id = idOf(c.form.match);
@@ -707,6 +737,12 @@ function tournamentInput(c: Ctx) {
       "circuitFields" in c.form
         ? { circuitId: c.form.circuitId, circuitDivision: c.form.circuitDivision, circuitWeight: c.form.circuitWeight, qualifierCircuitId: c.form.qualifierCircuitId }
         : undefined,
+    series: "seriesFields" in c.form ? Object.fromEntries(Object.entries(c.form).filter(([k]) => k.startsWith("series") && k !== "seriesFields")) : undefined,
+    admission:
+      "admissionFields" in c.form
+        ? { emailVerified: c.form.admissionEmail, minAccountDays: c.form.admissionDays, minXp: c.form.admissionXp, minMatches: c.form.admissionMatches }
+        : undefined,
+    matchMinutes: "admissionFields" in c.form ? c.form.matchMinutes : undefined,
   };
 }
 

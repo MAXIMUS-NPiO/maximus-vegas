@@ -8,7 +8,7 @@ import type { SessionUser } from "./auth.ts";
 import { audit } from "./audit.ts";
 import { canManageOrg } from "./access.ts";
 import { fail, isUniqueViolation } from "./errors.ts";
-import { copyStart, draftSourceOf, insertDraft, type DraftSource, type TournamentRow } from "./tournaments.ts";
+import { copyStart, draftSourceOf, insertDraft, venuesOf, type DraftSource, type TournamentRow } from "./tournaments.ts";
 import * as v from "./validate.ts";
 
 type Payload = Omit<DraftSource, "org_id">;
@@ -23,7 +23,7 @@ export async function saveTemplate(db: Database, user: SessionUser, tournamentId
     );
     if (!src) fail("not_found");
     if (!(await canManageOrg(q, src.org_id, user))) fail("forbidden");
-    const { org_id: _org, ...payload } = draftSourceOf(src);
+    const { org_id: _org, ...payload } = { ...draftSourceOf(src), venues: await venuesOf(q, src.id) };
     let id: string;
     try {
       const [row] = await q.query<{ id: string }>(
@@ -79,6 +79,9 @@ export type TemplateSummary = {
   completed: number;
   /** Average entrants (registered at the end, disqualified included) of completed tournaments; null without any. */
   avg_entrants: number | null;
+  /** Participants' ratings (1–5) of tournaments created from the template: average and count. */
+  avg_rating: number | null;
+  ratings: number;
 };
 
 /** Templates of a space, by category and name, with statistics from real tournaments only. */
@@ -88,7 +91,10 @@ export async function listTemplates(q: Queryable, orgId: string) {
             (select count(*)::int from tournaments t where t.template_id = tt.id) as created,
             (select count(*)::int from tournaments t where t.template_id = tt.id and t.status in ('COMPLETED','ARCHIVED')) as completed,
             (select round(avg((select count(*) from registrations r where r.tournament_id = t.id and r.status in ('registered','disqualified'))))::int
-               from tournaments t where t.template_id = tt.id and t.status in ('COMPLETED','ARCHIVED')) as avg_entrants
+               from tournaments t where t.template_id = tt.id and t.status in ('COMPLETED','ARCHIVED')) as avg_entrants,
+            (select round(avg(f.rating)::numeric, 1)::float from tournament_feedback f join tournaments t on t.id = f.tournament_id
+              where t.template_id = tt.id) as avg_rating,
+            (select count(*)::int from tournament_feedback f join tournaments t on t.id = f.tournament_id where t.template_id = tt.id) as ratings
        from tournament_templates tt where tt.org_id = $1
       order by tt.category asc, lower(tt.name) asc`,
     [orgId],

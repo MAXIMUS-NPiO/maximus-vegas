@@ -895,4 +895,38 @@ export const migrations: Migration[] = [
       `create index ffa_entries_registration on ffa_entries(registration_id)`,
     ],
   },
+  {
+    id: 9,
+    name: "series_venues_admission_feedback",
+    statements: [
+      // Series length and points by level (MV-SERIES-1); a referee's override of one match.
+      `alter table tournaments add column series_rules jsonb`,
+      `alter table matches add column series_override int check (series_override in (1,3,5,7))`,
+      `alter table matches add column points_override jsonb`,
+      // Admission criteria every player of an entry must meet.
+      `alter table tournaments add column admission jsonb`,
+      // Venues (stages, stations, servers) and the expected match length for the schedule (MV-SCHEDULE-1).
+      `alter table tournaments add column match_minutes int check (match_minutes between 10 and 600)`,
+      `create table tournament_venues (
+        id uuid primary key default gen_random_uuid(),
+        tournament_id uuid not null references tournaments(id) on delete cascade,
+        name text not null,
+        kind text not null default 'station' check (kind in ('stage','station','server','table','room','other')),
+        created_at timestamptz not null default now()
+      )`,
+      `create unique index tournament_venues_name on tournament_venues(tournament_id, lower(name))`,
+      `alter table matches add column venue_id uuid references tournament_venues(id) on delete set null`,
+      `create index matches_open_scheduled on matches(scheduled_at) where scheduled_at is not null and status not in ('completed','cancelled')`,
+      // One rating per participant and finished tournament; comments are seen by its organisers only.
+      `create table tournament_feedback (
+        tournament_id uuid not null references tournaments(id) on delete cascade,
+        user_id uuid not null references users(id) on delete cascade,
+        rating int not null check (rating between 1 and 5),
+        comment text not null default '',
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now(),
+        primary key (tournament_id, user_id)
+      )`,
+    ],
+  },
 ];

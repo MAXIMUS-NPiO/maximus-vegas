@@ -78,6 +78,9 @@ export type TournamentDetail = TournamentCard & {
   roster_locks_at: Date | null;
   no_show_minutes: number | null;
   template_id: string | null;
+  series_rules: unknown;
+  admission: unknown;
+  match_minutes: number | null;
   circuit_id: string | null;
   circuit_division: number | null;
   circuit_weight: number;
@@ -153,14 +156,17 @@ export type BracketMatch = {
   score_a: number | null;
   score_b: number | null;
   scheduled_at: Date | null;
+  series_override?: number | null;
+  venue_id?: string | null;
+  venue_name?: string | null;
 };
 
 export async function bracket(db: Queryable, tournamentId: string) {
   return db.query<BracketMatch>(
     `select m.id, m.bracket, m.stage, m.group_no, m.a_void, m.b_void, m.round, m.position, m.status, m.outcome, m.a_reg, m.b_reg, m.winner_reg,
-            m.score_a, m.score_b, m.scheduled_at,
+            m.score_a, m.score_b, m.scheduled_at, m.series_override, m.venue_id, v.name as venue_name,
             coalesce(ta.name, ua.display_name) as a_name, coalesce(tb.name, ub.display_name) as b_name
-       from matches m
+       from matches m left join tournament_venues v on v.id = m.venue_id
        left join registrations ra on ra.id = m.a_reg left join teams ta on ta.id = ra.team_id left join users ua on ua.id = ra.user_id
        left join registrations rb on rb.id = m.b_reg left join teams tb on tb.id = rb.team_id left join users ub on ub.id = rb.user_id
       where m.tournament_id = $1 order by m.stage, m.group_no, array_position(array['W','L','GF','G'], m.bracket), m.round, m.position`,
@@ -200,6 +206,9 @@ export async function getMatch(db: Queryable, id: string) {
       t_settings: unknown;
       t_stage: number;
       t_no_show: number | null;
+      t_series: unknown;
+      t_match_minutes: number | null;
+      points_override: unknown;
       w_rounds: number;
       l_rounds: number;
       a_checked_in_at: Date | null;
@@ -208,7 +217,8 @@ export async function getMatch(db: Queryable, id: string) {
     }
   >(
     `select m.*, t.slug as t_slug, t.name as t_name, t.status as t_status, t.game as t_game, t.org_id, t.format as t_format, t.format_settings as t_settings,
-            t.stage as t_stage, t.no_show_minutes as t_no_show,
+            t.stage as t_stage, t.no_show_minutes as t_no_show, t.series_rules as t_series, t.match_minutes as t_match_minutes,
+            (select name from tournament_venues v where v.id = m.venue_id) as venue_name,
             (select max(round) from matches x where x.tournament_id = m.tournament_id and x.bracket = m.bracket and x.stage = m.stage)::int as rounds,
             coalesce((select max(round) from matches x where x.tournament_id = m.tournament_id and x.bracket = 'W'), 0)::int as w_rounds,
             coalesce((select max(round) from matches x where x.tournament_id = m.tournament_id and x.bracket = 'L'), 0)::int as l_rounds
@@ -241,6 +251,20 @@ export async function getMatch(db: Queryable, id: string) {
     if (reset) nextMatch = { id: reset.id, round: 2 };
   }
   return { match: m, a: await side(db, m.a_reg), b: await side(db, m.b_reg), results, disputes, nextMatch };
+}
+
+export type HistoryEntry = { id: number; at: Date; action: string; entity: string; data: Record<string, unknown>; actor: string | null };
+
+/** The tournament's decisions and changes from the audit log, newest first: the event and its matches. */
+export async function tournamentHistory(db: Queryable, tournamentId: string, limit = 80) {
+  return db.query<HistoryEntry>(
+    `select a.id, a.at, a.action, a.entity, a.data, u.username as actor
+       from audit_log a left join users u on u.id = a.actor_id
+      where (a.entity = 'tournament' and a.entity_id = $1)
+         or (a.entity = 'match' and a.entity_id in (select id::text from matches where tournament_id = $2))
+      order by a.id desc limit $3`,
+    [tournamentId, tournamentId, limit],
+  );
 }
 
 export async function hub(db: Queryable, user: SessionUser) {

@@ -2,7 +2,8 @@
  * Pure standings for round robin and Swiss, algorithm version MV-STANDINGS-1. No I/O — unit tested.
  *
  * Points per result come from the tournament's settings, which are frozen when it starts, so the same
- * results always give the same table.
+ * results always give the same table. A match may carry its own points (a round, a group or the match itself
+ * overrides the tournament's table — see series.ts); head-to-head then sums the points actually earned.
  *
  * Tie-breakers, in order:
  *   Swiss        points → Buchholz → Median Buchholz → Sonneborn-Berger → score difference → seed
@@ -40,6 +41,8 @@ export type StandingsMatch = {
   scoreB: number | null;
   outcome: string | null;
   status: string;
+  /** Points of this match when they differ from the tournament's table. */
+  points?: PointsTable;
 };
 
 export type StandingsRow = {
@@ -64,7 +67,7 @@ export type StandingsRow = {
   annulled: boolean;
 };
 
-type Result = { opponent: string; result: "w" | "d" | "l" };
+type Result = { opponent: string; result: "w" | "d" | "l"; pts: number };
 
 /**
  * Disqualified round-robin entrants whose results are removed under the tournament's rule. "Played" means
@@ -122,12 +125,13 @@ export function computeStandings(
   for (const m of matches) {
     if (m.status !== "completed") continue;
     if ((m.a && annulled.has(m.a)) || (m.b && annulled.has(m.b))) continue;
+    const pt = m.points ?? points;
     if (m.outcome === "bye") {
       const solo = m.a ?? m.b;
       const row = solo ? rows.get(solo) : undefined;
       if (row) {
         row.byes += 1;
-        row.points += points.bye;
+        row.points += pt.bye;
       }
       continue;
     }
@@ -140,18 +144,18 @@ export function computeStandings(
     if (m.winner === null) {
       ra.draws += 1;
       rb.draws += 1;
-      ra.points += points.draw;
-      rb.points += points.draw;
-      results.get(m.a)!.push({ opponent: m.b, result: "d" });
-      results.get(m.b)!.push({ opponent: m.a, result: "d" });
+      ra.points += pt.draw;
+      rb.points += pt.draw;
+      results.get(m.a)!.push({ opponent: m.b, result: "d", pts: pt.draw });
+      results.get(m.b)!.push({ opponent: m.a, result: "d", pts: pt.draw });
     } else {
       const [w, l] = m.winner === m.a ? [ra, rb] : [rb, ra];
       w.wins += 1;
       l.losses += 1;
-      w.points += points.win;
-      l.points += points.loss;
-      results.get(w.id)!.push({ opponent: l.id, result: "w" });
-      results.get(l.id)!.push({ opponent: w.id, result: "l" });
+      w.points += pt.win;
+      l.points += pt.loss;
+      results.get(w.id)!.push({ opponent: l.id, result: "w", pts: pt.win });
+      results.get(l.id)!.push({ opponent: w.id, result: "l", pts: pt.loss });
     }
     if (m.outcome === "played" && m.scoreA !== null && m.scoreB !== null) {
       ra.scoreFor += m.scoreA;
@@ -182,7 +186,7 @@ export function computeStandings(
         rows.get(id)!.headToHead = results
           .get(id)!
           .filter((r) => inGroup.has(r.opponent))
-          .reduce((s, r) => s + (r.result === "w" ? points.win : r.result === "d" ? points.draw : points.loss), 0);
+          .reduce((s, r) => s + r.pts, 0);
       }
     }
   }

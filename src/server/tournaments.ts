@@ -26,6 +26,8 @@ import { planGauntlet } from "./stages.ts";
 import { fieldsOf, parseAnswers, parseRegistrationFields, type RegField } from "./registration.ts";
 import { ffaPlanConverges, ffaSettingsOf, parseFfaSettings, type FfaSettings, type FfaSettingsInput } from "./ffa.ts";
 import { checkCircuitEligibility, validateCircuitLink, type CircuitLinkInput } from "./circuits.ts";
+import { parseSeriesRules, seriesCustomised, seriesRulesOf, type SeriesRules } from "./series.ts";
+import { admissionOf, checkAdmission, parseAdmission, type Admission, type AdmissionInput } from "./admission.ts";
 import * as v from "./validate.ts";
 
 export const STATUSES = [
@@ -110,6 +112,12 @@ export type TournamentRow = {
   /** A no-show can be recorded only this many minutes after the scheduled time (null = any time). */
   no_show_minutes: number | null;
   template_id: string | null;
+  /** Series length and points by level (MV-SERIES-1); null = best of 1 and the format's points. */
+  series_rules: unknown;
+  /** Admission criteria every player of an entry must meet; null = none. */
+  admission: unknown;
+  /** Expected length of one match, for the schedule and its conflicts (null = 60 minutes). */
+  match_minutes: number | null;
 };
 
 export type MatchRow = {
@@ -190,6 +198,12 @@ export type TournamentInput = {
   circuit?: CircuitLinkInput;
   /** Registration rules; undefined keeps the stored rules on update. */
   registration?: RegistrationInput;
+  /** Series length and points by level; undefined keeps the stored rules on update. */
+  series?: Record<string, unknown>;
+  /** Admission criteria; undefined keeps the stored criteria on update. */
+  admission?: AdmissionInput;
+  /** Expected match length in minutes (10–600, empty = 60); undefined keeps the stored value. */
+  matchMinutes?: unknown;
 };
 
 export type RegistrationInput = {
@@ -236,6 +250,25 @@ const storedRegistration = (t: TournamentRow): RegistrationRules => ({
 });
 
 const fieldsJson = (fields: RegField[]) => (fields.length ? JSON.stringify(fields) : null);
+
+/** Series rules apply to formats played as head-to-head matches; anything else stores none. */
+function seriesFor(format: string, input: Record<string, unknown> | undefined, stored: SeriesRules | null): SeriesRules | null {
+  if (!isMatchFormat(format)) return null;
+  const rules = input ? parseSeriesRules(input, format) : stored;
+  return rules && seriesCustomised(rules) ? rules : null;
+}
+
+const jsonOrNull = (value: object | null) => (value ? JSON.stringify(value) : null);
+
+/** Settings added in release 6, written after the main insert or update in the same transaction. */
+async function saveExtras(q: Queryable, id: string, extras: { series: SeriesRules | null; admission: Admission | null; matchMinutes: number | null }) {
+  await q.query("update tournaments set series_rules = $2, admission = $3, match_minutes = $4 where id = $1", [
+    id,
+    jsonOrNull(extras.series),
+    jsonOrNull(extras.admission),
+    extras.matchMinutes,
+  ]);
+}
 
 function parseRegionLock(value: unknown): string[] {
   const list = (Array.isArray(value) ? value : String(value ?? "").split(/[\s,;]+/))
@@ -331,6 +364,11 @@ export async function createTournament(db: Database, user: SessionUser, orgId: s
   checkGroupCapacity(data.format, data.maxParticipants, settings);
   checkFfaPlan(data.format, data.maxParticipants, settings);
   const reg = parseRegistration(input.registration ?? {}, input.timeZone, data.startsAt);
+  const extras = {
+    series: seriesFor(data.format, input.series, null),
+    admission: input.admission ? parseAdmission(input.admission) : null,
+    matchMinutes: optionalInt(input.matchMinutes, 10, 600),
+  };
   return db.tx(async (q) => {
     if (!(await canManageOrg(q, orgId, user))) fail("forbidden");
     const link = await validateCircuitLink(q, { orgId, game: data.game, participantType: data.participantType, format: data.format }, input.circuit ?? {});
@@ -348,12 +386,13 @@ export async function createTournament(db: Database, user: SessionUser, orgId: s
         fieldsJson(reg.fields), reg.approvalRequired, reg.registrationClosesAt?.toISOString() ?? null, reg.rosterLocksAt?.toISOString() ?? null,
         reg.noShowMinutes],
     );
+    await saveExtras(q, t.id, extras);
     await audit(q, {
       actorId: user.id,
       action: "tournament.created",
       entity: "tournament",
       entityId: t.id,
-      data: { name: data.name, game: data.game, format: data.format, settings, circuit: link.circuitId, qualifier: link.qualifierCircuitId, registration: reg },
+      data: { name: data.name, game: data.game, format: data.format, settings, circuit: link.circuitId, qualifier: link.qualifierCircuitId, registration: reg, ...extras },
     });
     return t;
   });
@@ -372,6 +411,15 @@ export async function updateTournament(db: Database, user: SessionUser, tourname
     const reg = input.registration ? parseRegistration(input.registration, input.timeZone, data.startsAt) : storedRegistration(t);
     // Answers are keyed by question: the questions are frozen once anyone has applied.
     if ((count?.n ?? 0) > 0 && JSON.stringify(reg.fields) !== JSON.stringify(fieldsOf(t))) fail("not_editable");
+    // Admission criteria apply to everyone alike: frozen once anyone has applied.
+    const admission = input.admission !== undefined ? parseAdmission(input.admission) : admissionOf(t);
+    if ((count?.n ?? 0) > 0 && JSON.stringify(admission) !== JSON.stringify(admissionOf(t))) fail("not_editable");
+    const storedSeries = t.series_rules ? seriesRulesOf(t) : null;
+    const extras = {
+      series: seriesFor(data.format, input.series, data.format === t.format ? storedSeries : null),
+      admission,
+      matchMinutes: input.matchMinutes !== undefined ? optionalInt(input.matchMinutes, 10, 600) : t.match_minutes,
+    };
     const link = await validateCircuitLink(
       q,
       { orgId: t.org_id, game: data.game, participantType: data.participantType, format: data.format },
@@ -403,16 +451,21 @@ export async function updateTournament(db: Database, user: SessionUser, tourname
         link.circuitId, link.circuitDivision, link.circuitWeight, link.qualifierCircuitId, fieldsJson(reg.fields), reg.approvalRequired,
         reg.registrationClosesAt?.toISOString() ?? null, reg.rosterLocksAt?.toISOString() ?? null, reg.noShowMinutes],
     );
+    await saveExtras(q, t.id, extras);
     const settingsChanged = JSON.stringify(settings) !== JSON.stringify(editableFormatSettings(t));
     const registrationChanged = JSON.stringify(reg) !== JSON.stringify(storedRegistration(t));
+    const extrasChanged =
+      JSON.stringify(extras.series) !== JSON.stringify(storedSeries) ||
+      JSON.stringify(extras.admission) !== JSON.stringify(admissionOf(t)) ||
+      extras.matchMinutes !== t.match_minutes;
     await audit(q, {
       actorId: user.id,
       action: "tournament.updated",
       entity: "tournament",
       entityId: t.id,
       data:
-        settingsChanged || registrationChanged || link.circuitWeight !== t.circuit_weight
-          ? { settings, circuitWeight: link.circuitWeight, ...(registrationChanged ? { registration: reg } : {}) }
+        settingsChanged || registrationChanged || extrasChanged || link.circuitWeight !== t.circuit_weight
+          ? { settings, circuitWeight: link.circuitWeight, ...(registrationChanged ? { registration: reg } : {}), ...(extrasChanged ? extras : {}) }
           : undefined,
     });
   });
@@ -525,6 +578,7 @@ export async function register(db: Database, user: SessionUser, tournamentId: st
       regTeam = team.id;
     }
     await checkRegion(q, t, roster);
+    await checkAdmission(q, t, roster);
     if (t.circuit_id || t.qualifier_circuit_id) await checkCircuitEligibility(q, t, { userId: regUser, teamId: regTeam });
     const [active] = await q.query<{ n: number }>(
       "select count(*)::int as n from registrations where tournament_id = $1 and status = 'registered'",
@@ -1270,6 +1324,11 @@ export type DraftSource = {
   registration_closes_before: number | null;
   roster_locks_before: number | null;
   no_show_minutes: number | null;
+  /** Release 6 (absent in older templates). */
+  series_rules?: SeriesRules | null;
+  admission?: Admission | null;
+  match_minutes?: number | null;
+  venues?: Array<{ name: string; kind: string }>;
 };
 
 type FullRow = TournamentRow & { region: string; description: string; rules: string; prize_text: string; livestream_url: string };
@@ -1304,7 +1363,15 @@ export function draftSourceOf(src: FullRow): DraftSource {
     registration_closes_before: before(src.registration_closes_at),
     roster_locks_before: before(src.roster_locks_at),
     no_show_minutes: src.no_show_minutes,
+    series_rules: src.series_rules ? seriesRulesOf(src) : null,
+    admission: admissionOf(src),
+    match_minutes: src.match_minutes,
   };
+}
+
+/** The venues of a tournament, for copies and templates. */
+export async function venuesOf(q: Queryable, tournamentId: string) {
+  return q.query<{ name: string; kind: string }>("select name, kind from tournament_venues where tournament_id = $1 order by created_at, name", [tournamentId]);
 }
 
 /** Inserts a draft from a copy source. The circuit link is kept only while that circuit is still active. */
@@ -1326,6 +1393,9 @@ export async function insertDraft(q: Queryable, user: SessionUser, src: DraftSou
       fieldsJson(src.registration_fields), src.approval_required, at(src.registration_closes_before), at(src.roster_locks_before),
       src.no_show_minutes, templateId],
   );
+  await saveExtras(q, t.id, { series: src.series_rules ?? null, admission: src.admission ?? null, matchMinutes: src.match_minutes ?? null });
+  for (const venue of src.venues ?? [])
+    await q.query("insert into tournament_venues (tournament_id, name, kind) values ($1, $2, $3) on conflict do nothing", [t.id, venue.name, venue.kind]);
   return t;
 }
 
@@ -1353,7 +1423,7 @@ export async function cloneTournament(
     // Creating a tournament in the space is an owner/admin right, so co-organisers cannot clone.
     if (!(await canManageOrg(q, src.org_id, user))) fail("forbidden");
     const name = v.displayName(String(input.name ?? "").trim() || src.name, 80);
-    const t = await insertDraft(q, user, draftSourceOf(src), name, copyStart(input, src.starts_at), null);
+    const t = await insertDraft(q, user, { ...draftSourceOf(src), venues: await venuesOf(q, src.id) }, name, copyStart(input, src.starts_at), null);
     await audit(q, { actorId: user.id, action: "tournament.created", entity: "tournament", entityId: t.id, data: { name, game: src.game, format: src.format, clonedFrom: src.id } });
     await audit(q, { actorId: user.id, action: "tournament.cloned", entity: "tournament", entityId: src.id, data: { copy: t.id } });
     return t;
