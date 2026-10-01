@@ -138,6 +138,8 @@ const okRu: Record<string, string> = {
   flag_saved: "Переключатель сохранён и записан в журнал.",
   maintenance_on: "Режим обслуживания включён: пользователи видят баннер и не могут выполнять действия.",
   maintenance_off: "Режим обслуживания выключен.",
+  stream_added: "Трансляция назначена: она видна на страницах турнира и матча.",
+  stream_removed: "Ссылка удалена.",
 };
 
 const okEn: Record<string, string> = {
@@ -278,6 +280,8 @@ const okEn: Record<string, string> = {
   flag_saved: "Switch saved and recorded in the log.",
   maintenance_on: "Maintenance is on: users see a banner and cannot take actions.",
   maintenance_off: "Maintenance is off.",
+  stream_added: "Stream assigned: it shows on the tournament and match pages.",
+  stream_removed: "Link removed.",
 };
 
 const errorsRu: Record<string, string> = {
@@ -447,6 +451,11 @@ const errorsRu: Record<string, string> = {
   message_state: "Отправленное сообщение не меняется и не отправляется повторно; сделайте копию.",
   message_kind: "Ваша роль не может писать сообщения этого типа.",
   message_empty: "В сегменте нет ни одного аккаунта: сообщение не отправлено.",
+  stream_url: "Нужна ссылка https:// на трансляцию или запись (без логина, пароля и порта).",
+  stream_rights: "Подтвердите права на трансляцию игры и согласие участников на показ.",
+  stream_match: "Этот матч не относится к турниру.",
+  stream_limit: "У турнира уже 30 ссылок на трансляции и записи: удалите лишние.",
+  stream_exists: "Эта ссылка уже назначена.",
 };
 
 const errorsEn: Record<string, string> = {
@@ -616,6 +625,11 @@ const errorsEn: Record<string, string> = {
   message_state: "A sent message cannot be changed or sent again; make a copy.",
   message_kind: "Your role cannot write messages of this type.",
   message_empty: "The segment has no accounts: the message was not sent.",
+  stream_url: "An https:// link to a stream or recording is needed (no login, password or port).",
+  stream_rights: "Confirm the rights to broadcast the game and the participants' consent to be shown.",
+  stream_match: "This match does not belong to the tournament.",
+  stream_limit: "The tournament already has 30 stream and recording links: remove some first.",
+  stream_exists: "This link is already assigned.",
 };
 
 const kindsRu: Record<string, string> = {
@@ -723,6 +737,7 @@ const kindsRu: Record<string, string> = {
   venue_suspended: "Площадка «{venue}» приостановлена — смотрите ответ команды портала",
   pass_issued: "Вам выдан пропуск на площадку «{venue}»",
   staff_message: "Сообщение команды портала: {title}",
+  match_streamed: "Ваш матч в «{tournament}» будет транслироваться",
 };
 
 const kindsEn: Record<string, string> = {
@@ -830,6 +845,7 @@ const kindsEn: Record<string, string> = {
   venue_suspended: "Venue “{venue}” is suspended — see the portal team's answer",
   pass_issued: "You have a pass to venue “{venue}”",
   staff_message: "Message from the portal team: {title}",
+  match_streamed: "Your match in “{tournament}” will be streamed",
 };
 
 export const extRu = {

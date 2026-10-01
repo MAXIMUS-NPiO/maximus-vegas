@@ -5,7 +5,7 @@ import { dict, fill, isLocale } from "@/lib/i18n.ts";
 import { pageMeta } from "@/lib/meta.ts";
 import { viewer } from "@/server/viewer.ts";
 import { getMatch } from "@/server/queries.ts";
-import { canRefereeTournament } from "@/server/tournaments.ts";
+import { canManageTournament, canRefereeTournament } from "@/server/tournaments.ts";
 import { settingsOf } from "@/server/format-settings.ts";
 import { mediaUrl } from "@/server/media.ts";
 import { ActionForm, Badge, DbDown, Field, Flash, type SearchParams } from "@/components/ui";
@@ -25,6 +25,9 @@ import { bracket } from "@/server/queries.ts";
 import { labelContext } from "@/components/tournament";
 import { vetoFor } from "@/server/veto.ts";
 import { MapVeto } from "@/components/map-veto";
+import { mediaText } from "@/lib/media-text.ts";
+import { matchStreams } from "@/server/streams.ts";
+import { portalHost, StreamsBlock } from "@/components/streams";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string; id: string }> }): Promise<Metadata> {
   const { lang, id } = await params;
@@ -48,6 +51,11 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
   if (!data || data.match.t_status === "DRAFT") notFound();
   const { match: m, a, b, results, disputes } = data;
   const referee = await canRefereeTournament(db, { id: m.tournament_id, org_id: m.org_id }, user);
+  // Streams of this match, then the event's while the match is still to be played (MV-MEDIA-1).
+  const media = await matchStreams(db, m.id, m.tournament_id);
+  const shownStreams = [...media.match, ...(["completed", "cancelled"].includes(m.status) ? [] : media.event.filter((s) => s.kind === "live"))];
+  const host = shownStreams.length ? await portalHost() : "";
+  const streamManager = await canManageTournament(db, { id: m.tournament_id, org_id: m.org_id }, user);
   const ru = lang === "ru";
   const inRounds = m.bracket === "RR" || m.bracket === "SW";
   const tSettings = settingsOf({ format: m.t_format, format_settings: m.t_settings });
@@ -284,6 +292,15 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
           ) : null}
         </div>
       </div>
+
+      <StreamsBlock lang={lang} host={host} title={mediaText[lang].manage} streams={shownStreams} />
+      {streamManager ? (
+        <p className="small">
+          <Link href={`/${lang}/organizer/t/${m.t_slug}#streams`} className="text-link">
+            {mediaText[lang].manage} · {mediaText[lang].overlay}
+          </Link>
+        </p>
+      ) : null}
 
       {live && both && ["ready", "in_progress"].includes(m.status) ? (
         <section className="card checkin-card" aria-label={ru ? "Check-in к матчу" : "Match check-in"}>

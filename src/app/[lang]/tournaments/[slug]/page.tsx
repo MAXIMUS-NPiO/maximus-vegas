@@ -25,6 +25,9 @@ import { tournamentSponsors } from "@/server/sponsors.ts";
 import { mediaUrl } from "@/server/media.ts";
 import { eventPassFor } from "@/server/venues.ts";
 import { venueText } from "@/lib/venue-text.ts";
+import { mediaText } from "@/lib/media-text.ts";
+import { tournamentStreams } from "@/server/streams.ts";
+import { portalHost, StreamsBlock } from "@/components/streams";
 import type { Database } from "@/server/db.ts";
 import type { SessionUser } from "@/server/auth.ts";
 import { ActionForm, Badge, DbDown, Empty, Field, Flash, SignInPrompt, type SearchParams } from "@/components/ui";
@@ -234,6 +237,9 @@ export default async function TournamentPage({ params, searchParams }: { params:
   const passOpen = Boolean(place && entry?.status === "registered" && ["PUBLISHED", "REGISTRATION_OPEN", "REGISTRATION_CLOSED", "IN_PROGRESS", "PAUSED"].includes(t.status));
   const myPass = passOpen && user ? await eventPassFor(db, t.id, user.id) : null;
   const vx = venueText[lang];
+  // Streams and recordings assigned by the organisers (MV-MEDIA-1).
+  const streamList = await tournamentStreams(db, t.id);
+  const host = streamList.length ? await portalHost() : "";
   const tabs = leaderboard ? (["overview", "rules", "participants", "leaderboard", "standings"] as const) : (["overview", "rules", "participants", "bracket", "standings"] as const);
   const MainTables = () =>
     groupTables.length ? (
@@ -572,6 +578,8 @@ export default async function TournamentPage({ params, searchParams }: { params:
           </div>
         ) : null}
       </section>
+
+      <StreamsBlock lang={lang} host={host} title={mediaText[lang].manage} streams={streamList} />
 
       <section id="rules" className="section-tight">
         <h2 className="h3">{d.tournaments.tabs.rules}</h2>

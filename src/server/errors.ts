@@ -233,6 +233,12 @@ export const ERROR_CODES = [
   "message_state",
   "message_kind",
   "message_empty",
+  // Streams and recordings
+  "stream_url",
+  "stream_rights",
+  "stream_match",
+  "stream_limit",
+  "stream_exists",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
