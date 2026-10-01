@@ -23,6 +23,8 @@ import {
   type FormatSettingsInput,
 } from "./format-settings.ts";
 import { planGauntlet } from "./stages.ts";
+import { fieldsOf, parseAnswers, parseRegistrationFields, type RegField } from "./registration.ts";
+import { ffaPlanConverges, ffaSettingsOf, parseFfaSettings, type FfaSettings, type FfaSettingsInput } from "./ffa.ts";
 import { checkCircuitEligibility, validateCircuitLink, type CircuitLinkInput } from "./circuits.ts";
 import * as v from "./validate.ts";
 
@@ -39,7 +41,7 @@ export const STATUSES = [
 ] as const;
 export type TournamentStatus = (typeof STATUSES)[number];
 
-export const FORMATS = ["single_elimination", "double_elimination", "round_robin", "swiss", "groups", "gauntlet", "leaderboard"] as const;
+export const FORMATS = ["single_elimination", "double_elimination", "round_robin", "swiss", "groups", "gauntlet", "ffa", "leaderboard"] as const;
 export type Format = (typeof FORMATS)[number];
 /** Formats played as one bracket from the start: single and double elimination, and the gauntlet (stepladder). */
 export const isBracketFormat = (f: string) => f === "single_elimination" || f === "double_elimination" || f === "gauntlet";
@@ -98,6 +100,16 @@ export type TournamentRow = {
   qualifier_circuit_id: string | null;
   /** 1 = main stage; 2 = the playoff that follows it. */
   stage: number;
+  /** Organiser-defined registration questions (frozen after the first registration). */
+  registration_fields: RegField[] | null;
+  /** Applications wait for the organiser's decision ("pending") instead of entering at once. */
+  approval_required: boolean;
+  registration_closes_at: Date | null;
+  /** Team leaders edit their event roster until this moment (and never after the start). */
+  roster_locks_at: Date | null;
+  /** A no-show can be recorded only this many minutes after the scheduled time (null = any time). */
+  no_show_minutes: number | null;
+  template_id: string | null;
 };
 
 export type MatchRow = {
@@ -149,7 +161,7 @@ export async function canRefereeTournament(q: Queryable, t: { id: string; org_id
   return isCoOrganizer(q, t.id, user.id);
 }
 
-async function requireManager(q: Queryable, t: TournamentRow, user: SessionUser) {
+export async function requireManager(q: Queryable, t: TournamentRow, user: SessionUser) {
   if (!(await canManageTournament(q, t, user))) fail("forbidden");
 }
 
@@ -172,11 +184,58 @@ export type TournamentInput = {
   weights?: Record<string, unknown>;
   prizeText?: unknown;
   livestreamUrl?: unknown;
-  /** Round robin and Swiss settings; undefined keeps the stored settings on update. */
-  settings?: FormatSettingsInput;
+  /** Settings of round formats and of FFA; undefined keeps the stored settings on update. */
+  settings?: FormatSettingsInput & FfaSettingsInput;
   /** Circuit link; undefined keeps the stored link on update. */
   circuit?: CircuitLinkInput;
+  /** Registration rules; undefined keeps the stored rules on update. */
+  registration?: RegistrationInput;
 };
+
+export type RegistrationInput = {
+  approvalRequired?: unknown;
+  registrationClosesAt?: unknown;
+  rosterLocksAt?: unknown;
+  noShowMinutes?: unknown;
+  /** Raw field rows: field1Label, field1Type, field1Options, field1Required … */
+  fields?: Record<string, unknown>;
+};
+
+export type RegistrationRules = {
+  approvalRequired: boolean;
+  registrationClosesAt: Date | null;
+  rosterLocksAt: Date | null;
+  noShowMinutes: number | null;
+  fields: RegField[];
+};
+
+const optionalDate = (value: unknown, timeZone: unknown) => (String(value ?? "").trim() ? v.zonedToUtc(value, timeZone) : null);
+
+function parseRegistration(input: RegistrationInput, timeZone: unknown, startsAt: Date): RegistrationRules {
+  const registrationClosesAt = optionalDate(input.registrationClosesAt, timeZone);
+  const rosterLocksAt = optionalDate(input.rosterLocksAt, timeZone);
+  // Both deadlines must fall before the start; the roster lock never before registration closes.
+  if (registrationClosesAt && registrationClosesAt.getTime() > startsAt.getTime()) fail("invalid_date");
+  if (rosterLocksAt && rosterLocksAt.getTime() > startsAt.getTime()) fail("invalid_date");
+  if (registrationClosesAt && rosterLocksAt && rosterLocksAt.getTime() < registrationClosesAt.getTime()) fail("invalid_date");
+  return {
+    approvalRequired: v.bool(input.approvalRequired),
+    registrationClosesAt,
+    rosterLocksAt,
+    noShowMinutes: optionalInt(input.noShowMinutes, 0, 240),
+    fields: parseRegistrationFields(input.fields ?? {}),
+  };
+}
+
+const storedRegistration = (t: TournamentRow): RegistrationRules => ({
+  approvalRequired: t.approval_required,
+  registrationClosesAt: t.registration_closes_at ? new Date(t.registration_closes_at) : null,
+  rosterLocksAt: t.roster_locks_at ? new Date(t.roster_locks_at) : null,
+  noShowMinutes: t.no_show_minutes,
+  fields: fieldsOf(t),
+});
+
+const fieldsJson = (fields: RegField[]) => (fields.length ? JSON.stringify(fields) : null);
 
 function parseRegionLock(value: unknown): string[] {
   const list = (Array.isArray(value) ? value : String(value ?? "").split(/[\s,;]+/))
@@ -237,24 +296,41 @@ function parseInput(input: TournamentInput) {
     scoring: leaderboard ? parseWeights(input.weights) : null,
     prizeText: v.clean(input.prizeText, 600),
     livestreamUrl: v.optionalUrl(input.livestreamUrl),
-    formatSettings: input.settings === undefined ? undefined : parseFormatSettings(format, input.settings),
+    formatSettings: input.settings === undefined ? undefined : format === "ffa" ? parseFfaSettings(input.settings) : parseFormatSettings(format, input.settings),
   };
 }
 
 /** Groups are round robins of 2–32 entrants each, with at least as many entrants as advance from each. */
-function checkGroupCapacity(format: string, maxParticipants: number, settings: FormatSettings | null) {
-  if (format !== "groups" || !settings?.groups) return;
-  const { count, advance } = settings.groups;
+function checkGroupCapacity(format: string, maxParticipants: number, settings: object | null) {
+  const groups = (settings as FormatSettings | null)?.groups;
+  if (format !== "groups" || !groups) return;
+  const { count, advance } = groups;
   if (maxParticipants > count * RR_MAX_ENTRANTS) fail("round_robin_limit");
   if (maxParticipants < count * Math.max(2, advance)) fail("stage_too_few");
 }
 
-const settingsJson = (s: FormatSettings | null) => (s ? JSON.stringify(s) : null);
+const settingsJson = (s: object | null) => (s ? JSON.stringify(s) : null);
+
+/** FFA: the lobbies must reach a single final lobby within the round limit for this many entrants. */
+export function checkFfaPlan(format: string, entrants: number, settings: object | null) {
+  if (format === "ffa" && settings && !ffaPlanConverges(entrants, settings as FfaSettings)) fail("invalid_ffa_settings");
+}
+
+/** The organiser's format settings before the start, for every format that has them (what a copy carries). */
+export function editableFormatSettings(t: { format: string; format_settings?: unknown }): object | null {
+  if (t.format === "ffa") return ffaSettingsOf(t);
+  return editableSettings(t);
+}
+
+/** Default settings of a format when the organiser gave none. */
+const defaultSettings = (format: string): object | null => (format === "ffa" ? parseFfaSettings({}) : parseFormatSettings(format, {}));
 
 export async function createTournament(db: Database, user: SessionUser, orgId: string, input: TournamentInput) {
   const data = parseInput(input);
-  const settings = data.formatSettings ?? parseFormatSettings(data.format, {});
+  const settings = data.formatSettings ?? defaultSettings(data.format);
   checkGroupCapacity(data.format, data.maxParticipants, settings);
+  checkFfaPlan(data.format, data.maxParticipants, settings);
+  const reg = parseRegistration(input.registration ?? {}, input.timeZone, data.startsAt);
   return db.tx(async (q) => {
     if (!(await canManageOrg(q, orgId, user))) fail("forbidden");
     const link = await validateCircuitLink(q, { orgId, game: data.game, participantType: data.participantType, format: data.format }, input.circuit ?? {});
@@ -262,19 +338,22 @@ export async function createTournament(db: Database, user: SessionUser, orgId: s
     const [t] = await q.query<{ id: string; slug: string }>(
       `insert into tournaments (slug, org_id, name, game, format, participant_type, team_size, max_participants,
          check_in_required, region, region_lock, starts_at, description, rules, best_of, submission_hours, scoring,
-         prize_text, livestream_url, created_by, format_settings, circuit_id, circuit_division, circuit_weight, qualifier_circuit_id)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25) returning id, slug`,
+         prize_text, livestream_url, created_by, format_settings, circuit_id, circuit_division, circuit_weight, qualifier_circuit_id,
+         registration_fields, approval_required, registration_closes_at, roster_locks_at, no_show_minutes)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30) returning id, slug`,
       [slug, orgId, data.name, data.game, data.format, data.participantType, data.teamSize, data.maxParticipants, data.checkInRequired,
         data.region, data.regionLock, data.startsAt.toISOString(), data.description, data.rules, data.bestOf, data.submissionHours,
         data.scoring ? JSON.stringify(data.scoring) : null, data.prizeText, data.livestreamUrl, user.id, settingsJson(settings),
-        link.circuitId, link.circuitDivision, link.circuitWeight, link.qualifierCircuitId],
+        link.circuitId, link.circuitDivision, link.circuitWeight, link.qualifierCircuitId,
+        fieldsJson(reg.fields), reg.approvalRequired, reg.registrationClosesAt?.toISOString() ?? null, reg.rosterLocksAt?.toISOString() ?? null,
+        reg.noShowMinutes],
     );
     await audit(q, {
       actorId: user.id,
       action: "tournament.created",
       entity: "tournament",
       entityId: t.id,
-      data: { name: data.name, game: data.game, format: data.format, settings, circuit: link.circuitId, qualifier: link.qualifierCircuitId },
+      data: { name: data.name, game: data.game, format: data.format, settings, circuit: link.circuitId, qualifier: link.qualifierCircuitId, registration: reg },
     });
     return t;
   });
@@ -287,17 +366,20 @@ export async function updateTournament(db: Database, user: SessionUser, tourname
     await requireManager(q, t, user);
     if (!["DRAFT", "PUBLISHED", "REGISTRATION_OPEN", "REGISTRATION_CLOSED"].includes(t.status)) fail("not_editable");
     const [count] = await q.query<{ n: number; active: number }>(
-      "select count(*)::int as n, count(*) filter (where status = 'registered')::int as active from registrations where tournament_id = $1 and status <> 'withdrawn'",
+      "select count(*)::int as n, count(*) filter (where status = 'registered')::int as active from registrations where tournament_id = $1 and status not in ('withdrawn','rejected')",
       [t.id],
     );
+    const reg = input.registration ? parseRegistration(input.registration, input.timeZone, data.startsAt) : storedRegistration(t);
+    // Answers are keyed by question: the questions are frozen once anyone has applied.
+    if ((count?.n ?? 0) > 0 && JSON.stringify(reg.fields) !== JSON.stringify(fieldsOf(t))) fail("not_editable");
     const link = await validateCircuitLink(
       q,
       { orgId: t.org_id, game: data.game, participantType: data.participantType, format: data.format },
       input.circuit ?? { circuitId: t.circuit_id, circuitDivision: t.circuit_division, circuitWeight: t.circuit_weight, qualifierCircuitId: t.qualifier_circuit_id },
     );
-    const settings =
-      data.formatSettings !== undefined ? data.formatSettings : data.format === t.format ? editableSettings(t) : parseFormatSettings(data.format, {});
+    const settings = data.formatSettings !== undefined ? data.formatSettings : data.format === t.format ? editableFormatSettings(t) : defaultSettings(data.format);
     checkGroupCapacity(data.format, data.maxParticipants, settings);
+    checkFfaPlan(data.format, data.maxParticipants, settings);
     // Who may enter depends on the game, the entry type, the format and the circuit rules: frozen once anyone registered.
     const structural =
       data.game !== t.game ||
@@ -313,19 +395,25 @@ export async function updateTournament(db: Database, user: SessionUser, tourname
       `update tournaments set name=$2, game=$3, format=$4, participant_type=$5, team_size=$6, max_participants=$7,
          check_in_required=$8, region=$9, region_lock=$10, starts_at=$11, description=$12, rules=$13, best_of=$14,
          submission_hours=$15, scoring=$16, prize_text=$17, livestream_url=$18, format_settings=$19, circuit_id=$20,
-         circuit_division=$21, circuit_weight=$22, qualifier_circuit_id=$23, updated_at=now() where id=$1`,
+         circuit_division=$21, circuit_weight=$22, qualifier_circuit_id=$23, registration_fields=$24, approval_required=$25,
+         registration_closes_at=$26, roster_locks_at=$27, no_show_minutes=$28, updated_at=now() where id=$1`,
       [t.id, data.name, data.game, data.format, data.participantType, data.teamSize, data.maxParticipants, data.checkInRequired,
         data.region, data.regionLock, data.startsAt.toISOString(), data.description, data.rules, data.bestOf, data.submissionHours,
         data.scoring ? JSON.stringify(data.scoring) : null, data.prizeText, data.livestreamUrl, settingsJson(settings),
-        link.circuitId, link.circuitDivision, link.circuitWeight, link.qualifierCircuitId],
+        link.circuitId, link.circuitDivision, link.circuitWeight, link.qualifierCircuitId, fieldsJson(reg.fields), reg.approvalRequired,
+        reg.registrationClosesAt?.toISOString() ?? null, reg.rosterLocksAt?.toISOString() ?? null, reg.noShowMinutes],
     );
-    const settingsChanged = JSON.stringify(settings) !== JSON.stringify(editableSettings(t));
+    const settingsChanged = JSON.stringify(settings) !== JSON.stringify(editableFormatSettings(t));
+    const registrationChanged = JSON.stringify(reg) !== JSON.stringify(storedRegistration(t));
     await audit(q, {
       actorId: user.id,
       action: "tournament.updated",
       entity: "tournament",
       entityId: t.id,
-      data: settingsChanged || link.circuitWeight !== t.circuit_weight ? { settings, circuitWeight: link.circuitWeight } : undefined,
+      data:
+        settingsChanged || registrationChanged || link.circuitWeight !== t.circuit_weight
+          ? { settings, circuitWeight: link.circuitWeight, ...(registrationChanged ? { registration: reg } : {}) }
+          : undefined,
     });
   });
 }
@@ -369,7 +457,12 @@ export async function transition(db: Database, user: SessionUser, tournamentId: 
     }
     if (t.status === "REGISTRATION_CLOSED" && to === "IN_PROGRESS") {
       if (t.format === "leaderboard") await startLeaderboard(q, t, user);
-      else if (isRoundFormat(t.format)) await startRounds(q, t, user);
+      else if (t.format === "ffa") {
+        const participants = await lockParticipants(q, t);
+        checkFfaPlan(t.format, participants.length, ffaSettingsOf(t));
+        const { startFfa } = await import("./lobbies.ts");
+        await startFfa(q, t, participants, user.id);
+      } else if (isRoundFormat(t.format)) await startRounds(q, t, user);
       else await startBracket(q, t, user);
     }
     if (t.format === "leaderboard" && to === "COMPLETED") {
@@ -391,17 +484,22 @@ export async function transition(db: Database, user: SessionUser, tournamentId: 
 }
 
 /** Region lock: every entrant must have a profile country inside the allowed list. */
-async function checkRegion(q: Queryable, t: TournamentRow, roster: string[]) {
+export async function checkRegion(q: Queryable, t: TournamentRow, roster: string[]) {
   if (!t.region_lock?.length) return;
   const rows = await q.query<{ id: string; country_code: string | null }>("select id, country_code from users where id = any($1)", [roster]);
   if (rows.some((r) => !r.country_code)) fail("country_required");
   if (rows.some((r) => !t.region_lock.includes(r.country_code!))) fail("region_locked");
 }
 
-export async function register(db: Database, user: SessionUser, tournamentId: string, teamId?: string) {
+/** Registration is open in REGISTRATION_OPEN until the organiser's deadline, if one is set. */
+export const registrationOpen = (t: { status: string; registration_closes_at: Date | string | null }, now = Date.now()) =>
+  t.status === "REGISTRATION_OPEN" && (!t.registration_closes_at || new Date(t.registration_closes_at).getTime() > now);
+
+export async function register(db: Database, user: SessionUser, tournamentId: string, teamId?: string, answersInput: Record<string, unknown> = {}) {
   return db.tx(async (q) => {
     const t = await lockTournament(q, tournamentId);
-    if (t.status !== "REGISTRATION_OPEN") fail("registration_closed");
+    if (!registrationOpen(t)) fail("registration_closed");
+    const answers = parseAnswers(fieldsOf(t), answersInput);
     let roster: string[];
     let regUser: string | null = null;
     let regTeam: string | null = null;
@@ -432,13 +530,14 @@ export async function register(db: Database, user: SessionUser, tournamentId: st
       "select count(*)::int as n from registrations where tournament_id = $1 and status = 'registered'",
       [t.id],
     );
-    const status = (active?.n ?? 0) >= t.max_participants ? "waitlisted" : "registered";
+    // With approval, an application waits for the organiser; capacity is applied when it is approved.
+    const status = t.approval_required ? "pending" : (active?.n ?? 0) >= t.max_participants ? "waitlisted" : "registered";
     let regId: string;
     try {
       const [reg] = await q.query<{ id: string }>(
-        `insert into registrations (tournament_id, user_id, team_id, registered_by, status)
-         values ($1, $2, $3, $4, $5) returning id`,
-        [t.id, regUser, regTeam, user.id, status],
+        `insert into registrations (tournament_id, user_id, team_id, registered_by, status, answers)
+         values ($1, $2, $3, $4, $5, $6) returning id`,
+        [t.id, regUser, regTeam, user.id, status, answers ? JSON.stringify(answers) : null],
       );
       regId = reg.id;
     } catch (error) {
@@ -452,7 +551,10 @@ export async function register(db: Database, user: SessionUser, tournamentId: st
       if (isUniqueViolation(error)) fail("roster_conflict");
       throw error;
     }
-    await notify(q, roster, status === "registered" ? "registered" : "waitlisted", { tournament: t.name, slug: t.slug });
+    if (status === "pending") {
+      await notify(q, roster, "registration_received", { tournament: t.name, slug: t.slug });
+      await notify(q, await managersOf(q, t), "registration_pending", { tournament: t.name, slug: t.slug });
+    } else await notify(q, roster, status === "registered" ? "registered" : "waitlisted", { tournament: t.name, slug: t.slug });
     await audit(q, { actorId: user.id, action: "registration.created", entity: "tournament", entityId: t.id, data: { registrationId: regId, status, teamId: regTeam } });
     return { id: regId, status };
   });
@@ -461,7 +563,7 @@ export async function register(db: Database, user: SessionUser, tournamentId: st
 async function findOwnRegistration(q: Queryable, tournamentId: string, user: SessionUser) {
   const rows = await q.query<{ id: string; status: string; checked_in_at: Date | null }>(
     `select r.id, r.status, r.checked_in_at from registrations r left join teams tm on tm.id = r.team_id
-      where r.tournament_id = $1 and r.status in ('registered','waitlisted')
+      where r.tournament_id = $1 and r.status in ('registered','waitlisted','pending')
         and (r.user_id = $2 or tm.owner_id = $2 or tm.captain_id = $2)
       for update of r`,
     [tournamentId, user.id],
@@ -483,6 +585,50 @@ export async function promoteFromWaitlist(q: Queryable, t: { id: string; name: s
   await q.query("update registrations set status = 'registered' where id = $1", [next.id]);
   await notify(q, await regMembers(q, next.id), "promoted", { tournament: t.name, slug: t.slug });
   return next.id;
+}
+
+/** The tournament's managers: owners and admins of the space and its co-organisers. */
+async function managersOf(q: Queryable, t: { id: string; org_id: string }) {
+  const rows = await q.query<{ user_id: string }>(
+    `select user_id from org_members where org_id = $1 and role in ('owner','admin')
+     union select user_id from tournament_organizers where tournament_id = $2`,
+    [t.org_id, t.id],
+  );
+  return rows.map((r) => r.user_id);
+}
+
+/** Approves a pending application: it enters the event, or the waitlist when the event is full. */
+export async function approveRegistration(db: Database, user: SessionUser, tournamentId: string, regId: string) {
+  return db.tx(async (q) => {
+    const t = await lockTournament(q, tournamentId);
+    await requireManager(q, t, user);
+    if (!["PUBLISHED", "REGISTRATION_OPEN", "REGISTRATION_CLOSED"].includes(t.status)) fail("registration_closed");
+    const [reg] = await q.query<{ id: string; status: string }>("select id, status from registrations where id = $1 and tournament_id = $2 for update", [regId, t.id]);
+    if (!reg || reg.status !== "pending") fail("not_found");
+    const [active] = await q.query<{ n: number }>("select count(*)::int as n from registrations where tournament_id = $1 and status = 'registered'", [t.id]);
+    const status = (active?.n ?? 0) >= t.max_participants ? "waitlisted" : "registered";
+    await q.query("update registrations set status = $2, decided_by = $3, decided_at = now(), decision_note = '' where id = $1", [reg.id, status, user.id]);
+    await notify(q, await regMembers(q, reg.id), status === "registered" ? "registration_approved" : "waitlisted", { tournament: t.name, slug: t.slug });
+    await audit(q, { actorId: user.id, action: "registration.approved", entity: "tournament", entityId: t.id, data: { registrationId: reg.id, status } });
+    return status;
+  });
+}
+
+/** Rejects a pending application with a reason the applicant sees; the roster is released. */
+export async function rejectRegistration(db: Database, user: SessionUser, tournamentId: string, regId: string, reasonInput: unknown) {
+  const reason = v.oneLine(reasonInput, 300);
+  if (reason.length < 5) fail("invalid_input");
+  await db.tx(async (q) => {
+    const t = await lockTournament(q, tournamentId);
+    await requireManager(q, t, user);
+    const [reg] = await q.query<{ id: string; status: string }>("select id, status from registrations where id = $1 and tournament_id = $2 for update", [regId, t.id]);
+    if (!reg || reg.status !== "pending") fail("not_found");
+    const members = await regMembers(q, reg.id);
+    await q.query("update registrations set status = 'rejected', decided_by = $2, decided_at = now(), decision_note = $3 where id = $1", [reg.id, user.id, reason]);
+    await q.query("delete from roster_entries where registration_id = $1", [reg.id]);
+    await notify(q, members, "registration_rejected", { tournament: t.name, slug: t.slug, reason });
+    await audit(q, { actorId: user.id, action: "registration.rejected", entity: "tournament", entityId: t.id, data: { registrationId: reg.id, reason } });
+  });
 }
 
 export async function withdraw(db: Database, user: SessionUser, tournamentId: string) {
@@ -571,9 +717,22 @@ export async function seededParticipants(q: Queryable, tournamentId: string, che
   );
 }
 
+/** Applications nobody decided before the start are closed: the applicant is told, the roster released. */
+async function expirePending(q: Queryable, t: TournamentRow) {
+  const pending = await q.query<{ id: string }>("select id from registrations where tournament_id = $1 and status = 'pending' for update", [t.id]);
+  for (const r of pending) {
+    const members = await regMembers(q, r.id);
+    await q.query("update registrations set status = 'rejected', decided_at = now(), decision_note = 'expired' where id = $1", [r.id]);
+    await q.query("delete from roster_entries where registration_id = $1", [r.id]);
+    await notify(q, members, "registration_expired", { tournament: t.name, slug: t.slug });
+  }
+  if (pending.length) await audit(q, { actorId: null, action: "registration.expired_at_start", entity: "tournament", entityId: t.id, data: { count: pending.length } });
+}
+
 async function lockParticipants(q: Queryable, t: TournamentRow) {
   const participants = await seededParticipants(q, t.id, t.check_in_required);
   if (participants.length < 2) fail("not_enough_participants");
+  await expirePending(q, t);
   if (t.check_in_required)
     await q.query(
       "update registrations set status = 'not_checked_in' where tournament_id = $1 and status = 'registered' and checked_in_at is null",
@@ -919,6 +1078,11 @@ export function bracketPlacements(format: string, matches: MatchRow[]): Map<stri
 export async function computePlacements(q: Queryable, tournamentId: string) {
   const [t] = await q.query<{ format: Format; format_settings: unknown }>("select format, format_settings from tournaments where id = $1", [tournamentId]);
   if (!t || t.format === "leaderboard") return;
+  if (t.format === "ffa") {
+    const { ffaPlacements } = await import("./lobbies.ts");
+    await ffaPlacements(q, tournamentId);
+    return;
+  }
   if (isRoundFormat(t.format)) {
     const rounds = await import("./rounds.ts");
     if (settingsOf(t).playoff) await rounds.stagedPlacements(q, tournamentId);
@@ -1076,10 +1240,106 @@ export async function setPrizeCoins(db: Database, user: SessionUser, tournamentI
   });
 }
 
+/** What a copy or a template carries: everything the organiser set up, nothing that happened in the event. */
+export type DraftSource = {
+  org_id: string;
+  name: string;
+  game: string;
+  format: string;
+  participant_type: string;
+  team_size: number;
+  max_participants: number;
+  check_in_required: boolean;
+  region: string;
+  region_lock: string[];
+  description: string;
+  rules: string;
+  best_of: number | null;
+  submission_hours: number | null;
+  scoring: Record<string, number> | null;
+  prize_text: string;
+  livestream_url: string;
+  format_settings: object | null;
+  circuit_id: string | null;
+  circuit_division: number | null;
+  circuit_weight: number;
+  qualifier_circuit_id: string | null;
+  registration_fields: RegField[];
+  approval_required: boolean;
+  /** Deadlines as their distance before the start, in milliseconds. */
+  registration_closes_before: number | null;
+  roster_locks_before: number | null;
+  no_show_minutes: number | null;
+};
+
+type FullRow = TournamentRow & { region: string; description: string; rules: string; prize_text: string; livestream_url: string };
+
+export function draftSourceOf(src: FullRow): DraftSource {
+  const before = (d: Date | null) => (d ? new Date(src.starts_at).getTime() - new Date(d).getTime() : null);
+  return {
+    org_id: src.org_id,
+    name: src.name,
+    game: src.game,
+    format: src.format,
+    participant_type: src.participant_type,
+    team_size: src.team_size,
+    max_participants: src.max_participants,
+    check_in_required: src.check_in_required,
+    region: src.region,
+    region_lock: src.region_lock,
+    description: src.description,
+    rules: src.rules,
+    best_of: src.best_of,
+    submission_hours: src.submission_hours,
+    scoring: src.scoring,
+    prize_text: src.prize_text,
+    livestream_url: src.livestream_url,
+    format_settings: editableFormatSettings(src),
+    circuit_id: src.circuit_id,
+    circuit_division: src.circuit_division,
+    circuit_weight: src.circuit_weight,
+    qualifier_circuit_id: src.qualifier_circuit_id,
+    registration_fields: fieldsOf(src),
+    approval_required: src.approval_required,
+    registration_closes_before: before(src.registration_closes_at),
+    roster_locks_before: before(src.roster_locks_at),
+    no_show_minutes: src.no_show_minutes,
+  };
+}
+
+/** Inserts a draft from a copy source. The circuit link is kept only while that circuit is still active. */
+export async function insertDraft(q: Queryable, user: SessionUser, src: DraftSource, name: string, startsAt: Date, templateId: string | null) {
+  const [circuit] = src.circuit_id ? await q.query<{ status: string }>("select status from circuits where id = $1", [src.circuit_id]) : [];
+  const keepCircuit = circuit?.status === "active";
+  const slug = await uniqueSlug(q, "tournaments", name);
+  const at = (before: number | null) => (before === null ? null : new Date(startsAt.getTime() - before).toISOString());
+  const [t] = await q.query<{ id: string; slug: string }>(
+    `insert into tournaments (slug, org_id, name, game, format, participant_type, team_size, max_participants,
+       check_in_required, region, region_lock, starts_at, description, rules, best_of, submission_hours, scoring,
+       prize_text, livestream_url, created_by, format_settings, circuit_id, circuit_division, circuit_weight, qualifier_circuit_id,
+       registration_fields, approval_required, registration_closes_at, roster_locks_at, no_show_minutes, template_id)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31) returning id, slug`,
+    [slug, src.org_id, name, src.game, src.format, src.participant_type, src.team_size, src.max_participants, src.check_in_required,
+      src.region, src.region_lock, startsAt.toISOString(), src.description, src.rules, src.best_of, src.submission_hours,
+      src.scoring ? JSON.stringify(src.scoring) : null, src.prize_text, src.livestream_url, user.id, settingsJson(src.format_settings),
+      keepCircuit ? src.circuit_id : null, keepCircuit ? src.circuit_division : null, src.circuit_weight, src.qualifier_circuit_id,
+      fieldsJson(src.registration_fields), src.approval_required, at(src.registration_closes_before), at(src.roster_locks_before),
+      src.no_show_minutes, templateId],
+  );
+  return t;
+}
+
+/** The start of a copy: the organiser's choice, or a week after the source (never in the past). */
+export function copyStart(input: { startsAt?: unknown; timeZone?: unknown }, sourceStart: Date | null) {
+  return String(input.startsAt ?? "").trim()
+    ? v.zonedToUtc(input.startsAt, input.timeZone)
+    : new Date(Math.max(Date.now(), sourceStart ? new Date(sourceStart).getTime() : Date.now()) + 7 * 86_400_000);
+}
+
 /**
  * Copies a tournament's settings into a new draft in the same space: format and its settings, rules,
- * entry limits, region lock and circuit link (only while that circuit is still active). Entrants,
- * matches, co-organisers, sponsors and the operator-set award are never copied.
+ * registration rules and questions, entry limits, region lock and circuit link (only while that circuit is
+ * still active). Entrants, matches, co-organisers, sponsors and the operator-set award are never copied.
  */
 export async function cloneTournament(
   db: Database,
@@ -1088,30 +1348,12 @@ export async function cloneTournament(
   input: { name?: unknown; startsAt?: unknown; timeZone?: unknown },
 ) {
   return db.tx(async (q) => {
-    const [src] = await q.query<TournamentRow & { region: string; description: string; rules: string; prize_text: string; livestream_url: string }>(
-      "select * from tournaments where id = $1",
-      [tournamentId],
-    );
+    const [src] = await q.query<FullRow>("select * from tournaments where id = $1", [tournamentId]);
     if (!src) fail("not_found");
     // Creating a tournament in the space is an owner/admin right, so co-organisers cannot clone.
     if (!(await canManageOrg(q, src.org_id, user))) fail("forbidden");
     const name = v.displayName(String(input.name ?? "").trim() || src.name, 80);
-    const startsAt = String(input.startsAt ?? "").trim()
-      ? v.zonedToUtc(input.startsAt, input.timeZone)
-      : new Date(Math.max(Date.now(), new Date(src.starts_at).getTime()) + 7 * 86_400_000);
-    const [circuit] = src.circuit_id ? await q.query<{ status: string }>("select status from circuits where id = $1", [src.circuit_id]) : [];
-    const keepCircuit = circuit?.status === "active";
-    const slug = await uniqueSlug(q, "tournaments", name);
-    const [t] = await q.query<{ id: string; slug: string }>(
-      `insert into tournaments (slug, org_id, name, game, format, participant_type, team_size, max_participants,
-         check_in_required, region, region_lock, starts_at, description, rules, best_of, submission_hours, scoring,
-         prize_text, livestream_url, created_by, format_settings, circuit_id, circuit_division, circuit_weight, qualifier_circuit_id)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25) returning id, slug`,
-      [slug, src.org_id, name, src.game, src.format, src.participant_type, src.team_size, src.max_participants, src.check_in_required,
-        src.region, src.region_lock, startsAt.toISOString(), src.description, src.rules, src.best_of, src.submission_hours,
-        src.scoring ? JSON.stringify(src.scoring) : null, src.prize_text, src.livestream_url, user.id, settingsJson(editableSettings(src)),
-        keepCircuit ? src.circuit_id : null, keepCircuit ? src.circuit_division : null, src.circuit_weight, src.qualifier_circuit_id],
-    );
+    const t = await insertDraft(q, user, draftSourceOf(src), name, copyStart(input, src.starts_at), null);
     await audit(q, { actorId: user.id, action: "tournament.created", entity: "tournament", entityId: t.id, data: { name, game: src.game, format: src.format, clonedFrom: src.id } });
     await audit(q, { actorId: user.id, action: "tournament.cloned", entity: "tournament", entityId: src.id, data: { copy: t.id } });
     return t;
@@ -1128,7 +1370,21 @@ export async function regenerateMatches(db: Database, user: SessionUser, tournam
   await db.tx(async (q) => {
     const t = await lockTournament(q, tournamentId);
     await requireManager(q, t, user);
-    if (!["IN_PROGRESS", "PAUSED"].includes(t.status) || !isMatchFormat(t.format)) fail("invalid_transition");
+    if (!["IN_PROGRESS", "PAUSED"].includes(t.status) || !(isMatchFormat(t.format) || t.format === "ffa")) fail("invalid_transition");
+    if (t.format === "ffa") {
+      const lobbies = await import("./lobbies.ts");
+      if ((await lobbies.ffaActivity(q, t.id)) > 0) fail("regeneration_blocked");
+      const entrants = await q.query<{ id: string }>(
+        "select id from registrations where tournament_id = $1 and status = 'registered' order by seed asc nulls last, created_at asc, id asc",
+        [t.id],
+      );
+      if (entrants.length < 2) fail("not_enough_participants");
+      for (let i = 0; i < entrants.length; i++) await q.query("update registrations set seed = $2, placement = null where id = $1", [entrants[i].id, i + 1]);
+      const summary = await lobbies.regenerateFfa(q, t, entrants, user.id);
+      await notify(q, await rosterUsers(q, t.id), "bracket_regenerated", { tournament: t.name, slug: t.slug });
+      await audit(q, { actorId: user.id, action: "tournament.regenerated", entity: "tournament", entityId: t.id, data: { entrants: entrants.length, ...summary } });
+      return;
+    }
     // During the playoff only the playoff is rebuilt, from the final table of the main stage.
     const stage = t.stage === 2 ? 2 : null;
     const [state] = await q.query<{ results: number; disputes: number; blocking: number; total: number }>(

@@ -13,6 +13,10 @@ import * as sponsors from "@/server/sponsors.ts";
 import * as billing from "@/server/billing.ts";
 import * as mfa from "@/server/mfa.ts";
 import * as admin from "@/server/admin.ts";
+import * as rosters from "@/server/rosters.ts";
+import * as templates from "@/server/templates.ts";
+import * as schedule from "@/server/schedule.ts";
+import * as lobbies from "@/server/lobbies.ts";
 import { storeUpload } from "@/server/media.ts";
 import { drainOutbox, mailConfigured } from "@/server/mail.ts";
 import { fail } from "@/server/errors.ts";
@@ -243,8 +247,61 @@ const handlers: Record<string, Handler> = {
     return { ok: "status_changed" };
   },
   "tournament.register": async (c) => {
-    const r = await tournaments.register(c.db, u(c), idOf(c.form.tournament), c.form.team ? idOf(c.form.team) : undefined);
-    return { ok: r.status === "waitlisted" ? "waitlisted" : "registered" };
+    const answers = Object.fromEntries(Object.entries(c.form).filter(([k]) => k.startsWith("answer_")));
+    const r = await tournaments.register(c.db, u(c), idOf(c.form.tournament), c.form.team ? idOf(c.form.team) : undefined, answers);
+    return { ok: r.status === "pending" ? "registration_pending" : r.status === "waitlisted" ? "waitlisted" : "registered" };
+  },
+  "tournament.approve": async (c) => {
+    const status = await tournaments.approveRegistration(c.db, u(c), idOf(c.form.tournament), idOf(c.form.registration));
+    return { ok: status === "waitlisted" ? "approved_waitlisted" : "registration_approved" };
+  },
+  "tournament.reject": async (c) => {
+    await tournaments.rejectRegistration(c.db, u(c), idOf(c.form.tournament), idOf(c.form.registration), c.form.reason);
+    return { ok: "registration_rejected" };
+  },
+  "registration.roster": async (c) => {
+    const members = (c.multi.member ?? (c.form.member ? [c.form.member] : [])).map((id) => idOf(id));
+    await rosters.setRoster(c.db, u(c), idOf(c.form.tournament), idOf(c.form.registration), members);
+    return { ok: "saved" };
+  },
+  "tournament.substitute": async (c) => {
+    await rosters.substitute(c.db, u(c), idOf(c.form.tournament), idOf(c.form.registration), idOf(c.form.out), idOf(c.form.in), c.form.reason);
+    return { ok: "roster_substituted" };
+  },
+  "tournament.reschedule": async (c) => {
+    await schedule.reschedule(c.db, u(c), idOf(c.form.tournament), { round: c.form.round, at: c.form.at, timeZone: c.form.tz, shiftMinutes: c.form.shiftMinutes });
+    return { ok: "rescheduled" };
+  },
+  "template.save": async (c) => {
+    await templates.saveTemplate(c.db, u(c), idOf(c.form.tournament), { name: c.form.name, category: c.form.category });
+    return { ok: "template_saved" };
+  },
+  "template.create": async (c) => {
+    const t = await templates.createFromTemplate(c.db, u(c), idOf(c.form.template), { name: c.form.name, startsAt: c.form.startsAt, timeZone: c.form.tz });
+    return { to: `/${c.lang}/organizer/t/${t.slug}`, ok: "tournament_created" };
+  },
+  "template.delete": async (c) => {
+    await templates.deleteTemplate(c.db, u(c), idOf(c.form.template));
+    return { ok: "template_deleted" };
+  },
+  "lobby.result": async (c) => {
+    const lines = Object.keys(c.form)
+      .filter((k) => k.startsWith("place_"))
+      .map((k) => ({ reg: idOf(k.slice(6)), placement: c.form[k], kills: c.form[`kills_${k.slice(6)}`] }));
+    await lobbies.recordGame(c.db, u(c), idOf(c.form.game), { lines, evidenceUrl: c.form.evidence, note: c.form.note });
+    return { ok: c.form.correction ? "result_corrected" : "lobby_result_saved" };
+  },
+  "lobby.details": async (c) => {
+    await lobbies.setLobbyDetails(c.db, u(c), idOf(c.form.lobby), { roomCode: c.form.roomCode, scheduledAt: c.form.scheduledAt, timeZone: c.form.tz });
+    return { ok: "saved" };
+  },
+  "lobby.dispute": async (c) => {
+    await lobbies.fileFfaDispute(c.db, u(c), idOf(c.form.game), { reason: c.form.reason, evidenceUrl: c.form.evidence });
+    return { ok: "dispute_opened" };
+  },
+  "lobby.uphold": async (c) => {
+    await lobbies.upholdFfaDispute(c.db, u(c), idOf(c.form.dispute), c.form.note);
+    return { ok: "dispute_upheld" };
   },
   "tournament.withdraw": async (c) => {
     await tournaments.withdraw(c.db, u(c), idOf(c.form.tournament));
@@ -629,6 +686,21 @@ function tournamentInput(c: Ctx) {
             playoffFormat: c.form.playoffFormat,
             playoffSize: c.form.playoffSize,
             roundHours: c.form.roundHours,
+            lobbySize: c.form.lobbySize,
+            ffaGames: c.form.ffaGames,
+            ffaAdvance: c.form.ffaAdvance,
+            ffaPoints: c.form.ffaPoints,
+            killPoints: c.form.killPoints,
+          }
+        : undefined,
+    registration:
+      "registrationFields" in c.form
+        ? {
+            approvalRequired: c.form.approvalRequired,
+            registrationClosesAt: c.form.registrationClosesAt,
+            rosterLocksAt: c.form.rosterLocksAt,
+            noShowMinutes: c.form.noShowMinutes,
+            fields: Object.fromEntries(Object.entries(c.form).filter(([k]) => /^field[1-5](Label|Type|Options|Required)$/.test(k))),
           }
         : undefined,
     circuit:

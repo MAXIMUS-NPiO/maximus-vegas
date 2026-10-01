@@ -122,6 +122,15 @@ export const ERROR_CODES = [
   "gauntlet_limit",
   "stage_locked",
   "stage_too_few",
+  // Registration, rosters, templates, FFA
+  "invalid_registration_fields",
+  "invalid_answers",
+  "roster_locked",
+  "invalid_roster",
+  "no_show_too_early",
+  "template_exists",
+  "invalid_ffa_settings",
+  "invalid_ffa_results",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 

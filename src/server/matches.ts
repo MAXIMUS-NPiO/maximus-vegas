@@ -8,7 +8,17 @@ import { rewriteWinner } from "./decisions.ts";
 import { settingsOf } from "./format-settings.ts";
 import * as v from "./validate.ts";
 
-type Locked = MatchRow & { t_status: string; org_id: string; t_name: string; t_slug: string; t_format: string; t_settings: unknown; t_stage: number };
+type Locked = MatchRow & {
+  t_status: string;
+  org_id: string;
+  t_name: string;
+  t_slug: string;
+  t_format: string;
+  t_settings: unknown;
+  t_stage: number;
+  t_no_show: number | null;
+  scheduled_at: Date | null;
+};
 
 /**
  * Locks the tournament row, then the match. Every writer takes the tournament first (transitions,
@@ -22,7 +32,7 @@ export async function lockMatchWithTournament(q: Queryable, matchId: string): Pr
   await q.query("select id from tournaments where id = $1 for update", [ref.tournament_id]);
   const [m] = await q.query<Locked>(
     `select m.*, t.status as t_status, t.org_id, t.name as t_name, t.slug as t_slug, t.format as t_format, t.format_settings as t_settings,
-            t.stage as t_stage
+            t.stage as t_stage, t.no_show_minutes as t_no_show
        from matches m join tournaments t on t.id = m.tournament_id
       where m.id = $1 for update of m`,
     [matchId],
@@ -193,6 +203,12 @@ export async function officialResult(
   });
 }
 
+/** The earliest moment a no-show can be recorded under the tournament's policy (null = any time). */
+export function noShowFrom(m: { scheduled_at: Date | string | null; t_no_show: number | null }): Date | null {
+  if (m.t_no_show === null || m.t_no_show === undefined || !m.scheduled_at) return null;
+  return new Date(new Date(m.scheduled_at).getTime() + m.t_no_show * 60_000);
+}
+
 export async function markNoShow(db: Database, user: SessionUser, matchId: string, absentInput: unknown) {
   const absent = absentInput === "a" || absentInput === "b" ? absentInput : fail("invalid_input");
   await db.tx(async (q) => {
@@ -201,6 +217,9 @@ export async function markNoShow(db: Database, user: SessionUser, matchId: strin
     live(m);
     if (m.status === "completed") fail("already_completed");
     if (!m.a_reg || !m.b_reg) fail("match_not_ready");
+    // Late policy: the absent side keeps its grace period after the scheduled time.
+    const from = noShowFrom(m);
+    if (from && from.getTime() > Date.now()) fail("no_show_too_early");
     const winner = (absent === "a" ? m.b_reg : m.a_reg)!;
     await q.query("update match_results set status = 'superseded' where match_id = $1 and status = 'pending'", [m.id]);
     const version = await nextVersion(q, m.id);

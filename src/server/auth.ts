@@ -319,9 +319,11 @@ export async function exportAccount(db: Database, user: SessionUser) {
     gameAccounts: await q("select game, handle, verified, created_at from linked_game_accounts where user_id = $1"),
     teams: await q("select t.slug, t.name, t.game, tm.joined_at from team_members tm join teams t on t.id = tm.team_id where tm.user_id = $1"),
     registrations: await q(
-      `select t.slug as tournament, r.status, r.placement, r.created_at
-         from roster_entries re join registrations r on r.id = re.registration_id
-         join tournaments t on t.id = r.tournament_id where re.user_id = $1`,
+      `select t.slug as tournament, r.status, r.placement, r.created_at, case when r.registered_by = $1 then r.answers end as answers,
+              r.decision_note
+         from registrations r join tournaments t on t.id = r.tournament_id
+        where r.registered_by = $1 or exists (select 1 from roster_entries re where re.registration_id = r.id and re.user_id = $1)
+        order by r.created_at`,
     ),
     scoreEntries: await q(
       `select t.slug as tournament, s.kills, s.assists, s.deaths, s.headshots, s.damage, s.distance, s.placement, s.match_ref,
@@ -401,6 +403,8 @@ export async function deleteAccount(db: Database, user: SessionUser, confirmPass
       [user.id, `deleted+${user.id}@invalid.local`, `deleted_${tag}`, `deleted$${randomBytes(16).toString("hex")}`],
     );
     await q.query("delete from linked_game_accounts where user_id = $1", [user.id]);
+    // Registration answers may hold contact details: erased with the account that gave them.
+    await q.query("update registrations set answers = null where registered_by = $1 and answers is not null", [user.id]);
     await q.query("delete from team_members where user_id = $1", [user.id]);
     await q.query("delete from user_roles where user_id = $1", [user.id]);
     await q.query("delete from tournament_organizers where user_id = $1", [user.id]);

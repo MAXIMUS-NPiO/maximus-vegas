@@ -191,6 +191,8 @@ const ru = {
       withdrawn: "Отозвал заявку",
       disqualified: "Дисквалифицирован",
       not_checked_in: "Не прошёл check-in",
+      pending: "На рассмотрении",
+      rejected: "Отклонена",
     } as Record<string, string>,
     outcome: {
       played: "Сыгран",
@@ -1023,6 +1025,8 @@ const en: BaseDict = {
       withdrawn: "Withdrawn",
       disqualified: "Disqualified",
       not_checked_in: "Missed check-in",
+      pending: "Under review",
+      rejected: "Rejected",
     },
     outcome: {
       played: "Played",

@@ -1,3 +1,4 @@
+import type { RegField } from "./registration.ts";
 import type { Database, Queryable } from "./db.ts";
 import type { SessionUser } from "./auth.ts";
 import { isAdmin } from "./access.ts";
@@ -67,10 +68,16 @@ export type TournamentDetail = TournamentCard & {
   completed_at: Date | null;
   waitlisted: number;
   checked_in: number;
-  format: "single_elimination" | "double_elimination" | "round_robin" | "swiss" | "groups" | "gauntlet" | "leaderboard";
+  format: "single_elimination" | "double_elimination" | "round_robin" | "swiss" | "groups" | "gauntlet" | "ffa" | "leaderboard";
   format_settings: unknown;
   /** 1 = main stage; 2 = playoff. */
   stage: number;
+  registration_fields: RegField[] | null;
+  approval_required: boolean;
+  registration_closes_at: Date | null;
+  roster_locks_at: Date | null;
+  no_show_minutes: number | null;
+  template_id: string | null;
   circuit_id: string | null;
   circuit_division: number | null;
   circuit_weight: number;
@@ -192,6 +199,7 @@ export async function getMatch(db: Queryable, id: string) {
       t_format: string;
       t_settings: unknown;
       t_stage: number;
+      t_no_show: number | null;
       w_rounds: number;
       l_rounds: number;
       a_checked_in_at: Date | null;
@@ -200,7 +208,7 @@ export async function getMatch(db: Queryable, id: string) {
     }
   >(
     `select m.*, t.slug as t_slug, t.name as t_name, t.status as t_status, t.game as t_game, t.org_id, t.format as t_format, t.format_settings as t_settings,
-            t.stage as t_stage,
+            t.stage as t_stage, t.no_show_minutes as t_no_show,
             (select max(round) from matches x where x.tournament_id = m.tournament_id and x.bracket = m.bracket and x.stage = m.stage)::int as rounds,
             coalesce((select max(round) from matches x where x.tournament_id = m.tournament_id and x.bracket = 'W'), 0)::int as w_rounds,
             coalesce((select max(round) from matches x where x.tournament_id = m.tournament_id and x.bracket = 'L'), 0)::int as l_rounds
@@ -277,7 +285,19 @@ export async function hub(db: Queryable, user: SessionUser) {
     `select o.slug, o.name, m.role from org_members m join organizations o on o.id = m.org_id where m.user_id = $1 order by o.name`,
     [user.id],
   );
-  return { matches, registrations, invites, teams, orgs };
+  // FFA lobbies of the current round the player is in, with the games still to be played.
+  const lobbies = await db.query<{ id: string; round: number; lobby_no: number; room_code: string; scheduled_at: Date | null; t_slug: string; t_name: string; t_game: string; games_left: number; lobbies: number }>(
+    `select l.id, l.round, l.lobby_no, l.room_code, l.scheduled_at, t.slug as t_slug, t.name as t_name, t.game as t_game,
+            (select count(*)::int from ffa_games g where g.lobby_id = l.id and g.status <> 'completed') as games_left,
+            (select count(*)::int from ffa_lobbies x where x.tournament_id = l.tournament_id and x.round = l.round) as lobbies
+       from ffa_lobbies l join tournaments t on t.id = l.tournament_id
+      where l.status = 'open' and t.status in ('IN_PROGRESS','PAUSED')
+        and exists (select 1 from ffa_entries e join roster_entries re on re.registration_id = e.registration_id
+                     where e.lobby_id = l.id and re.user_id = $1)
+      order by l.scheduled_at asc nulls last, l.round asc`,
+    [user.id],
+  );
+  return { matches, registrations, invites, teams, orgs, lobbies };
 }
 
 export async function notifications(db: Queryable, userId: string, limit = 50) {

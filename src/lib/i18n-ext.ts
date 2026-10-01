@@ -1,6 +1,15 @@
 /** Release-2 additions to the shared dictionary: status codes, errors and notification texts (RU / EN). */
 
 const okRu: Record<string, string> = {
+  registration_pending: "Заявка отправлена организатору на рассмотрение.",
+  registration_approved: "Заявка одобрена: участник в турнире.",
+  approved_waitlisted: "Заявка одобрена; мест нет — участник в листе ожидания.",
+  registration_rejected: "Заявка отклонена, участник получил причину.",
+  roster_substituted: "Замена в составе выполнена.",
+  rescheduled: "Расписание изменено, участники уведомлены.",
+  template_saved: "Шаблон сохранён.",
+  template_deleted: "Шаблон удалён.",
+  lobby_result_saved: "Результат игры записан, таблица лобби обновлена.",
   verification_sent: "Письмо для подтверждения email поставлено в очередь отправки.",
   reset_sent: "Если такой аккаунт есть, письмо со ссылкой отправлено.",
   email_verified: "Email подтверждён.",
@@ -29,6 +38,15 @@ const okRu: Record<string, string> = {
 };
 
 const okEn: Record<string, string> = {
+  registration_pending: "Your application was sent to the organiser for review.",
+  registration_approved: "Application approved: the entrant is in the tournament.",
+  approved_waitlisted: "Application approved; the event is full, so the entrant is on the waitlist.",
+  registration_rejected: "Application rejected; the applicant has been told why.",
+  roster_substituted: "Roster substitution done.",
+  rescheduled: "Schedule changed; the entrants were notified.",
+  template_saved: "Template saved.",
+  template_deleted: "Template deleted.",
+  lobby_result_saved: "Game result recorded; the lobby table is updated.",
   verification_sent: "The confirmation email has been queued for sending.",
   reset_sent: "If an account exists for that address, a link has been sent.",
   email_verified: "Email confirmed.",
@@ -121,6 +139,14 @@ const errorsRu: Record<string, string> = {
   gauntlet_limit: "В лесенке не больше 16 участников.",
   stage_locked: "Плей-офф уже начался: результаты основного этапа зафиксированы и не меняются.",
   stage_too_few: "Недостаточно участников для групп: в каждой группе нужно не меньше двух участников и не меньше, чем выходит из группы.",
+  invalid_registration_fields: "Поля регистрации: название 2–80 символов; для выбора — от 2 до 20 вариантов через запятую, каждый до 60 символов.",
+  invalid_answers: "Заполните обязательные поля регистрации; выбор — из предложенных вариантов, текст — до 300 символов.",
+  roster_locked: "Состав зафиксирован. Замену может провести организатор.",
+  invalid_roster: "Состав: только текущие игроки команды, от минимального состава до трёх запасных.",
+  no_show_too_early: "Неявку можно отметить только после льготного времени, установленного правилами турнира.",
+  template_exists: "Шаблон с таким названием уже есть.",
+  invalid_ffa_settings: "Настройки FFA: лобби 2–100, игр в раунде 1–12, выходят из лобби 1–99, очки за места — до 64 целых чисел 0–1000 без роста к нижним местам, очки за убийство 0–10.",
+  invalid_ffa_results: "Результат игры: места сыгравших — 1, 2, 3 … без пропусков и повторов, убийства 0–999; пустое место — не играл.",
 };
 
 const errorsEn: Record<string, string> = {
@@ -188,6 +214,14 @@ const errorsEn: Record<string, string> = {
   gauntlet_limit: "A gauntlet allows at most 16 entrants.",
   stage_locked: "The playoff has started: main-stage results are final and can no longer change.",
   stage_too_few: "Not enough entrants for the groups: every group needs at least two entrants and at least as many as advance from it.",
+  invalid_registration_fields: "Registration fields: a label of 2–80 characters; a choice needs 2–20 comma-separated options of up to 60 characters.",
+  invalid_answers: "Fill in the required registration fields; a choice must be one of the options, text up to 300 characters.",
+  roster_locked: "The roster is locked. The organiser can make a substitution.",
+  invalid_roster: "Roster: current team players only, from the minimum line-up to three substitutes.",
+  no_show_too_early: "A no-show can be recorded only after the grace period set by the tournament rules.",
+  template_exists: "A template with this name already exists.",
+  invalid_ffa_settings: "FFA settings: lobbies of 2–100, 1–12 games per round, 1–99 advancing per lobby, placement points of up to 64 whole numbers 0–1000 never rising for lower places, 0–10 points per kill.",
+  invalid_ffa_results: "Game result: places of those who played are 1, 2, 3 … with no gaps or repeats, kills 0–999; an empty place means did not play.",
 };
 
 const kindsRu: Record<string, string> = {
@@ -218,6 +252,20 @@ const kindsRu: Record<string, string> = {
   bracket_regenerated: "Турнир «{tournament}»: сетка пересоздана — проверьте свой матч",
   playoff_qualified: "Турнир «{tournament}»: вы вышли в плей-офф",
   stage_finished: "Турнир «{tournament}»: основной этап завершён, в плей-офф вы не вышли",
+  registration_received: "Турнир «{tournament}»: заявка получена и ждёт решения организатора",
+  registration_pending: "Турнир «{tournament}»: новая заявка ждёт решения",
+  registration_approved: "Турнир «{tournament}»: заявка одобрена",
+  registration_rejected: "Турнир «{tournament}»: заявка отклонена — {reason}",
+  registration_expired: "Турнир «{tournament}» начался, а заявку не успели рассмотреть — она закрыта",
+  roster_changed: "Турнир «{tournament}»: изменён состав на турнир",
+  roster_substitution: "Турнир «{tournament}»: замена в составе — {reason}",
+  ffa_lobby: "Турнир «{tournament}», раунд {round}: вы в лобби — посмотрите время и игры",
+  ffa_lobby_updated: "Турнир «{tournament}», раунд {round}: обновлены код или время лобби",
+  ffa_result: "Турнир «{tournament}»: записан результат игры {game}",
+  ffa_result_corrected: "Турнир «{tournament}»: исправлен результат игры {game}",
+  ffa_advanced: "Турнир «{tournament}»: вы прошли в раунд {round}",
+  ffa_eliminated: "Турнир «{tournament}»: вы выбыли перед раундом {round}",
+  ffa_dispute_opened: "Турнир «{tournament}»: оспорен результат игры {game} — нужно решение",
 };
 
 const kindsEn: Record<string, string> = {
@@ -248,6 +296,20 @@ const kindsEn: Record<string, string> = {
   bracket_regenerated: "“{tournament}”: the bracket was regenerated — check your match",
   playoff_qualified: "“{tournament}”: you made the playoff",
   stage_finished: "“{tournament}”: the main stage is over and you did not make the playoff",
+  registration_received: "“{tournament}”: your application was received and awaits the organiser's decision",
+  registration_pending: "“{tournament}”: a new application awaits a decision",
+  registration_approved: "“{tournament}”: your application was approved",
+  registration_rejected: "“{tournament}”: your application was rejected — {reason}",
+  registration_expired: "“{tournament}” has started before your application was reviewed — it is closed",
+  roster_changed: "“{tournament}”: the event roster was changed",
+  roster_substitution: "“{tournament}”: roster substitution — {reason}",
+  ffa_lobby: "“{tournament}”, round {round}: you are in a lobby — check its time and games",
+  ffa_lobby_updated: "“{tournament}”, round {round}: the lobby code or time was updated",
+  ffa_result: "“{tournament}”: the result of game {game} was recorded",
+  ffa_result_corrected: "“{tournament}”: the result of game {game} was corrected",
+  ffa_advanced: "“{tournament}”: you advanced to round {round}",
+  ffa_eliminated: "“{tournament}”: you were eliminated before round {round}",
+  ffa_dispute_opened: "“{tournament}”: the result of game {game} is disputed — a decision is needed",
 };
 
 export const extRu = {

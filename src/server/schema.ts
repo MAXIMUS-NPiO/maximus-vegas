@@ -770,4 +770,129 @@ export const migrations: Migration[] = [
       `create unique index stage_entries_seed on stage_entries(tournament_id, stage, seed)`,
     ],
   },
+  {
+    id: 8,
+    name: "registration_rosters_templates_ffa",
+    statements: [
+      // FFA lobbies join the formats; registrations gain approval ("pending", "rejected"). Checks are replaced by definition.
+      `do $$ declare r record; begin
+         for r in select conname from pg_constraint
+                   where conrelid = 'tournaments'::regclass and contype = 'c' and pg_get_constraintdef(oid) like '%format%' loop
+           execute format('alter table tournaments drop constraint %I', r.conname);
+         end loop;
+         for r in select conname from pg_constraint
+                   where conrelid = 'registrations'::regclass and contype = 'c' and pg_get_constraintdef(oid) like '%withdrawn%' loop
+           execute format('alter table registrations drop constraint %I', r.conname);
+         end loop;
+       end $$`,
+      `alter table tournaments add constraint tournaments_format_check check (format in ('single_elimination','double_elimination','leaderboard','round_robin','swiss','groups','gauntlet','ffa'))`,
+      `alter table registrations add constraint registrations_status_check check (status in ('registered','waitlisted','withdrawn','disqualified','not_checked_in','pending','rejected'))`,
+      // A rejected application frees the entrant to apply again, like a withdrawal.
+      `drop index if exists registrations_user`,
+      `drop index if exists registrations_team`,
+      `create unique index registrations_user on registrations(tournament_id, user_id) where user_id is not null and status not in ('withdrawn','rejected')`,
+      `create unique index registrations_team on registrations(tournament_id, team_id) where team_id is not null and status not in ('withdrawn','rejected')`,
+      `alter table registrations add column answers jsonb`,
+      `alter table registrations add column decision_note text not null default ''`,
+      `alter table registrations add column decided_by uuid references users(id)`,
+      `alter table registrations add column decided_at timestamptz`,
+      `alter table tournaments add column registration_fields jsonb`,
+      `alter table tournaments add column approval_required boolean not null default false`,
+      `alter table tournaments add column registration_closes_at timestamptz`,
+      `alter table tournaments add column roster_locks_at timestamptz`,
+      `alter table tournaments add column no_show_minutes int check (no_show_minutes between 0 and 240)`,
+      // Every change of an event roster, before the lock (edit) and after it (substitution).
+      `create table roster_changes (
+        id bigserial primary key,
+        tournament_id uuid not null references tournaments(id) on delete cascade,
+        registration_id uuid not null references registrations(id) on delete cascade,
+        kind text not null check (kind in ('edit','substitution')),
+        user_out uuid references users(id),
+        user_in uuid references users(id),
+        reason text not null default '',
+        changed_by uuid not null references users(id),
+        created_at timestamptz not null default now()
+      )`,
+      `create index roster_changes_registration on roster_changes(registration_id, created_at)`,
+      `create table tournament_templates (
+        id uuid primary key default gen_random_uuid(),
+        org_id uuid not null references organizations(id) on delete cascade,
+        name text not null,
+        category text not null default '',
+        payload jsonb not null,
+        source_tournament_id uuid references tournaments(id) on delete set null,
+        created_by uuid not null references users(id),
+        created_at timestamptz not null default now(),
+        uses int not null default 0 check (uses >= 0)
+      )`,
+      `create unique index tournament_templates_name on tournament_templates(org_id, lower(name))`,
+      `alter table tournaments add column template_id uuid references tournament_templates(id) on delete set null`,
+      // FFA: lobbies per round, their entrants and games; one current result per entrant and game, every version kept.
+      `create table ffa_lobbies (
+        id uuid primary key default gen_random_uuid(),
+        tournament_id uuid not null references tournaments(id) on delete cascade,
+        round int not null check (round between 1 and 20),
+        lobby_no int not null check (lobby_no between 1 and 256),
+        status text not null default 'open' check (status in ('open','completed')),
+        room_code text not null default '',
+        scheduled_at timestamptz,
+        created_at timestamptz not null default now(),
+        unique (tournament_id, round, lobby_no)
+      )`,
+      `create table ffa_entries (
+        lobby_id uuid not null references ffa_lobbies(id) on delete cascade,
+        tournament_id uuid not null references tournaments(id) on delete cascade,
+        round int not null,
+        registration_id uuid not null references registrations(id) on delete cascade,
+        seed int not null check (seed >= 1),
+        primary key (lobby_id, registration_id),
+        unique (tournament_id, round, registration_id)
+      )`,
+      `create table ffa_games (
+        id uuid primary key default gen_random_uuid(),
+        lobby_id uuid not null references ffa_lobbies(id) on delete cascade,
+        tournament_id uuid not null references tournaments(id) on delete cascade,
+        game_no int not null check (game_no between 1 and 12),
+        status text not null default 'scheduled' check (status in ('scheduled','completed')),
+        version int not null default 0,
+        evidence_url text not null default '',
+        decided_by uuid references users(id),
+        completed_at timestamptz,
+        unique (lobby_id, game_no)
+      )`,
+      `create table ffa_results (
+        game_id uuid not null references ffa_games(id) on delete cascade,
+        registration_id uuid not null references registrations(id) on delete cascade,
+        placement int not null check (placement between 1 and 256),
+        kills int not null default 0 check (kills between 0 and 999),
+        primary key (game_id, registration_id),
+        unique (game_id, placement)
+      )`,
+      `create table ffa_result_versions (
+        game_id uuid not null references ffa_games(id) on delete cascade,
+        version int not null check (version >= 1),
+        results jsonb not null,
+        note text not null default '',
+        evidence_url text not null default '',
+        decided_by uuid not null references users(id),
+        created_at timestamptz not null default now(),
+        primary key (game_id, version)
+      )`,
+      `create table ffa_disputes (
+        id uuid primary key default gen_random_uuid(),
+        game_id uuid not null references ffa_games(id) on delete cascade,
+        opened_by uuid not null references users(id),
+        reason text not null,
+        evidence_url text not null default '',
+        status text not null default 'open' check (status in ('open','resolved')),
+        decision text check (decision in ('upheld','corrected')),
+        resolution text not null default '',
+        resolved_by uuid references users(id),
+        created_at timestamptz not null default now(),
+        resolved_at timestamptz
+      )`,
+      `create unique index ffa_disputes_open on ffa_disputes(game_id, opened_by) where status = 'open'`,
+      `create index ffa_entries_registration on ffa_entries(registration_id)`,
+    ],
+  },
 ];
