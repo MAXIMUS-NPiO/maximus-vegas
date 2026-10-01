@@ -15,6 +15,7 @@ import { fail } from "./errors.ts";
 import { lockMatchWithTournament, noShowFrom, staffFor } from "./matches.ts";
 import { regLeaders, regMembers } from "./tournaments.ts";
 import { ANSWER_MINUTES, escalate, resolveIncident } from "./liveops.ts";
+import { vetoFor } from "./veto.ts";
 import * as v from "./validate.ts";
 
 export type StepKey =
@@ -25,6 +26,8 @@ export type StepKey =
   | "check_in"
   | "opponent_check_in"
   | "opponent_absent"
+  | "veto_turn"
+  | "veto_wait"
   | "play"
   | "confirm"
   | "wait_confirm"
@@ -47,7 +50,7 @@ export type StepKey =
   | "ffa"
   | "leaderboard";
 
-export type StepAction = "checkin" | "report" | "confirm" | "call_referee" | "next" | "event_checkin" | "open_lobby" | "open_tournament";
+export type StepAction = "checkin" | "veto" | "report" | "confirm" | "call_referee" | "next" | "event_checkin" | "open_lobby" | "open_tournament";
 
 export type Step = { key: StepKey; action: StepAction | null; deadline: Date | null };
 
@@ -67,6 +70,8 @@ export type MatchStepInput = {
   hasNext: boolean;
   /** A referee holds the match. */
   paused?: boolean;
+  /** The map veto of the match when the event has a pool: still open, and whether this side acts next. */
+  veto?: { pending: boolean; myTurn: boolean } | null;
   now: Date;
 };
 
@@ -96,6 +101,7 @@ export function matchStep(x: MatchStepInput): Step {
       return step("opponent_check_in", null, x.noShowAt);
     }
   }
+  if (x.veto?.pending) return x.veto.myTurn ? step("veto_turn", "veto") : step("veto_wait");
   return step("play", "report");
 }
 
@@ -176,6 +182,12 @@ export async function openMatchFor(q: Queryable, tournamentId: string, regId: st
   return m ?? null;
 }
 
+/** The veto as the step rule needs it: still open, and whether the viewer acts next. */
+export async function vetoStepOf(q: Queryable, matchId: string, viewerId: string) {
+  const v = await vetoFor(q, matchId, viewerId);
+  return v ? { pending: !v.state.complete, myTurn: v.myTurn } : null;
+}
+
 export async function pendingSideOf(q: Queryable, matchId: string): Promise<"a" | "b" | null> {
   const [r] = await q.query<{ side: "a" | "b" | null }>("select side from match_results where match_id = $1 and status = 'pending' order by version desc limit 1", [matchId]);
   return r?.side ?? null;
@@ -237,6 +249,7 @@ export async function gameDay(q: Queryable, user: SessionUser, now = new Date())
         noShowAt: noShowFrom({ scheduled_at: current.scheduled_at, t_no_show: r.no_show_minutes }),
         hasNext: false,
         paused: Boolean(current.paused_at),
+        veto: await vetoStepOf(q, current.id, user.id),
         now,
       });
     } else {

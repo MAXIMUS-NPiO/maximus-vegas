@@ -50,6 +50,9 @@ const okRu: Record<string, string> = {
   match_paused: "Матч на паузе: результаты, подтверждения и отметки ждут продолжения.",
   match_resumed: "Матч продолжен.",
   bracket_repaired: "Результат исправлен, сетка восстановлена: затронутые матчи переиграются, участники уведомлены.",
+  veto_saved: "Ход вето записан, ход переходит сопернику.",
+  veto_done: "Вето завершено: карты матча определены.",
+  veto_reset: "Вето сброшено, стороны начинают заново.",
 };
 
 const okEn: Record<string, string> = {
@@ -102,6 +105,9 @@ const okEn: Record<string, string> = {
   match_paused: "Match paused: results, confirmations and check-ins wait until it resumes.",
   match_resumed: "Match resumed.",
   bracket_repaired: "Result corrected and the bracket repaired: affected matches will be replayed; participants are notified.",
+  veto_saved: "Veto turn recorded; it is your opponent's turn.",
+  veto_done: "Veto complete: the maps of the match are set.",
+  veto_reset: "Veto reset; the sides start again.",
 };
 
 const errorsRu: Record<string, string> = {
@@ -192,6 +198,9 @@ const errorsRu: Record<string, string> = {
   match_paused: "Матч на паузе у судьи: дождитесь продолжения.",
   override_reason_required: "Решение расходится с отправленным счётом или закрывает спор: укажите обоснование (от 5 символов).",
   repair_plan_changed: "Сетка изменилась после предпросмотра: посмотрите последствия ещё раз.",
+  veto_unavailable: "Вето недоступно: у турнира нет пула карт или он меньше длины серии.",
+  veto_complete: "Вето уже завершено.",
+  not_your_turn: "Сейчас ход другой стороны (или действовать может только капитан или владелец команды).",
 };
 
 const errorsEn: Record<string, string> = {
@@ -282,6 +291,9 @@ const errorsEn: Record<string, string> = {
   match_paused: "The referee has paused this match: wait until it resumes.",
   override_reason_required: "This decision differs from the reported score or settles a dispute: give a reason (5 characters or more).",
   repair_plan_changed: "The bracket changed after the preview: review the consequences again.",
+  veto_unavailable: "No veto: the event has no map pool, or it is smaller than the series.",
+  veto_complete: "The veto is already complete.",
+  not_your_turn: "It is the other side's turn (or only the team's captain or owner can act).",
 };
 
 const kindsRu: Record<string, string> = {
@@ -336,6 +348,9 @@ const kindsRu: Record<string, string> = {
   match_paused: "Турнир «{tournament}»: судья поставил ваш матч на паузу",
   match_resumed: "Турнир «{tournament}»: ваш матч продолжен",
   bracket_repaired: "Турнир «{tournament}»: судья исправил результат и восстановил сетку — проверьте свои матчи",
+  veto_turn: "Турнир «{tournament}»: ваш ход в вето карт",
+  veto_done: "Турнир «{tournament}»: вето завершено — карты: {maps}",
+  veto_reset: "Турнир «{tournament}»: судья сбросил вето вашего матча",
 };
 
 const kindsEn: Record<string, string> = {
@@ -390,6 +405,9 @@ const kindsEn: Record<string, string> = {
   match_paused: "“{tournament}”: the referee paused your match",
   match_resumed: "“{tournament}”: your match resumed",
   bracket_repaired: "“{tournament}”: a referee corrected a result and repaired the bracket — check your matches",
+  veto_turn: "“{tournament}”: your turn in the map veto",
+  veto_done: "“{tournament}”: veto complete — maps: {maps}",
+  veto_reset: "“{tournament}”: a referee reset your match's veto",
 };
 
 export const extRu = {

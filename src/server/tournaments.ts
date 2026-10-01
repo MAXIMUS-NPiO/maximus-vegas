@@ -29,6 +29,7 @@ import { checkCircuitEligibility, validateCircuitLink, type CircuitLinkInput } f
 import { parseSeriesRules, seriesCustomised, seriesRulesOf, type SeriesRules } from "./series.ts";
 import { admissionOf, checkAdmission, parseAdmission, type Admission, type AdmissionInput } from "./admission.ts";
 import * as v from "./validate.ts";
+import { mapPoolOf, parseMapPool } from "./map-pool.ts";
 
 export const STATUSES = [
   "DRAFT",
@@ -114,6 +115,7 @@ export type TournamentRow = {
   template_id: string | null;
   /** Series length and points by level (MV-SERIES-1); null = best of 1 and the format's points. */
   series_rules: unknown;
+  map_pool?: unknown;
   /** Admission criteria every player of an entry must meet; null = none. */
   admission: unknown;
   /** Expected length of one match, for the schedule and its conflicts (null = 60 minutes). */
@@ -207,6 +209,8 @@ export type TournamentInput = {
   admission?: AdmissionInput;
   /** Expected match length in minutes (10–600, empty = 60); undefined keeps the stored value. */
   matchMinutes?: unknown;
+  /** Map pool for the veto: names separated by commas or new lines (MV-VETO-1). */
+  mapPool?: unknown;
 };
 
 export type RegistrationInput = {
@@ -264,12 +268,17 @@ function seriesFor(format: string, input: Record<string, unknown> | undefined, s
 const jsonOrNull = (value: object | null) => (value ? JSON.stringify(value) : null);
 
 /** Settings added in release 6, written after the main insert or update in the same transaction. */
-async function saveExtras(q: Queryable, id: string, extras: { series: SeriesRules | null; admission: Admission | null; matchMinutes: number | null }) {
-  await q.query("update tournaments set series_rules = $2, admission = $3, match_minutes = $4 where id = $1", [
+async function saveExtras(
+  q: Queryable,
+  id: string,
+  extras: { series: SeriesRules | null; admission: Admission | null; matchMinutes: number | null; mapPool?: string[] | null },
+) {
+  await q.query("update tournaments set series_rules = $2, admission = $3, match_minutes = $4, map_pool = $5 where id = $1", [
     id,
     jsonOrNull(extras.series),
     jsonOrNull(extras.admission),
     extras.matchMinutes,
+    extras.mapPool?.length ? JSON.stringify(extras.mapPool) : null,
   ]);
 }
 
@@ -371,6 +380,7 @@ export async function createTournament(db: Database, user: SessionUser, orgId: s
     series: seriesFor(data.format, input.series, null),
     admission: input.admission ? parseAdmission(input.admission) : null,
     matchMinutes: optionalInt(input.matchMinutes, 10, 600),
+    mapPool: isMatchFormat(data.format) && input.mapPool !== undefined ? parseMapPool(input.mapPool) : null,
   };
   return db.tx(async (q) => {
     if (!(await canManageOrg(q, orgId, user))) fail("forbidden");
@@ -422,7 +432,13 @@ export async function updateTournament(db: Database, user: SessionUser, tourname
       series: seriesFor(data.format, input.series, data.format === t.format ? storedSeries : null),
       admission,
       matchMinutes: input.matchMinutes !== undefined ? optionalInt(input.matchMinutes, 10, 600) : t.match_minutes,
+      mapPool: !isMatchFormat(data.format) ? null : input.mapPool !== undefined ? parseMapPool(input.mapPool) : mapPoolOf(t),
     };
+    // The pool decides every veto turn: frozen once any match of the event has started its veto.
+    if (JSON.stringify(extras.mapPool) !== JSON.stringify(mapPoolOf(t))) {
+      const [vetoed] = await q.query("select 1 from match_vetoes v join matches m on m.id = v.match_id where m.tournament_id = $1 limit 1", [t.id]);
+      if (vetoed) fail("not_editable");
+    }
     const link = await validateCircuitLink(
       q,
       { orgId: t.org_id, game: data.game, participantType: data.participantType, format: data.format },
@@ -460,7 +476,8 @@ export async function updateTournament(db: Database, user: SessionUser, tourname
     const extrasChanged =
       JSON.stringify(extras.series) !== JSON.stringify(storedSeries) ||
       JSON.stringify(extras.admission) !== JSON.stringify(admissionOf(t)) ||
-      extras.matchMinutes !== t.match_minutes;
+      extras.matchMinutes !== t.match_minutes ||
+      JSON.stringify(extras.mapPool) !== JSON.stringify(mapPoolOf(t));
     await audit(q, {
       actorId: user.id,
       action: "tournament.updated",
@@ -1333,6 +1350,8 @@ export type DraftSource = {
   admission?: Admission | null;
   match_minutes?: number | null;
   venues?: Array<{ name: string; kind: string }>;
+  /** Added with the map veto (absent in older templates). */
+  map_pool?: string[] | null;
 };
 
 type FullRow = TournamentRow & { region: string; description: string; rules: string; prize_text: string; livestream_url: string };
@@ -1370,6 +1389,7 @@ export function draftSourceOf(src: FullRow): DraftSource {
     series_rules: src.series_rules ? seriesRulesOf(src) : null,
     admission: admissionOf(src),
     match_minutes: src.match_minutes,
+    map_pool: mapPoolOf(src),
   };
 }
 
@@ -1397,7 +1417,7 @@ export async function insertDraft(q: Queryable, user: SessionUser, src: DraftSou
       fieldsJson(src.registration_fields), src.approval_required, at(src.registration_closes_before), at(src.roster_locks_before),
       src.no_show_minutes, templateId],
   );
-  await saveExtras(q, t.id, { series: src.series_rules ?? null, admission: src.admission ?? null, matchMinutes: src.match_minutes ?? null });
+  await saveExtras(q, t.id, { series: src.series_rules ?? null, admission: src.admission ?? null, matchMinutes: src.match_minutes ?? null, mapPool: src.map_pool ?? null });
   for (const venue of src.venues ?? [])
     await q.query("insert into tournament_venues (tournament_id, name, kind) values ($1, $2, $3) on conflict do nothing", [t.id, venue.name, venue.kind]);
   return t;
