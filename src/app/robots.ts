@@ -24,6 +24,6 @@ export default function robots(): MetadataRoute.Robots {
     "reset-password",
     "signup/check-email",
   ];
-  const privatePaths = ["/api/", ...personal.flatMap((p) => [`/ru/${p}`, `/en/${p}`])];
+  const privatePaths = ["/api/", "/embed/", ...personal.flatMap((p) => [`/ru/${p}`, `/en/${p}`])];
   return { rules: { userAgent: "*", allow: "/", disallow: privatePaths }, sitemap: `${origin}/sitemap.xml` };
 }

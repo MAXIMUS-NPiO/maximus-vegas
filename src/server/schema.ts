@@ -1439,4 +1439,70 @@ export const migrations: Migration[] = [
       )`,
     ],
   },
+  {
+    id: 19,
+    name: "partner_api_webhooks",
+    statements: [
+      // Partner API keys of an organising space: only a SHA-256 of the key is kept; the key is shown once.
+      `create table api_keys (
+        id uuid primary key default gen_random_uuid(),
+        org_id uuid not null references organizations(id) on delete cascade,
+        name text not null check (char_length(name) between 2 and 60),
+        prefix text not null,
+        key_hash text not null unique,
+        created_by uuid not null references users(id),
+        created_at timestamptz not null default now(),
+        last_used_at timestamptz,
+        revoked_at timestamptz,
+        revoked_by uuid references users(id)
+      )`,
+      `create index api_keys_org on api_keys(org_id, created_at desc)`,
+      // Requests per key and minute (rate limit); old windows are removed by maintenance.
+      `create table api_key_usage (
+        key_id uuid not null references api_keys(id) on delete cascade,
+        window_start timestamptz not null,
+        count int not null default 0,
+        primary key (key_id, window_start)
+      )`,
+      // Webhook endpoints: HTTPS URL, subscribed events, a signing secret sealed at rest.
+      `create table webhook_endpoints (
+        id uuid primary key default gen_random_uuid(),
+        org_id uuid not null references organizations(id) on delete cascade,
+        url text not null check (char_length(url) <= 500),
+        events text[] not null,
+        secret text not null,
+        scheme text not null check (scheme in ('aes-256-gcm','plain')),
+        active boolean not null default true,
+        created_by uuid not null references users(id),
+        created_at timestamptz not null default now(),
+        secret_rotated_at timestamptz
+      )`,
+      `create index webhook_endpoints_org on webhook_endpoints(org_id) where active`,
+      // Outbox of deliveries: one per endpoint and event; retried with backoff, then failed.
+      `create table webhook_deliveries (
+        id uuid primary key default gen_random_uuid(),
+        endpoint_id uuid not null references webhook_endpoints(id) on delete cascade,
+        event_id text not null,
+        event_type text not null,
+        payload jsonb not null,
+        status text not null default 'pending' check (status in ('pending','delivered','failed')),
+        attempts int not null default 0,
+        next_attempt_at timestamptz not null default now(),
+        last_status int,
+        last_error text not null default '',
+        created_at timestamptz not null default now(),
+        delivered_at timestamptz,
+        unique (endpoint_id, event_id)
+      )`,
+      `create index webhook_deliveries_due on webhook_deliveries(next_attempt_at) where status = 'pending'`,
+      `create index webhook_deliveries_endpoint on webhook_deliveries(endpoint_id, created_at desc)`,
+      // Events are read from the hash-chained audit log after this point: what a transaction did is logged in
+      // that same transaction, so every committed change becomes an event exactly once.
+      `create table webhook_cursor (
+        id int primary key check (id = 1),
+        last_audit_id bigint not null
+      )`,
+      `insert into webhook_cursor (id, last_audit_id) select 1, coalesce(max(id), 0) from audit_log`,
+    ],
+  },
 ];

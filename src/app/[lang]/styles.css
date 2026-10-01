@@ -2614,3 +2614,78 @@ button:disabled {
   overflow: hidden;
   overflow-wrap: anywhere;
 }
+
+/* Integrations: one-time secrets, long URLs and embed codes stay inside the page. */
+.secret-value,
+.break-all {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+.secret-value {
+  display: block;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  user-select: all;
+}
+.embed-code {
+  width: 100%;
+  resize: vertical;
+}
+
+/* Embeddable widgets (/embed/…): compact, no site chrome. */
+.embed-page {
+  padding: 14px;
+}
+.embed-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.embed-title {
+  font-size: 20px;
+  line-height: 1.25;
+  margin: 0;
+}
+.embed-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+}
+.embed-facts dt {
+  font-size: 12px;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.embed-foot a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  text-decoration: none;
+}
+.embed-foot img {
+  border-radius: 50%;
+}
+
+/* Developer documentation: code scrolls inside its block, never the page. */
+.code-block {
+  margin: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre;
+}
+.prose-page > section {
+  min-width: 0;
+}

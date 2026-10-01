@@ -54,6 +54,13 @@ export default async function OrgPage({ params, searchParams }: { params: Promis
       <h1>{data.org.name}</h1>
       {data.org.description ? <p className="lead prewrap">{data.org.description}</p> : null}
       <Flash lang={lang} params={sp} />
+      {manager ? (
+        <p>
+          <Link href={`/${lang}/organizer/${slug}/integrations`} className="btn btn-ghost btn-sm">
+            {ru ? "API, вебхуки и виджеты" : "API, webhooks and widgets"}
+          </Link>
+        </p>
+      ) : null}
 
       <section className="section-tight">
         <h2 className="h3">{o.tournaments}</h2>
