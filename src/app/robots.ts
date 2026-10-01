@@ -21,6 +21,7 @@ export default function robots(): MetadataRoute.Robots {
     "passes",
     "pass/",
     "messages/",
+    "training",
     "welcome",
     "verify-email",
     "activate",

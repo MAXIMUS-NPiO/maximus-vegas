@@ -5,6 +5,7 @@ import { dict, isLocale } from "@/lib/i18n.ts";
 import { pageMeta } from "@/lib/meta.ts";
 import { viewer } from "@/server/viewer.ts";
 import { hub } from "@/server/queries.ts";
+import { upcomingSessions } from "@/server/academy.ts";
 import { Badge, DbDown, Empty } from "@/components/ui";
 import { LocalTime } from "@/components/time";
 
@@ -26,7 +27,8 @@ export default async function Calendar({ params }: { params: Promise<{ lang: str
       </div>
     );
   if (!user) redirect(`/${lang}/signin?next=/${lang}/calendar`);
-  const data = await hub(db, user);
+  const [data, sessions] = await Promise.all([hub(db, user), upcomingSessions(db, user.id)]);
+  const ru = lang === "ru";
   const items = [
     ...data.matches
       .filter((m) => m.scheduled_at)
@@ -34,6 +36,16 @@ export default async function Calendar({ params }: { params: Promise<{ lang: str
     ...data.registrations
       .filter((r) => !["COMPLETED", "CANCELLED"].includes(r.status))
       .map((r) => ({ at: new Date(r.starts_at), key: r.slug, href: `/${lang}/tournaments/${r.slug}`, title: r.name, sub: d.tournaments.starts, status: r.status, label: d.statuses.tournament[r.status] })),
+    // Training sessions as coach or player (MV-ACADEMY-1).
+    ...sessions.map((s) => ({
+      at: new Date(s.starts_at),
+      key: s.id,
+      href: `/${lang}/training/${s.request_id}`,
+      title: s.coach_id === user.id ? `${ru ? "Занятие с" : "Session with"} @${s.student_username}` : `${ru ? "Занятие с тренером" : "Session with coach"} @${s.coach_username}`,
+      sub: `${s.minutes} ${ru ? "мин" : "min"}`,
+      status: "scheduled",
+      label: ru ? "Занятие" : "Session",
+    })),
   ].sort((a, b) => a.at.getTime() - b.at.getTime());
   return (
     <div className="container narrow page">

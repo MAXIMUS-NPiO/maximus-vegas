@@ -68,7 +68,7 @@ test("role matrix: each role holds only its sections; the administrator holds al
   assert.deepEqual(sectionsFor(["referee"]), ["overview", "disputes", "challenges", "tournaments"]);
   assert.deepEqual(sectionsFor(["analytics"]), ["overview", "tournaments"]);
   assert.deepEqual(sectionsFor(["infrastructure"]), ["overview", "outbox", "messages", "system", "security", "audit"]);
-  assert.deepEqual(sectionsFor(["compliance"]), ["overview", "users", "venues", "payments", "security", "audit"]);
+  assert.deepEqual(sectionsFor(["compliance"]), ["overview", "users", "venues", "academy", "payments", "security", "audit"]);
   for (const role of STAFF_ROLES) assert.ok(hasSection([role], "overview"), role);
   // Every section has at least one role besides the administrator, and the administrator is always notified.
   for (const s of SECTIONS) assert.equal(rolesOf(s)[0], "admin");

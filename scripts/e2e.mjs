@@ -890,5 +890,41 @@ if (process.env.OWNER_CODE) {
   assert.ok((await b.get(`/ru/players/${c3.username}`)).text.includes("Игрок скрыл профиль"), "the marketing role does not open private profiles");
   assert.ok((await org.get("/ru/admin?tab=audit")).text.includes("staff.viewed"), "the view is in the log");
   log("switches: an action of a switched-off feature is refused and the page says so; maintenance shows a banner and holds actions; a staff view of a private profile is marked and logged");
+
+  // ---------- Academy: a verified coach receives a training request in the queue ----------
+  const coachForm = {
+    headline: `E2E тренер ${RUN}`,
+    experience: "e2e: капитан команды в лиге, 2000+ часов, разборы демо для академии.",
+    bio: "",
+    games: ["cs2"],
+    languages: ["ru"],
+    formats: ["online"],
+    city: "",
+    accepting: "1",
+    back: "/ru/coach",
+  };
+  assert.equal((await c3.post("coach.save", coachForm)).ok, "coach_saved");
+  assert.equal((await c3.post("coach.submit", { back: "/ru/coach" })).ok, "coach_submitted");
+  assert.equal((await guest.get(`/ru/coaches/${c3.username}`)).status, 404, "an unverified coach is not public");
+  const academyTab = (await org.get("/ru/admin?tab=academy")).text;
+  const coachId = uuidAfter(academyTab.slice(academyTab.indexOf(c3.username)), "coach");
+  assert.ok(coachId, "the coach waits in the staff queue");
+  assert.equal((await org.post("coach.review", { coach: coachId, decision: "verify", note: "", back: "/ru/admin?tab=academy" })).ok, "coach_reviewed");
+  assert.ok((await guest.get("/ru/coaches")).text.includes(`E2E тренер ${RUN}`), "the verified coach is in the directory");
+  const requested = await newcomer.post("training.request", { coach: coachId, programme: "", game: "cs2", goal: "e2e: хочу поставить раскидки на Mirage", availability: "вечером", back: `/ru/coaches/${c3.username}` });
+  assert.equal(requested.ok, "training_requested", requested.location);
+  const trainingPath = requested.path;
+  const coachQueuePage = (await c3.get("/ru/coach")).text;
+  assert.ok(coachQueuePage.includes("e2e: хочу поставить раскидки на Mirage"), "the request is in the coach's queue");
+  const requestId = uuidAfter(coachQueuePage, "request");
+  assert.equal((await c3.post("training.answer", { request: requestId, decision: "accept", note: "e2e: начнём", back: "/ru/coach" })).ok, "training_answered");
+  const sessionAt = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 16);
+  assert.equal((await c3.post("training.session", { request: requestId, startsAt: sessionAt, tz: "UTC", minutes: "60", place: "https://meet.example.org/e2e", back: trainingPath })).ok, "session_scheduled");
+  assert.equal((await c3.post("training.progress", { request: requestId, kind: "observation", body: "e2e: ранний пик на мид", timeMark: "12:34", evidence: "", metric: "", value: "", session: "", back: trainingPath })).ok, "progress_added");
+  assert.equal((await newcomer.post("training.progress", { request: requestId, kind: "exercise", body: "e2e: не тренер", back: trainingPath })).e, "forbidden");
+  const studentView = (await newcomer.get(trainingPath)).text;
+  assert.ok(studentView.includes("e2e: ранний пик на мид") && studentView.includes("12:34") && studentView.includes("Наблюдение"), "the player sees the coach's record");
+  assert.ok((await newcomer.get("/ru/calendar")).text.includes(`@${c3.username}`), "the session is in the player's calendar");
+  log("academy: a coach is hidden until verified, the request reaches the coach's queue, a session is booked and an observation recorded; the player sees them");
 }
 console.log(`\nE2E OK against ${BASE} (run ${RUN})`);

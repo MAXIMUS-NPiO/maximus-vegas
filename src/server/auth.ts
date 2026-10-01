@@ -8,6 +8,7 @@ import { clanExport, eraseClanData, ownedClansWithMembers } from "./clans.ts";
 import { passExport, revokePassesOf } from "./venues.ts";
 import type { StaffRole } from "./staff-roles.ts";
 import { eraseMessageData, messageExport } from "./messages.ts";
+import { academyExport, eraseAcademyData } from "./academy.ts";
 
 const scrypt = promisify(scryptCb) as (
   password: string,
@@ -370,6 +371,7 @@ export async function exportAccount(db: Database, user: SessionUser) {
     ...(await clanExport(db, user.id)),
     venuePasses: await passExport(db, user.id),
     portalMessages: await messageExport(db, user.id),
+    academy: await academyExport(db, user.id),
     scoutFilters: await q("select name, query, created_at from scout_filters where user_id = $1 order by created_at"),
     watchlist: await q("select u.username as player, w.note, w.created_at from scout_watch w join users u on u.id = w.player_id where w.user_id = $1 order by w.created_at"),
     reportsFiled: await q(
@@ -483,6 +485,8 @@ export async function deleteAccount(db: Database, user: SessionUser, confirmPass
     await revokePassesOf(q, user.id);
     // Delivery records of portal-team messages go; each message keeps only its totals.
     await eraseMessageData(q, user.id);
+    // Academy: the account's training records go; as a coach, open requests are cancelled and the profile goes.
+    await eraseAcademyData(q, user.id);
     // Scouting: the account's filters and watchlist go, and it leaves every other watchlist.
     await q.query("delete from scout_filters where user_id = $1", [user.id]);
     await q.query("delete from scout_watch where user_id = $1 or player_id = $1", [user.id]);
