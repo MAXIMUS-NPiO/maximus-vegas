@@ -162,6 +162,18 @@ export const ERROR_CODES = [
   "ready_check_pending",
   "ready_check_closed",
   "queue_cooldown",
+  // Fair play: reports, sanctions, appeals
+  "account_restricted",
+  "queue_restricted",
+  "tournament_restricted",
+  "report_limit",
+  "invalid_evidence",
+  "sanction_confidence",
+  "sanction_term",
+  "rule_not_found",
+  "appeal_closed",
+  "appeal_exists",
+  "appeal_needs_other_reviewer",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 

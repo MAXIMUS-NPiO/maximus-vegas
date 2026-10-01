@@ -28,6 +28,7 @@ import type { Database } from "@/server/db.ts";
 import type { SessionUser } from "@/server/auth.ts";
 import { ActionForm, Badge, DbDown, Empty, Field, Flash, one, type SearchParams } from "@/components/ui";
 import { LocalTime } from "@/components/time";
+import { ConductTab } from "@/components/conduct-admin";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
   const { lang } = await params;
@@ -40,6 +41,7 @@ const TABS = [
   "users",
   "disputes",
   "challenges",
+  "conduct",
   "applications",
   "memberships",
   "offers",
@@ -57,6 +59,7 @@ const TAB_LABELS: Record<Tab, { ru: string; en: string }> = {
   users: { ru: "Пользователи", en: "Users" },
   disputes: { ru: "Споры матчей", en: "Match disputes" },
   challenges: { ru: "Споры вызовов", en: "Challenge disputes" },
+  conduct: { ru: "Честная игра", en: "Fair play" },
   applications: { ru: "Обращения", en: "Inquiries" },
   memberships: { ru: "Членство", en: "Membership" },
   offers: { ru: "Предложения", en: "Offers" },
@@ -77,6 +80,8 @@ const COUNT_LABELS: Record<string, { ru: string; en: string; tab?: Tab }> = {
   mail_queue: { ru: "Письма в очереди", en: "Emails queued", tab: "outbox" },
   open_disputes: { ru: "Открытые споры матчей", en: "Open match disputes", tab: "disputes" },
   new_applications: { ru: "Новые обращения", en: "New inquiries", tab: "applications" },
+  conduct_reports: { ru: "Жалобы на нарушения", en: "Violation reports", tab: "conduct" },
+  conduct_appeals: { ru: "Апелляции на санкции", en: "Sanction appeals", tab: "conduct" },
 };
 
 export default async function Admin({ params, searchParams }: { params: Promise<{ lang: string }>; searchParams: SearchParams }) {
@@ -212,6 +217,8 @@ export default async function Admin({ params, searchParams }: { params: Promise<
     ) : (
       <Empty title={T("Спорных вызовов нет.", "No disputed challenges.")} />
     );
+  } else if (tab === "conduct") {
+    body = <ConductTab db={db} user={user} lang={lang} back={back} />;
   } else if (tab === "applications") {
     const list = await adminApplications(db);
     body = list.length ? (

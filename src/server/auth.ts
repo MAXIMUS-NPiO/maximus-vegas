@@ -29,6 +29,8 @@ export type SessionUser = {
   mfaAt?: Date | null;
   avatarColor?: string;
   onboarded?: boolean;
+  /** A live suspension sanction: the account reads and appeals, every other action is refused. */
+  restricted?: boolean;
 };
 
 export async function hashPassword(password: string): Promise<string> {
@@ -178,9 +180,12 @@ export async function sessionUser(db: Queryable, token: string | undefined): Pro
     mfa_at: Date | null;
     avatar_color: string;
     onboarded_at: Date | null;
+    restricted: boolean;
   }>(
     `select u.id, u.email, u.username, u.display_name, s.last_seen_at, u.email_verified_at, s.mfa_at, u.avatar_color, u.onboarded_at,
-            array(select role from user_roles r where r.user_id = u.id order by role) as roles
+            array(select role from user_roles r where r.user_id = u.id order by role) as roles,
+            exists (select 1 from sanctions x where x.user_id = u.id and x.kind = 'suspension' and x.revoked_at is null
+                       and x.starts_at <= now() and (x.ends_at is null or x.ends_at > now())) as restricted
        from sessions s join users u on u.id = s.user_id
       where s.id = $1 and s.revoked_at is null and s.expires_at > now() and u.status = 'active'`,
     [id],
@@ -199,6 +204,7 @@ export async function sessionUser(db: Queryable, token: string | undefined): Pro
     mfaAt: row.mfa_at ? new Date(row.mfa_at) : null,
     avatarColor: row.avatar_color,
     onboarded: Boolean(row.onboarded_at),
+    restricted: Boolean(row.restricted),
   };
 }
 
@@ -349,6 +355,13 @@ export async function exportAccount(db: Database, user: SessionUser) {
       "select rc.game, rc.status, rp.side, rp.region, rp.answer, rp.answered_at, rc.created_at from ready_check_players rp join ready_checks rc on rc.id = rp.ready_check_id where rp.user_id = $1 order by rc.created_at",
     ),
     queueCooldowns: await q("select game, kind, cooldown_until, created_at from quick_dodges where user_id = $1 order by created_at"),
+    sanctions: await q(
+      "select kind, protective, rule_code, rule_version, confidence, evidence, decision, starts_at, ends_at, revoked_at, revoke_reason, created_at from sanctions where user_id = $1 order by created_at",
+    ),
+    appeals: await q("select a.statement, a.evidence_url, a.status, a.decision, a.created_at, a.decided_at from sanction_appeals a where a.user_id = $1 order by a.created_at"),
+    reportsFiled: await q(
+      "select u.username as player, c.rule_code, c.context_url, c.description, c.evidence_url, c.status, c.created_at, c.resolved_at from conduct_reports c join users u on u.id = c.subject_id where c.reporter_id = $1 order by c.created_at",
+    ),
     challenges: await q(
       `select c.kind, c.game, c.status, (c.challenger_id = $1) as sent_by_me, case when c.challenger_id = $1 then uo.username else uc.username end as opponent,
               c.score_challenger, c.score_opponent, (c.winner_id = $1) as won, c.created_at, c.completed_at
@@ -449,6 +462,11 @@ export async function deleteAccount(db: Database, user: SessionUser, confirmPass
     await q.query("delete from ratings where user_id = $1", [user.id]);
     await q.query("delete from quick_dodges where user_id = $1", [user.id]);
     await q.query("update ready_check_players set region = '' where user_id = $1", [user.id]);
+    // Reports still under review that no decision relies on are withdrawn with the account; decided ones stay as the record.
+    await q.query(
+      "delete from conduct_reports c where c.reporter_id = $1 and c.status in ('open','reviewing') and not exists (select 1 from sanctions s where s.report_id = c.id)",
+      [user.id],
+    );
     await q.query(
       "update challenges set status = 'cancelled', resolution = 'account_deleted' where $1 in (challenger_id, opponent_id) and status in ('pending','accepted')",
       [user.id],

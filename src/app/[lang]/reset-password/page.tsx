@@ -9,7 +9,7 @@ import { cleanToken, TokenShell } from "@/components/token-page";
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
   const { lang } = await params;
   if (!isLocale(lang)) return {};
-  return { ...pageMeta(lang, "reset-password", lang === "ru" ? "Новый пароль" : "New password", undefined, { noindex: true }), referrer: "no-referrer" };
+  return { ...pageMeta(lang, "reset-password", lang === "ru" ? "Новый пароль" : "New password", undefined, { noindex: true }), referrer: "strict-origin" };
 }
 
 export default async function ResetPassword({ params, searchParams }: { params: Promise<{ lang: string }>; searchParams: SearchParams }) {

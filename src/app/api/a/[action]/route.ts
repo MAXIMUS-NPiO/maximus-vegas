@@ -24,6 +24,7 @@ import * as repair from "@/server/repair.ts";
 import * as veto from "@/server/veto.ts";
 import * as finder from "@/server/finder.ts";
 import * as quick from "@/server/quickmatch.ts";
+import * as conduct from "@/server/conduct.ts";
 import { storeUpload } from "@/server/media.ts";
 import { drainOutbox, mailConfigured } from "@/server/mail.ts";
 import { fail } from "@/server/errors.ts";
@@ -61,6 +62,10 @@ const staff = async (c: Ctx) => {
 };
 
 const signupDraft = (c: Ctx) => ({ email: c.form.email ?? "", username: c.form.username ?? "", displayName: c.form.displayName ?? "", marketing: c.form.marketing ?? "" });
+
+/** What an account under a suspension sanction may still do: read, appeal, manage its own access and data. */
+const RESTRICTED_OK = new Set(["auth.signout", "conduct.appeal", "notifications.read", "account.session", "account.password", "account.delete", "account.accept_terms"]);
+const conductAdmin = (c: Ctx) => `/${c.lang}/admin?tab=conduct`;
 
 const handlers: Record<string, Handler> = {
   // ---------- Accounts ----------
@@ -706,6 +711,67 @@ const handlers: Record<string, Handler> = {
     return { to: `/${c.lang}/matchmaking`, ok: "party_removed" };
   },
 
+  // ---------- Fair play: reports, sanctions, appeals ----------
+  "conduct.report": async (c) => {
+    const r = await conduct.fileReport(c.db, u(c), { username: c.form.username, rule: c.form.rule, context: c.form.context, description: c.form.description, evidence: c.form.evidence });
+    return { to: `/${c.lang}/conduct`, ok: r.created ? "report_filed" : "report_exists" };
+  },
+  "conduct.appeal": async (c) => {
+    await conduct.fileAppeal(c.db, u(c), c.form.sanction, c.form.statement, c.form.evidence);
+    return { to: `/${c.lang}/conduct`, ok: "appeal_filed" };
+  },
+  "conduct.take": async (c) => {
+    await conduct.takeReport(c.db, await staff(c), c.form.report);
+    return { to: conductAdmin(c), ok: "saved" };
+  },
+  "conduct.dismiss": async (c) => {
+    await conduct.dismissReport(c.db, await staff(c), c.form.report, c.form.reason);
+    return { to: conductAdmin(c), ok: "report_dismissed" };
+  },
+  "conduct.sanction": async (c) => {
+    const user = await staff(c);
+    mfa.requireStepUp(user);
+    await conduct.issueSanction(c.db, user, {
+      username: c.form.username,
+      kind: c.form.kind,
+      protective: c.form.protective,
+      rule: c.form.rule,
+      confidence: c.form.confidence,
+      days: c.form.days,
+      hours: c.form.hours,
+      evidence: c.form.evidence,
+      decision: c.form.decision,
+      report: c.form.report,
+    });
+    return { to: conductAdmin(c), ok: "sanction_issued" };
+  },
+  "conduct.revoke": async (c) => {
+    const user = await staff(c);
+    mfa.requireStepUp(user);
+    await conduct.revokeSanction(c.db, user, c.form.sanction, c.form.reason);
+    return { to: conductAdmin(c), ok: "sanction_revoked" };
+  },
+  "conduct.decide": async (c) => {
+    const user = await staff(c);
+    mfa.requireStepUp(user);
+    await conduct.decideAppeal(c.db, user, c.form.appeal, c.form.grant === "1", c.form.decision);
+    return { to: conductAdmin(c), ok: "appeal_decided" };
+  },
+  "conduct.rule": async (c) => {
+    const user = await staff(c);
+    mfa.requireStepUp(user);
+    const r = await conduct.publishRule(c.db, user, {
+      code: c.form.code,
+      titleRu: c.form.titleRu,
+      titleEn: c.form.titleEn,
+      bodyRu: c.form.bodyRu,
+      bodyEn: c.form.bodyEn,
+      sourceRu: c.form.sourceRu,
+      sourceEn: c.form.sourceEn,
+    });
+    return { to: conductAdmin(c), ok: r.version > 1 ? "rule_versioned" : "rule_published" };
+  },
+
   // ---------- Membership and payments ----------
   "membership.apply": async (c) => {
     const r = await billing.applyForMembership(c.db, u(c), { offer: c.form.offer, objective: c.form.objective }, c.lang);
@@ -932,6 +998,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
   }
   if (mailConfigured()) after(() => drainOutbox(c.db, 10).catch((e) => console.error("[outbox]", (e as Error).message)));
   try {
+    // A suspension sanction keeps the account signed in to read and appeal; every other action stops here.
+    if (c.user?.restricted && !RESTRICTED_OK.has(action)) fail("account_restricted");
     const result = await handler(c);
     const r = typeof result === "string" ? { to: result } : result ?? {};
     if (r.external) return redirect(r.to!, r.cookie);

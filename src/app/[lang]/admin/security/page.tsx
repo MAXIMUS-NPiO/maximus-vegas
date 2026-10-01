@@ -12,7 +12,7 @@ import { ActionForm, Badge, DbDown, Field, Flash, type SearchParams } from "@/co
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
   const { lang } = await params;
   if (!isLocale(lang)) return {};
-  return { ...pageMeta(lang, "admin/security", lang === "ru" ? "Второй фактор входа" : "Second sign-in factor", undefined, { noindex: true }), referrer: "no-referrer" };
+  return { ...pageMeta(lang, "admin/security", lang === "ru" ? "Второй фактор входа" : "Second sign-in factor", undefined, { noindex: true }), referrer: "strict-origin" };
 }
 
 /** Recovery codes are handed over once, in a short-lived HttpOnly cookie scoped to this page. */

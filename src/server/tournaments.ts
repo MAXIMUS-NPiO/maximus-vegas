@@ -30,6 +30,7 @@ import { parseSeriesRules, seriesCustomised, seriesRulesOf, type SeriesRules } f
 import { admissionOf, checkAdmission, parseAdmission, type Admission, type AdmissionInput } from "./admission.ts";
 import * as v from "./validate.ts";
 import { mapPoolOf, parseMapPool } from "./map-pool.ts";
+import { assertNotRestricted } from "./restrictions.ts";
 
 export const STATUSES = [
   "DRAFT",
@@ -599,6 +600,7 @@ export async function register(db: Database, user: SessionUser, tournamentId: st
     }
     await checkRegion(q, t, roster);
     await checkAdmission(q, t, roster);
+    await assertNotRestricted(q, roster, "tournament_ban");
     if (t.circuit_id || t.qualifier_circuit_id) await checkCircuitEligibility(q, t, { userId: regUser, teamId: regTeam });
     const [active] = await q.query<{ n: number }>(
       "select count(*)::int as n from registrations where tournament_id = $1 and status = 'registered'",

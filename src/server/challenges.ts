@@ -14,6 +14,7 @@ import { fail, isUniqueViolation } from "./errors.ts";
 import { isGame } from "../lib/games.ts";
 import { grantXp, XP } from "./progression.ts";
 import { applyQuickRating, challengeSides } from "./rating.ts";
+import { assertNotRestricted } from "./restrictions.ts";
 import * as v from "./validate.ts";
 
 const CHALLENGE_HOURS = 72;
@@ -67,6 +68,7 @@ export async function createChallenge(db: Database, user: SessionUser, input: { 
     const [target] = await q.query<{ id: string }>("select id from users where username = $1 and status = 'active'", [username]);
     if (!target) fail("not_found");
     if (target.id === user.id) fail("cannot_challenge_self");
+    await assertNotRestricted(q, [user.id, target.id], "queue_ban");
     try {
       const [row] = await q.query<{ id: string }>(
         `insert into challenges (kind, game, challenger_id, opponent_id, message, expires_at)
@@ -89,6 +91,7 @@ export async function respondChallenge(db: Database, user: SessionUser, id: stri
     const c = await lock(q, id);
     if (c.opponent_id !== user.id || c.kind !== "challenge") fail("forbidden");
     if (c.status !== "pending") fail("challenge_closed");
+    if (accept) await assertNotRestricted(q, [c.challenger_id, c.opponent_id], "queue_ban");
     await q.query("update challenges set status = $2, responded_at = now() where id = $1", [c.id, accept ? "accepted" : "declined"]);
     await notify(q, [c.challenger_id], accept ? "challenge_accepted" : "challenge_declined", { challengeId: c.id, by: user.username });
     await audit(q, { actorId: user.id, action: accept ? "challenge.accepted" : "challenge.declined", entity: "challenge", entityId: c.id });

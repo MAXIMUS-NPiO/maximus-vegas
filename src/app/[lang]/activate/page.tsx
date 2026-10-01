@@ -9,7 +9,7 @@ import { cleanToken, TokenShell } from "@/components/token-page";
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
   const { lang } = await params;
   if (!isLocale(lang)) return {};
-  return { ...pageMeta(lang, "activate", lang === "ru" ? "Активация аккаунта" : "Activate account", undefined, { noindex: true }), referrer: "no-referrer" };
+  return { ...pageMeta(lang, "activate", lang === "ru" ? "Активация аккаунта" : "Activate account", undefined, { noindex: true }), referrer: "strict-origin" };
 }
 
 export default async function Activate({ params, searchParams }: { params: Promise<{ lang: string }>; searchParams: SearchParams }) {
