@@ -73,6 +73,11 @@ test("vacancies: leaders open up to three; applications are accepted into the te
   const app3 = await applyToPost(db, a3, vacancy.id, "");
   assert.equal((await notes(cap.id, "finder_application")).length, 3);
   assert.equal((await applicationsToDecide(db, cap.id)).length, 3);
+  // A suspended applicant leaves the queue and cannot be accepted.
+  await db.query("update users set status = 'suspended' where id = $1", [a3.id]);
+  assert.equal((await applicationsToDecide(db, cap.id)).length, 2);
+  await rejects(decideApplication(db, cap, app3.id, true), "not_found");
+  await db.query("update users set status = 'active' where id = $1", [a3.id]);
   // Deciding.
   await rejects(decideApplication(db, mate, app1.id, true), "forbidden");
   assert.deepEqual(await decideApplication(db, cap, app1.id, true), { changed: true });

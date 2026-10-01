@@ -174,6 +174,9 @@ export async function decideApplication(db: Database, user: SessionUser, applica
     const [app] = await q.query<{ id: string; user_id: string; status: string }>("select id, user_id, status from finder_applications where id = $1 for update", [applicationId]);
     if (app.status !== "pending") return { changed: false };
     if (accept && !isOpen(post)) fail("finder_closed");
+    // A suspended or deleted applicant cannot be taken into a team or a group.
+    const [applicant] = await q.query<{ status: string }>("select status from users where id = $1", [app.user_id]);
+    if (accept && applicant?.status !== "active") fail("not_found");
     await q.query("update finder_applications set status = $2, decided_by = $3, decided_at = now() where id = $1", [app.id, accept ? "accepted" : "declined", user.id]);
     const gameName = gameBySlug(post.game)?.name ?? post.game;
     if (accept && team) {
@@ -243,7 +246,7 @@ export async function listPosts(q: Queryable, filter: { kind: FinderKind; game?:
 export async function teamVacancies(q: Queryable, teamId: string): Promise<ListedPost[]> {
   return q.query<ListedPost>(
     `select ${POST_COLUMNS} from finder_posts p join users u on u.id = p.user_id left join teams t on t.id = p.team_id
-      where p.team_id = $1 and p.status = 'open' and p.expires_at > now() order by p.created_at desc`,
+      where p.team_id = $1 and p.status = 'open' and p.expires_at > now() and u.status = 'active' order by p.created_at desc`,
     [teamId],
   );
 }
@@ -256,7 +259,7 @@ export async function applicationsToDecide(q: Queryable, userId: string): Promis
     `select a.id, a.post_id, a.status, a.message, a.created_at, u.username, u.display_name
        from finder_applications a join finder_posts p on p.id = a.post_id join users u on u.id = a.user_id
        left join teams t on t.id = p.team_id
-      where a.status = 'pending' and p.status = 'open'
+      where a.status = 'pending' and p.status = 'open' and u.status = 'active'
         and ((p.kind = 'lfg' and p.user_id = $1) or (p.kind = 'vacancy' and (t.owner_id = $1 or t.captain_id = $1)))
       order by a.created_at`,
     [userId],
