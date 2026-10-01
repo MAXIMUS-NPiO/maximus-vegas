@@ -75,7 +75,7 @@ const step = (title) => console.log(`\n— ${title}`);
 async function main(browser) {
   const guest = await new Person(browser, "guest").open();
   step("public pages");
-  for (const path of ["/ru", "/en", "/ru/tournaments", "/ru/games", "/ru/rankings", "/ru/players", "/ru/teams", "/ru/clans", "/ru/ladders", "/ru/finder", "/ru/matchmaking", "/ru/trust", "/ru/status", "/ru/help", "/ru/terms", "/ru/privacy", "/ru/signup", "/ru/signin", "/en/trust"])
+  for (const path of ["/ru", "/en", "/ru/tournaments", "/ru/games", "/ru/rankings", "/ru/players", "/ru/teams", "/ru/clans", "/ru/ladders", "/ru/venues", "/ru/developers", "/ru/finder", "/ru/matchmaking", "/ru/trust", "/ru/status", "/ru/help", "/ru/terms", "/ru/privacy", "/ru/signup", "/ru/signin", "/en/trust"])
     await guest.go(path);
 
   step("token pages post their forms (a wrong token is refused by the server, not by the browser's origin)");
@@ -140,6 +140,16 @@ async function main(browser) {
     await c.go(href);
     await c.submit("match.confirm");
   }
+
+  step("venues: a venue added and sent for review stays hidden");
+  await a.go(`${spacePath}/venues`);
+  await a.submit("venue.create", { name: `Smoke Hall ${RUN}`, kind: "club", address: "Smoke street 1", city: "Dubai", country: "AE" });
+  await a.submit("venue.submit");
+  const venueHref = await a.pg.locator("a[href*='/ru/venues/']").first().getAttribute("href");
+  // Checked without a browser tab: a 404 page would be logged as a console error.
+  const hidden = await fetch(BASE + venueHref, { redirect: "manual" });
+  if (hidden.status !== 404) problems.push(`[guest] an unconfirmed venue answered ${hidden.status}`);
+  await c.go("/ru/passes");
 
   step("integrations: an API key shown once, widgets on a third-party page");
   await a.go(`${spacePath}/integrations`);

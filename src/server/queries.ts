@@ -552,7 +552,8 @@ export async function adminOverview(db: Queryable) {
             (select count(*)::int from conduct_reports where status in ('open','reviewing')) as conduct_reports,
             (select count(*)::int from sanction_appeals where status = 'open') as conduct_appeals,
             (select count(*)::int from transfer_disputes where status = 'open') as transfer_disputes,
-            (select count(*)::int from clan_wars where status = 'disputed') as war_disputes`,
+            (select count(*)::int from clan_wars where status = 'disputed') as war_disputes,
+            (select count(*)::int from venues where status = 'submitted') as venue_reviews`,
   );
   return counts;
 }

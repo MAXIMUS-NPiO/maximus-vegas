@@ -23,6 +23,8 @@ import { leaderboardStandings, scoreLog } from "@/server/leaderboard.ts";
 import { DEFAULT_WEIGHTS, mergeWeights, WEIGHT_KEYS } from "@/server/scoring.ts";
 import { tournamentSponsors } from "@/server/sponsors.ts";
 import { mediaUrl } from "@/server/media.ts";
+import { eventPassFor } from "@/server/venues.ts";
+import { venueText } from "@/lib/venue-text.ts";
 import type { Database } from "@/server/db.ts";
 import type { SessionUser } from "@/server/auth.ts";
 import { ActionForm, Badge, DbDown, Empty, Field, Flash, SignInPrompt, type SearchParams } from "@/components/ui";
@@ -224,6 +226,14 @@ export default async function TournamentPage({ params, searchParams }: { params:
   const canSubmit = leaderboard && entry?.leader && entry.status === "registered" && t.status === "IN_PROGRESS" && !deadlinePassed;
   const myLines = leaderboard && entry ? await scoreLog(db, t.id, { registrationId: entry.id }) : [];
   const [myCountry] = user && t.region_lock.length ? await db.query<{ country_code: string | null }>("select country_code from users where id = $1", [user.id]) : [];
+  // A tournament held at a confirmed venue: the place, and the participant's QR pass.
+  const placeId = (t as { venue_id?: string | null }).venue_id ?? null;
+  const [place] = placeId
+    ? await db.query<{ slug: string; name: string; city: string }>("select slug, name, city from venues where id = $1 and status = 'confirmed'", [placeId])
+    : [];
+  const passOpen = Boolean(place && entry?.status === "registered" && ["PUBLISHED", "REGISTRATION_OPEN", "REGISTRATION_CLOSED", "IN_PROGRESS", "PAUSED"].includes(t.status));
+  const myPass = passOpen && user ? await eventPassFor(db, t.id, user.id) : null;
+  const vx = venueText[lang];
   const tabs = leaderboard ? (["overview", "rules", "participants", "leaderboard", "standings"] as const) : (["overview", "rules", "participants", "bracket", "standings"] as const);
   const MainTables = () =>
     groupTables.length ? (
@@ -304,6 +314,14 @@ export default async function TournamentPage({ params, searchParams }: { params:
             <dt>{d.tournaments.organizer}</dt>
             <dd>{t.org_name}</dd>
           </div>
+          {place ? (
+            <div>
+              <dt>{vx.venue}</dt>
+              <dd>
+                <Link href={`/${lang}/venues/${place.slug}`}>{place.name}</Link> · {place.city}
+              </dd>
+            </div>
+          ) : null}
           {circuit ? (
             <div>
               <dt>{ru ? "Серия" : "Circuit"}</dt>
@@ -360,6 +378,22 @@ export default async function TournamentPage({ params, searchParams }: { params:
       </header>
 
       <Flash lang={lang} params={sp} />
+
+      {passOpen ? (
+        <section className="notice stack-sm" id="pass">
+          <strong>{vx.eventPass}</strong>
+          <p className="small">{vx.eventPassLead}</p>
+          {myPass ? (
+            <Link href={`/${lang}/passes#pass-${myPass.id}`} className="btn btn-primary btn-sm">
+              {vx.showPass}
+            </Link>
+          ) : (
+            <ActionForm action="pass.event" lang={lang} back={back} hidden={{ tournament: t.id }}>
+              <button className="btn btn-primary btn-sm">{vx.getPass}</button>
+            </ActionForm>
+          )}
+        </section>
+      ) : null}
 
       <section className="card reg-panel" aria-labelledby="reg-title">
         <h2 id="reg-title" className="h3">

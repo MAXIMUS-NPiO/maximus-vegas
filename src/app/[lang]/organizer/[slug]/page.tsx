@@ -55,7 +55,10 @@ export default async function OrgPage({ params, searchParams }: { params: Promis
       {data.org.description ? <p className="lead prewrap">{data.org.description}</p> : null}
       <Flash lang={lang} params={sp} />
       {manager ? (
-        <p>
+        <p className="row">
+          <Link href={`/${lang}/organizer/${slug}/venues`} className="btn btn-ghost btn-sm">
+            {ru ? "Площадки и QR-пропуска" : "Venues and QR passes"}
+          </Link>
           <Link href={`/${lang}/organizer/${slug}/integrations`} className="btn btn-ghost btn-sm">
             {ru ? "API, вебхуки и виджеты" : "API, webhooks and widgets"}
           </Link>

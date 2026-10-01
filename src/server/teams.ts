@@ -8,7 +8,7 @@ import * as v from "./validate.ts";
 
 type Team = { id: string; slug: string; name: string; owner_id: string; captain_id: string; game: string };
 
-async function uniqueSlug(q: Queryable, table: "teams" | "organizations" | "tournaments" | "circuits" | "clans", name: string) {
+async function uniqueSlug(q: Queryable, table: "teams" | "organizations" | "tournaments" | "circuits" | "clans" | "venues", name: string) {
   const base = v.slugify(name);
   for (let i = 0; i < 6; i++) {
     const slug = i === 0 ? base : `${base}-${v.shortId()}`;

@@ -29,6 +29,7 @@ import type { SessionUser } from "@/server/auth.ts";
 import { ActionForm, Badge, DbDown, Empty, Field, Flash, one, type SearchParams } from "@/components/ui";
 import { LocalTime } from "@/components/time";
 import { ConductTab } from "@/components/conduct-admin";
+import { VenuesTab } from "@/components/venues-admin";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
   const { lang } = await params;
@@ -43,6 +44,7 @@ const TABS = [
   "challenges",
   "conduct",
   "applications",
+  "venues",
   "memberships",
   "offers",
   "payments",
@@ -61,6 +63,7 @@ const TAB_LABELS: Record<Tab, { ru: string; en: string }> = {
   challenges: { ru: "Споры вызовов", en: "Challenge disputes" },
   conduct: { ru: "Честная игра", en: "Fair play" },
   applications: { ru: "Обращения", en: "Inquiries" },
+  venues: { ru: "Площадки", en: "Venues" },
   memberships: { ru: "Членство", en: "Membership" },
   offers: { ru: "Предложения", en: "Offers" },
   payments: { ru: "Оплаты", en: "Payments" },
@@ -84,6 +87,7 @@ const COUNT_LABELS: Record<string, { ru: string; en: string; tab?: Tab }> = {
   conduct_appeals: { ru: "Апелляции на санкции", en: "Sanction appeals", tab: "conduct" },
   transfer_disputes: { ru: "Споры о переходах", en: "Transfer disputes", tab: "conduct" },
   war_disputes: { ru: "Споры клановых войн", en: "Clan war disputes", tab: "conduct" },
+  venue_reviews: { ru: "Площадки на проверке", en: "Venues in review", tab: "venues" },
 };
 
 export default async function Admin({ params, searchParams }: { params: Promise<{ lang: string }>; searchParams: SearchParams }) {
@@ -221,6 +225,8 @@ export default async function Admin({ params, searchParams }: { params: Promise<
     );
   } else if (tab === "conduct") {
     body = <ConductTab db={db} user={user} lang={lang} back={back} />;
+  } else if (tab === "venues") {
+    body = <VenuesTab db={db} lang={lang} back={back} />;
   } else if (tab === "applications") {
     const list = await adminApplications(db);
     body = list.length ? (

@@ -1505,4 +1505,70 @@ export const migrations: Migration[] = [
       `insert into webhook_cursor (id, last_audit_id) select 1, coalesce(max(id), 0) from audit_log`,
     ],
   },
+  {
+    id: 20,
+    name: "venues_passes",
+    statements: [
+      // Physical venues of an organising space. Only a confirmed venue is public; a change of its name or address
+      // sends it back for confirmation.
+      `create table venues (
+        id uuid primary key default gen_random_uuid(),
+        org_id uuid not null references organizations(id) on delete cascade,
+        slug text not null unique,
+        name text not null check (char_length(name) between 2 and 80),
+        kind text not null check (kind in ('club','arena','games_house','clubhouse','other')),
+        address text not null check (char_length(address) between 5 and 200),
+        city text not null check (char_length(city) between 2 and 80),
+        country_code text check (country_code ~ '^[A-Z]{2}$'),
+        description text not null default '' check (char_length(description) <= 1000),
+        website text not null default '' check (char_length(website) <= 300),
+        status text not null default 'draft' check (status in ('draft','submitted','confirmed','rejected','suspended')),
+        review_note text not null default '',
+        reviewed_by uuid references users(id),
+        reviewed_at timestamptz,
+        created_by uuid not null references users(id),
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      )`,
+      `create index venues_public on venues(city, name) where status = 'confirmed'`,
+      `create index venues_org on venues(org_id)`,
+      `alter table tournaments add column venue_id uuid references venues(id)`,
+      // QR passes: the token is never stored in the clear for lookup (SHA-256), and it is sealed for showing the QR again.
+      `create table venue_passes (
+        id uuid primary key default gen_random_uuid(),
+        venue_id uuid not null references venues(id) on delete cascade,
+        user_id uuid not null references users(id),
+        tournament_id uuid references tournaments(id) on delete cascade,
+        kind text not null check (kind in ('event','guest')),
+        valid_from timestamptz not null,
+        valid_until timestamptz not null,
+        token_hash text not null unique,
+        token_sealed text not null,
+        scheme text not null check (scheme in ('aes-256-gcm','plain')),
+        status text not null default 'active' check (status in ('active','used','revoked')),
+        used_at timestamptz,
+        used_by uuid references users(id),
+        revoked_at timestamptz,
+        revoked_by uuid references users(id),
+        note text not null default '' check (char_length(note) <= 200),
+        issued_by uuid references users(id),
+        created_at timestamptz not null default now(),
+        check (valid_until > valid_from),
+        check ((kind = 'event') = (tournament_id is not null))
+      )`,
+      `create unique index venue_passes_event on venue_passes(tournament_id, user_id) where tournament_id is not null`,
+      `create index venue_passes_user on venue_passes(user_id, valid_until desc)`,
+      `create index venue_passes_venue on venue_passes(venue_id, created_at desc)`,
+      // Every scan, admitted or refused, for the venue's log.
+      `create table venue_checkins (
+        id bigserial primary key,
+        venue_id uuid not null references venues(id) on delete cascade,
+        pass_id uuid references venue_passes(id) on delete set null,
+        staff_id uuid not null references users(id),
+        result text not null check (result in ('admitted','used','expired','not_yet','revoked','withdrawn','wrong_venue')),
+        at timestamptz not null default now()
+      )`,
+      `create index venue_checkins_venue on venue_checkins(venue_id, at desc)`,
+    ],
+  },
 ];
