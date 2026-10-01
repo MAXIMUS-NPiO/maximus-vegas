@@ -24,6 +24,7 @@ import { DEFAULT_MATCH_MINUTES } from "@/server/conflicts.ts";
 import { eventStaff, incidentQueue } from "@/server/liveops.ts";
 import { IncidentQueue } from "@/components/incident-queue";
 import { orgVenues } from "@/server/venues.ts";
+import { StreamsManager } from "@/components/streams";
 import { ActionForm, Badge, DbDown, Field, Flash, type SearchParams } from "@/components/ui";
 import { TournamentForm } from "@/components/tournament-form";
 import { BracketView, FfaRounds, formatLabel, groupTitle, labelContext, matchLabel, playoffFormatLabel, StandingsTable, type StandingName } from "@/components/tournament";
@@ -826,6 +827,8 @@ export default async function ManageTournament({ params, searchParams }: { param
           </ActionForm>
         </section>
       ) : null}
+
+      {manager ? <StreamsManager db={db} lang={lang} back={back} tournament={{ id: t.id, status }} /> : null}
 
       {manager && matchFormat && !finished && status !== "CANCELLED" ? (
         <section className="section-tight" id="schedule">

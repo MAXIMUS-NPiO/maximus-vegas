@@ -299,6 +299,24 @@ assert.ok(phoneList.includes('class="bracket-narrow"') && phoneList.includes("М
 assert.ok(!(await guest.get(`/ru/tournaments/${tSlug}`)).text.includes("Мой матч"), "no personal chip for a guest");
 log("bracket on phones: round list with chips; the player's match is linked, a guest sees none");
 
+// ---------- Streams, recordings and overlays ----------
+const streamTitle = `E2E эфир ${RUN}`;
+const streamForm = { tournament: tId, url: `https://www.twitch.tv/e2e_${RUN}`, title: streamTitle, kind: "live", match: gdMatch, language: "ru", startsAt: "", tz: "UTC", back: manage };
+assert.equal((await org.post("stream.add", streamForm)).e, "stream_rights", "the rights must be confirmed");
+assert.equal((await org.post("stream.add", { ...streamForm, rights: "1" })).ok, "stream_added");
+assert.equal((await players[4].post("stream.add", { ...streamForm, url: "https://www.twitch.tv/not_mine", rights: "1" })).e, "forbidden", "only the event's managers assign streams");
+const watchMatch = (await guest.get(`/ru/matches/${gdMatch}`)).text;
+assert.ok(watchMatch.includes(streamTitle) && watchMatch.includes(`https://www.twitch.tv/e2e_${RUN}`) && watchMatch.includes("Смотреть здесь"), "the match page shows the stream with a click-to-play player");
+assert.ok(!/<iframe[^>]*player\.twitch\.tv/.test(watchMatch), "nothing from the platform loads before a click");
+assert.ok((await players[0].get("/ru/notifications")).text.includes("будет транслироваться"), "the match's players are told");
+assert.ok((await guest.get(`/ru/tournaments/${tSlug}`)).text.includes(streamTitle), "the tournament page lists the stream");
+assert.ok((await guest.get("/ru/media")).text.includes(streamTitle), "the media centre lists it");
+const overlayPage = await guest.get(`/embed/ru/matches/${gdMatch}/overlay`);
+assert.ok(overlayPage.status === 200 && overlayPage.text.includes("overlay-score"), "the broadcast overlay renders");
+const overlayJson = await (await fetch(`${BASE}/api/overlay/matches/${gdMatch}`)).json();
+assert.ok(overlayJson.data.a.name && overlayJson.data.b.name && ["none", "reported", "official"].includes(overlayJson.data.score.state), "overlay data from the match record");
+log("streams: rights confirmed, a stream assigned to a match shows on the match, tournament and media pages with a click-to-play player; the players are told; overlay page and JSON");
+
 // ---------- Live operations ----------
 assert.equal((await org.post("match.pause", { match: gdMatch, reason: "e2e: server restart", back: `/ru/matches/${gdMatch}` })).ok, "match_paused");
 assert.ok((await players[0].get(`/ru/matches/${gdMatch}`)).text.includes("e2e: server restart"), "both sides see why the match is paused");

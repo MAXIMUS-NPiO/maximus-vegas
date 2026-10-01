@@ -1624,4 +1624,29 @@ export const migrations: Migration[] = [
       `create index message_recipients_user on message_recipients(user_id, created_at desc) where status = 'sent'`,
     ],
   },
+  {
+    id: 22,
+    name: "streams_recordings",
+    statements: [
+      // Broadcasts and recordings of an event or of one of its matches (MV-MEDIA-1). A regenerated bracket
+      // removes its matches: their streams then belong to the event as a whole.
+      `create table streams (
+        id uuid primary key default gen_random_uuid(),
+        tournament_id uuid not null references tournaments(id) on delete cascade,
+        match_id uuid references matches(id) on delete set null,
+        kind text not null check (kind in ('live','vod')),
+        platform text not null check (platform in ('twitch','youtube','kick','vk','other')),
+        url text not null check (url ~ '^https://' and char_length(url) <= 500),
+        title text not null default '' check (char_length(title) <= 80),
+        language text not null default '' check (language in ('','ru','en','other')),
+        starts_at timestamptz,
+        rights_confirmed_by uuid not null references users(id),
+        rights_confirmed_at timestamptz not null default now(),
+        created_at timestamptz not null default now()
+      )`,
+      `create unique index streams_unique on streams(tournament_id, coalesce(match_id::text, ''), kind, url)`,
+      `create index streams_tournament on streams(tournament_id, created_at)`,
+      `create index streams_match on streams(match_id) where match_id is not null`,
+    ],
+  },
 ];

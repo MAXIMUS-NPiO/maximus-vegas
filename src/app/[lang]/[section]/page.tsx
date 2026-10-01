@@ -10,7 +10,7 @@ import { ApplicationForm } from "@/components/application-form";
 
 export const dynamicParams = false;
 /** Directions that have their own working page are served by it, not by this description page. */
-const OWN_PAGE = new Set(["venues"]);
+const OWN_PAGE = new Set(["venues", "media"]);
 export function generateStaticParams() {
   return DIRECTIONS.filter((x) => !OWN_PAGE.has(x.slug)).map((x) => ({ section: x.slug }));
 }

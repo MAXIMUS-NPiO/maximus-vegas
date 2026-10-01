@@ -32,6 +32,7 @@ import * as partner from "@/server/partner.ts";
 import * as venues from "@/server/venues.ts";
 import * as messages from "@/server/messages.ts";
 import * as system from "@/server/system.ts";
+import * as streams from "@/server/streams.ts";
 import { storeUpload } from "@/server/media.ts";
 import { drainOutbox, mailConfigured } from "@/server/mail.ts";
 import { fail } from "@/server/errors.ts";
@@ -1097,6 +1098,24 @@ const handlers: Record<string, Handler> = {
     const user = await staff(c, "sponsors");
     await sponsors.setSponsorActive(c.db, user, idOf(c.form.sponsor), c.form.active === "1");
     return { ok: "saved" };
+  },
+  // ---------- Streams and recordings (MV-MEDIA-1) ----------
+  "stream.add": async (c) => {
+    await streams.addStream(c.db, u(c), c.form.tournament, {
+      url: c.form.url,
+      title: c.form.title,
+      kind: c.form.kind,
+      match: c.form.match,
+      language: c.form.language,
+      startsAt: c.form.startsAt,
+      tz: c.form.tz,
+      rights: c.form.rights,
+    });
+    return { ok: "stream_added" };
+  },
+  "stream.remove": async (c) => {
+    await streams.removeStream(c.db, u(c), c.form.stream);
+    return { ok: "stream_removed" };
   },
   // ---------- Portal-team messages and system controls (MV-STAFF-1) ----------
   "message.create": async (c) => {
