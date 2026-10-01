@@ -13,12 +13,14 @@ import { audit } from "./audit.ts";
 import { notify } from "./access.ts";
 import { fail } from "./errors.ts";
 import { lockMatchWithTournament, noShowFrom, staffFor } from "./matches.ts";
-import { canRefereeTournament, regLeaders, regMembers } from "./tournaments.ts";
+import { regLeaders, regMembers } from "./tournaments.ts";
+import { ANSWER_MINUTES, escalate, resolveIncident } from "./liveops.ts";
 import * as v from "./validate.ts";
 
 export type StepKey =
   // a match of the player
   | "paused"
+  | "match_paused"
   | "waiting_opponent"
   | "check_in"
   | "opponent_check_in"
@@ -63,6 +65,8 @@ export type MatchStepInput = {
   noShowAt: Date | null;
   /** Another open match of this side exists in the event (after a win, a bye, a draw or a drop to the lower bracket). */
   hasNext: boolean;
+  /** A referee holds the match. */
+  paused?: boolean;
   now: Date;
 };
 
@@ -81,6 +85,7 @@ export function matchStep(x: MatchStepInput): Step {
     return x.hasNext ? step("dropped", "next") : step("lost");
   }
   if (x.tStatus === "PAUSED") return step("paused");
+  if (x.paused) return step("match_paused");
   if (!x.aReg || !x.bReg || x.status === "pending") return step("waiting_opponent");
   if (x.status === "disputed") return step("review");
   if (x.status === "result_submitted") return x.pendingSide === x.side ? step("wait_confirm") : step("confirm", "confirm");
@@ -155,9 +160,10 @@ type MatchRow = {
   a_checked_in_at: Date | null;
   b_checked_in_at: Date | null;
   scheduled_at: Date | null;
+  paused_at: Date | null;
 };
 
-const MATCH_COLUMNS = "m.id, m.status, m.outcome, m.bracket, m.a_reg, m.b_reg, m.winner_reg, m.a_checked_in_at, m.b_checked_in_at, m.scheduled_at";
+const MATCH_COLUMNS = "m.id, m.status, m.outcome, m.bracket, m.a_reg, m.b_reg, m.winner_reg, m.a_checked_in_at, m.b_checked_in_at, m.scheduled_at, m.paused_at";
 
 /** The open match of an entry that comes first in the event: earlier stage and round first. */
 export async function openMatchFor(q: Queryable, tournamentId: string, regId: string, exceptId?: string) {
@@ -230,6 +236,7 @@ export async function gameDay(q: Queryable, user: SessionUser, now = new Date())
         pendingSide: current.status === "result_submitted" ? await pendingSideOf(q, current.id) : null,
         noShowAt: noShowFrom({ scheduled_at: current.scheduled_at, t_no_show: r.no_show_minutes }),
         hasNext: false,
+        paused: Boolean(current.paused_at),
         now,
       });
     } else {
@@ -304,6 +311,7 @@ export type RefereeCall = {
   resolution: string;
   created_at: Date;
   resolved_at: Date | null;
+  escalated_at: Date | null;
   opened_by: string;
   resolved_by: string | null;
 };
@@ -311,7 +319,7 @@ export type RefereeCall = {
 /** Calls of a match, newest first, with the usernames of the caller and of the staff member who answered. */
 export async function refereeCalls(q: Queryable, matchId: string): Promise<RefereeCall[]> {
   return q.query<RefereeCall>(
-    `select i.id, i.side, i.message, i.status, i.resolution, i.created_at, i.resolved_at, u.username as opened_by, s.username as resolved_by
+    `select i.id, i.side, i.message, i.status, i.resolution, i.created_at, i.resolved_at, i.escalated_at, u.username as opened_by, s.username as resolved_by
        from incidents i join users u on u.id = i.opened_by left join users s on s.id = i.resolved_by
       where i.match_id = $1 and i.kind = 'referee_call' order by i.created_at desc`,
     [matchId],
@@ -328,9 +336,10 @@ async function sideName(q: Queryable, regId: string | null) {
 
 /**
  * A participant asks the referee to come to the match. Players on the roster and the entry's leaders may call;
- * a side has at most one open call, so a repeated call returns the open one and notifies nobody again.
+ * a side has at most one open call, so a repeated call returns the open one and notifies staff no second time.
+ * A call repeated after the answer time escalates the open call to the space's owners and administrators once.
  */
-export async function callReferee(db: Database, user: SessionUser, matchId: string, messageInput: unknown): Promise<{ id: string; created: boolean }> {
+export async function callReferee(db: Database, user: SessionUser, matchId: string, messageInput: unknown): Promise<{ id: string; created: boolean; escalated: boolean }> {
   const message = v.clean(messageInput, 500);
   if (message.length < 3) fail("invalid_input");
   return db.tx(async (q) => {
@@ -340,11 +349,16 @@ export async function callReferee(db: Database, user: SessionUser, matchId: stri
     const inSide = async (reg: string | null) => [...(await regMembers(q, reg)), ...(await regLeaders(q, reg))].includes(user.id);
     const side = m.a_reg && (await inSide(m.a_reg)) ? "a" : m.b_reg && (await inSide(m.b_reg)) ? "b" : null;
     if (!side) fail("not_participant");
-    const [open] = await q.query<{ id: string }>(
-      "select id from incidents where match_id = $1 and side = $2 and kind = 'referee_call' and status = 'open'",
+    const [open] = await q.query<Parameters<typeof escalate>[2]>(
+      "select * from incidents where match_id = $1 and side = $2 and kind = 'referee_call' and status = 'open' for update",
       [m.id, side],
     );
-    if (open) return { id: open.id, created: false };
+    if (open) {
+      const waited = Date.now() - new Date(open.created_at).getTime() > ANSWER_MINUTES * 60_000;
+      const scope = { id: m.tournament_id, org_id: m.org_id, name: m.t_name, slug: m.t_slug, status: m.t_status };
+      const escalated = waited && !open.escalated_at ? await escalate(q, scope, open, user.id, message) : false;
+      return { id: open.id, created: false, escalated };
+    }
     const [row] = await q.query<{ id: string }>(
       "insert into incidents (tournament_id, match_id, kind, side, opened_by, message) values ($1, $2, 'referee_call', $3, $4, $5) returning id",
       [m.tournament_id, m.id, side, user.id, message],
@@ -352,31 +366,17 @@ export async function callReferee(db: Database, user: SessionUser, matchId: stri
     const staff = (await staffFor(q, m.org_id, m.tournament_id)).filter((id) => id !== user.id);
     await notify(q, staff, "referee_call", { tournament: m.t_name, matchId: m.id, side: await sideName(q, side === "a" ? m.a_reg : m.b_reg) });
     await audit(q, { actorId: user.id, action: "match.referee_called", entity: "match", entityId: m.id, data: { side, incident: row.id } });
-    return { id: row.id, created: true };
+    return { id: row.id, created: true, escalated: false };
   });
 }
 
 /** Staff answer a call and close it; the caller and the side's leaders are notified. Closing a closed call changes nothing. */
 export async function closeRefereeCall(db: Database, user: SessionUser, callId: string, noteInput: unknown): Promise<{ matchId: string; closed: boolean }> {
   if (!/^[0-9a-f-]{36}$/i.test(callId)) fail("not_found");
-  const note = v.clean(noteInput, 500);
-  return db.tx(async (q) => {
-    const [ref] = await q.query<{ match_id: string | null }>("select match_id from incidents where id = $1 and kind = 'referee_call'", [callId]);
-    if (!ref?.match_id) fail("not_found");
-    // Same lock order as every match writer: tournament, match, then the call.
-    const m = await lockMatchWithTournament(q, ref!.match_id!);
-    if (!(await canRefereeTournament(q, { id: m.tournament_id, org_id: m.org_id }, user))) fail("forbidden");
-    const [call] = await q.query<{ status: string; opened_by: string; side: "a" | "b" | null }>(
-      "select status, opened_by, side from incidents where id = $1 for update",
-      [callId],
-    );
-    if (call.status !== "open") return { matchId: m.id, closed: false };
-    await q.query("update incidents set status = 'resolved', resolution = $2, resolved_by = $3, resolved_at = now() where id = $1", [callId, note, user.id]);
-    const leaders = call.side ? await regLeaders(q, call.side === "a" ? m.a_reg : m.b_reg) : [];
-    await notify(q, [call.opened_by, ...leaders].filter((id) => id !== user.id), "referee_call_closed", { tournament: m.t_name, matchId: m.id });
-    await audit(q, { actorId: user.id, action: "match.referee_call_closed", entity: "match", entityId: m.id, data: { incident: callId } });
-    return { matchId: m.id, closed: true };
-  });
+  const [ref] = await db.query<{ kind: string; match_id: string | null }>("select kind, match_id from incidents where id = $1", [callId]);
+  if (!ref || ref.kind !== "referee_call" || !ref.match_id) fail("not_found");
+  const r = await resolveIncident(db, user, callId, noteInput);
+  return { matchId: ref!.match_id!, closed: r.closed };
 }
 
 /** Open calls of a tournament, oldest first: the referee's to-do list. */

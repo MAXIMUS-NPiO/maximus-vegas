@@ -953,4 +953,21 @@ export const migrations: Migration[] = [
       `create index incidents_open_by_tournament on incidents(tournament_id, created_at) where status = 'open'`,
     ],
   },
+  {
+    id: 11,
+    name: "live_operations",
+    statements: [
+      // The incident queue: staff-reported kinds, priority, an assignee and escalation to the space's owners.
+      `alter table incidents drop constraint incidents_kind_check`,
+      `alter table incidents add constraint incidents_kind_check check (kind in ('referee_call','technical','conduct','no_show','schedule','other'))`,
+      `alter table incidents add column priority text not null default 'normal' check (priority in ('low','normal','high','urgent'))`,
+      `alter table incidents add column assigned_to uuid references users(id)`,
+      `alter table incidents add column assigned_at timestamptz`,
+      `alter table incidents add column escalated_at timestamptz`,
+      `alter table incidents add column escalation_note text not null default ''`,
+      // A referee may pause one match: results, confirmations, check-ins and no-shows wait until it resumes.
+      `alter table matches add column paused_at timestamptz`,
+      `alter table matches add column pause_reason text not null default ''`,
+    ],
+  },
 ];

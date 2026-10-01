@@ -19,6 +19,7 @@ import * as schedule from "@/server/schedule.ts";
 import * as lobbies from "@/server/lobbies.ts";
 import * as feedback from "@/server/feedback.ts";
 import * as gameday from "@/server/gameday.ts";
+import * as liveops from "@/server/liveops.ts";
 import { storeUpload } from "@/server/media.ts";
 import { drainOutbox, mailConfigured } from "@/server/mail.ts";
 import { fail } from "@/server/errors.ts";
@@ -478,7 +479,42 @@ const handlers: Record<string, Handler> = {
   "match.call": async (c) => {
     const id = idOf(c.form.match);
     const r = await gameday.callReferee(c.db, u(c), id, c.form.message);
-    return { to: matchOrGameDay(c, id), ok: r.created ? "referee_called" : "referee_call_exists" };
+    return { to: matchOrGameDay(c, id), ok: r.created ? "referee_called" : r.escalated ? "referee_call_escalated" : "referee_call_exists" };
+  },
+  "match.pause": async (c) => {
+    const id = idOf(c.form.match);
+    const r = await liveops.pauseMatch(c.db, u(c), id, c.form.reason);
+    return { ok: r.changed ? "match_paused" : "saved" };
+  },
+  "match.resume": async (c) => {
+    const id = idOf(c.form.match);
+    const r = await liveops.resumeMatch(c.db, u(c), id);
+    return { ok: r.changed ? "match_resumed" : "saved" };
+  },
+  "incident.open": async (c) => {
+    await liveops.openIncident(c.db, u(c), idOf(c.form.tournament), {
+      kind: c.form.kind,
+      priority: c.form.priority,
+      matchId: c.form.match ? idOf(c.form.match) : "",
+      message: c.form.message,
+    });
+    return { ok: "incident_opened" };
+  },
+  "incident.assign": async (c) => {
+    await liveops.assignIncident(c.db, u(c), idOf(c.form.incident), c.form.assignee);
+    return { ok: "saved" };
+  },
+  "incident.priority": async (c) => {
+    await liveops.setIncidentPriority(c.db, u(c), idOf(c.form.incident), c.form.priority);
+    return { ok: "saved" };
+  },
+  "incident.escalate": async (c) => {
+    const r = await liveops.escalateIncident(c.db, u(c), idOf(c.form.incident), c.form.note);
+    return { ok: r.escalated ? "incident_escalated" : "saved" };
+  },
+  "incident.resolve": async (c) => {
+    const r = await liveops.resolveIncident(c.db, u(c), idOf(c.form.incident), c.form.note);
+    return { ok: r.closed ? "incident_resolved" : "saved" };
   },
   "match.call_close": async (c) => {
     const r = await gameday.closeRefereeCall(c.db, u(c), idOf(c.form.call), c.form.note);

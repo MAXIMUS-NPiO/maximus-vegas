@@ -7,6 +7,10 @@ const STEPS: Record<StepKey, { ru: string; en: string }> = {
     ru: "Турнир на паузе. Продолжение — по решению организатора; время матчей может сдвинуться.",
     en: "The event is paused. It resumes when the organiser decides; match times may move.",
   },
+  match_paused: {
+    ru: "Судья поставил матч на паузу{reason}. Результаты, подтверждения и отметки ждут продолжения.",
+    en: "The referee paused this match{reason}. Results, confirmations and check-ins wait until it resumes.",
+  },
   waiting_opponent: {
     ru: "Соперник ещё не определён: он выйдет из предыдущего матча. Матч обновится здесь сам.",
     en: "Your opponent is not known yet: they come from an earlier match. This match updates here by itself.",
@@ -69,8 +73,8 @@ const ACTIONS: Record<StepAction | "open_match" | "dispute", { ru: string; en: s
 
 const fillVars = (t: string, vars: Record<string, string | number | undefined>) => t.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ""));
 
-export function stepText(key: StepKey, lang: Locale, vars: { series?: string; score?: string; place?: number | null } = {}) {
-  let text = fillVars(STEPS[key][lang], { series: vars.series ? ` (${vars.series})` : "", score: vars.score ?? "" });
+export function stepText(key: StepKey, lang: Locale, vars: { series?: string; score?: string; place?: number | null; reason?: string } = {}) {
+  let text = fillVars(STEPS[key][lang], { series: vars.series ? ` (${vars.series})` : "", score: vars.score ?? "", reason: vars.reason ? `: ${vars.reason}` : "" });
   if (key === "finished" && vars.place) text += lang === "ru" ? ` Ваше место: ${vars.place}.` : ` Your place: ${vars.place}.`;
   return text;
 }

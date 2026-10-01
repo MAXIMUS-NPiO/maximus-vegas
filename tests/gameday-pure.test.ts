@@ -47,6 +47,9 @@ test("unknown opponent, pause and cancellation come before anything else", () =>
   assert.equal(key({ status: "pending" }), "waiting_opponent");
   assert.equal(key({ tStatus: "PAUSED" }), "paused");
   assert.equal(key({ tStatus: "PAUSED", status: "cancelled" }), "cancelled");
+  assert.equal(key({ paused: true }), "match_paused", "a referee's hold comes before check-in and play");
+  assert.equal(key({ paused: true, status: "result_submitted", pendingSide: "b" }), "match_paused");
+  assert.equal(key({ paused: true, status: "completed", outcome: "played", winnerReg: "A" }), "won_last", "a decided match is past any hold");
 });
 
 test("finished match: win, last win, drop to the lower bracket, loss, draw, bye", () => {
@@ -78,13 +81,13 @@ test("event without an open match: check-in, waiting, out, finished, formats", (
 
 test("every step and action has a text in both languages with no placeholder left", () => {
   const keys: StepKey[] = [
-    "paused", "waiting_opponent", "check_in", "opponent_check_in", "opponent_absent", "play", "confirm", "wait_confirm", "review",
+    "paused", "match_paused", "waiting_opponent", "check_in", "opponent_check_in", "opponent_absent", "play", "confirm", "wait_confirm", "review",
     "won", "won_last", "dropped", "lost", "draw", "bye", "cancelled", "event_check_in", "event_ready", "waiting_start",
     "waiting_round", "out", "finished", "disqualified", "ffa", "leaderboard",
   ];
   for (const lang of ["ru", "en"] as const) {
     for (const k of keys) {
-      const text = stepText(k, lang, { series: "Bo3", score: "2 : 1", place: 3 });
+      const text = stepText(k, lang, { series: "Bo3", score: "2 : 1", place: 3, reason: "server restart" });
       assert.ok(text.length > 3 && !/[{}]/.test(text), `${lang} ${k}: ${text}`);
     }
     for (const a of ["checkin", "report", "confirm", "call_referee", "next", "event_checkin", "open_lobby", "open_tournament", "open_match", "dispute"] as const)

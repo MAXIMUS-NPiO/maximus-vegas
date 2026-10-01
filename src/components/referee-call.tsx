@@ -2,6 +2,8 @@ import Link from "next/link";
 import type { Locale } from "@/lib/i18n.ts";
 import { actionText, gameDayText } from "@/lib/gameday-text.ts";
 import type { RefereeCall } from "@/server/gameday.ts";
+import { ANSWER_MINUTES } from "@/server/liveops.ts";
+import { liveopsText } from "@/lib/liveops-text.ts";
 import { ActionForm, Badge, Field } from "@/components/ui";
 import { LocalTime } from "@/components/time";
 
@@ -19,6 +21,13 @@ export function CallBlock({ lang, matchId, calls, open, canCall, back }: { lang:
         </p>
       ) : null}
       {pending ? <p className="small muted prewrap">{pending.message}</p> : null}
+      {pending && pending.escalated_at ? <p className="small">{liveopsText[lang].escalatedNote}</p> : null}
+      {pending && !pending.escalated_at && canCall && Date.now() - new Date(pending.created_at).getTime() > ANSWER_MINUTES * 60_000 ? (
+        <ActionForm action="match.call" lang={lang} back={back} hidden={{ match: matchId, message: pending.message }}>
+          <p className="small muted">{liveopsText[lang].remindNote}</p>
+          <button className="btn btn-ghost btn-sm">{liveopsText[lang].remind}</button>
+        </ActionForm>
+      ) : null}
       {answered && (!pending || answered.resolved_at! > pending.created_at) ? (
         <p className="small prewrap">
           <strong>{g.callReply}:</strong> {answered.resolution || g.callNoComment}

@@ -21,6 +21,8 @@ import { roundKeyOf, scheduleConflicts, venues, VENUE_KINDS } from "@/server/sch
 import { seriesCustomised, seriesMap, seriesRulesOf } from "@/server/series.ts";
 import { feedbackList, feedbackSummary } from "@/server/feedback.ts";
 import { DEFAULT_MATCH_MINUTES } from "@/server/conflicts.ts";
+import { eventStaff, incidentQueue } from "@/server/liveops.ts";
+import { IncidentQueue } from "@/components/incident-queue";
 import { ActionForm, Badge, DbDown, Field, Flash, type SearchParams } from "@/components/ui";
 import { TournamentForm } from "@/components/tournament-form";
 import { BracketView, FfaRounds, formatLabel, groupTitle, labelContext, matchLabel, playoffFormatLabel, StandingsTable, type StandingName } from "@/components/tournament";
@@ -265,6 +267,9 @@ export default async function ManageTournament({ params, searchParams }: { param
     : { stage: "Stage", station: "Station", server: "Server", table: "Table", room: "Room", other: "Other" };
   const registeredCount = list.filter((p) => p.status === "registered").length;
   const openMatches = matches.filter((m) => ["ready", "in_progress", "result_submitted", "disputed"].includes(m.status));
+  // Live operations: the incident queue of a running event for its staff.
+  const liveOps = referee && ["REGISTRATION_CLOSED", "IN_PROGRESS", "PAUSED"].includes(t.status);
+  const [queue, staffList] = liveOps ? await Promise.all([incidentQueue(db, t.id), eventStaff(db, t.org_id, t.id)]) : [null, []];
   const report: Array<[string, number]> = leaderboard
     ? [
         ["registered", t.registered],
@@ -386,6 +391,18 @@ export default async function ManageTournament({ params, searchParams }: { param
             </div>
           ) : null}
         </section>
+      ) : null}
+
+      {liveOps && queue && user ? (
+        <IncidentQueue
+          lang={lang}
+          tournamentId={t.id}
+          queue={queue}
+          staff={staffList}
+          matches={openMatches.map((m) => ({ id: m.id, label: `${label(m)}: ${m.a_name ?? d.common.tbd} ${d.common.vs} ${m.b_name ?? d.common.tbd}` }))}
+          back={`/${lang}/organizer/t/${t.slug}`}
+          userId={user.id}
+        />
       ) : null}
 
       {manager && (editable || status === "DRAFT") && !leaderboard ? (
