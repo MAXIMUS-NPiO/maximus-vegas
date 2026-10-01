@@ -25,6 +25,9 @@ type Item = {
   evidence_url: string;
   expires_at: Date;
   created_at: Date;
+  /** The viewer's side in a quick match with parties (`a` is the challenger's side) and the players per side. */
+  my_side?: "a" | "b";
+  side_size?: number;
 };
 
 export function ChallengeList({ lang, list, userId, back }: { lang: Locale; list: Item[]; userId: string; back: string }) {
@@ -34,12 +37,16 @@ export function ChallengeList({ lang, list, userId, back }: { lang: Locale; list
   return (
     <ul className="list challenge-list">
       {list.map((c) => {
-        const mine = c.challenger_id === userId;
+        const mine = (c.my_side ?? (c.challenger_id === userId ? "a" : "b")) === "a";
+        // Only the named players (the two leaders in a party match) report, confirm, dispute and cancel.
+        const leader = c.challenger_id === userId || c.opponent_id === userId;
+        const size = c.side_size ?? 1;
+        const party = size > 1 ? T(" и группа", " and party") : "";
         const otherName = mine ? c.opponent_name : c.challenger_name;
         const otherUser = mine ? c.opponent : c.challenger;
         const hidden = { challenge: c.id };
-        const winnerName = c.winner_id ? (c.winner_id === c.challenger_id ? c.challenger_name : c.opponent_name) : null;
-        const reportedName = c.reported_winner ? (c.reported_winner === c.challenger_id ? c.challenger_name : c.opponent_name) : null;
+        const winnerName = c.winner_id ? (c.winner_id === c.challenger_id ? c.challenger_name : c.opponent_name) + party : null;
+        const reportedName = c.reported_winner ? (c.reported_winner === c.challenger_id ? c.challenger_name : c.opponent_name) + party : null;
         return (
           <li key={c.id} className="stack-sm">
             <div className="row-between">
@@ -48,7 +55,9 @@ export function ChallengeList({ lang, list, userId, back }: { lang: Locale; list
                 <Link href={`/${lang}/players/${otherUser}`} className="text-link">
                   {otherName}
                 </Link>
+                {party}
                 {c.kind === "quick" ? <span className="badge badge-info">{T("Быстрый матч", "Quick match")}</span> : null}
+                {size > 1 ? <span className="badge">{`${size} ${T("на", "v")} ${size}`}</span> : null}
               </span>
               <Badge status={c.status === "completed" ? "ok" : c.status === "disputed" ? "bad" : ["pending", "reported"].includes(c.status) ? "warn" : c.status === "accepted" ? "live" : "muted"}>
                 {challengeStatus(c.status, lang)}
@@ -66,8 +75,11 @@ export function ChallengeList({ lang, list, userId, back }: { lang: Locale; list
                 {T("Действует до", "Open until")} <LocalTime iso={c.expires_at} lang={lang} />
               </p>
             ) : null}
+            {!leader && ["accepted", "reported", "disputed"].includes(c.status) ? (
+              <p className="small muted">{T("Результат отправляет и подтверждает лидер группы.", "The party leader reports and confirms the result.")}</p>
+            ) : null}
             <div className="row">
-              {c.status === "pending" && !mine ? (
+              {leader && c.status === "pending" && !mine ? (
                 <>
                   <ActionForm action="challenge.respond" lang={lang} back={back} hidden={{ ...hidden, accept: "1" }}>
                     <button className="btn btn-primary btn-xs">{T("Принять", "Accept")}</button>
@@ -77,12 +89,12 @@ export function ChallengeList({ lang, list, userId, back }: { lang: Locale; list
                   </ActionForm>
                 </>
               ) : null}
-              {(c.status === "pending" && mine) || (c.status === "accepted" && c.kind === "quick") ? (
+              {leader && ((c.status === "pending" && mine) || (c.status === "accepted" && c.kind === "quick")) ? (
                 <ActionForm action="challenge.cancel" lang={lang} back={back} hidden={hidden}>
                   <button className="btn btn-ghost btn-xs">{T("Отменить", "Cancel")}</button>
                 </ActionForm>
               ) : null}
-              {c.status === "reported" && c.reported_by !== userId ? (
+              {leader && c.status === "reported" && c.reported_by !== userId ? (
                 <>
                   <span className="small">
                     {T("Соперник сообщил: победил", "Opponent reports the winner as")} <strong>{reportedName}</strong>
@@ -99,16 +111,16 @@ export function ChallengeList({ lang, list, userId, back }: { lang: Locale; list
                   </details>
                 </>
               ) : null}
-              {c.status === "reported" && c.reported_by === userId ? <span className="small muted">{T("Ждём подтверждения соперника.", "Waiting for the opponent to confirm.")}</span> : null}
+              {leader && c.status === "reported" && c.reported_by === userId ? <span className="small muted">{T("Ждём подтверждения соперника.", "Waiting for the opponent to confirm.")}</span> : null}
             </div>
-            {c.status === "accepted" ? (
+            {leader && c.status === "accepted" ? (
               <details className="disclosure">
                 <summary>{T("Сообщить результат", "Report the result")}</summary>
                 <ActionForm action="challenge.report" lang={lang} back={back} hidden={hidden} className="stack">
                   <Field label={T("Итог", "Outcome")}>
                     <select name="result" required>
-                      <option value="won">{T("Я победил", "I won")}</option>
-                      <option value="lost">{T("Я проиграл", "I lost")}</option>
+                      <option value="won">{size > 1 ? T("Мы победили", "We won") : T("Я победил", "I won")}</option>
+                      <option value="lost">{size > 1 ? T("Мы проиграли", "We lost") : T("Я проиграл", "I lost")}</option>
                     </select>
                   </Field>
                   <div className="score-inputs">

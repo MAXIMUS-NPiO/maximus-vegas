@@ -151,6 +151,17 @@ export const ERROR_CODES = [
   "not_your_turn",
   "finder_closed",
   "finder_limit",
+  // Parties and the ready check
+  "already_in_party",
+  "not_in_party",
+  "not_party_leader",
+  "party_full",
+  "party_queued",
+  "party_too_small",
+  "party_member_inactive",
+  "ready_check_pending",
+  "ready_check_closed",
+  "queue_cooldown",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 

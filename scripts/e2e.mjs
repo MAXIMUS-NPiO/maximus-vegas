@@ -526,14 +526,35 @@ assert.equal((await b.post("challenge.respond", { challenge: chId, accept: "1", 
 assert.equal((await a.post("challenge.report", { challenge: chId, result: "won", myScore: "2", theirScore: "0", back: "/ru/challenges" })).ok, "result_submitted");
 assert.equal((await a.post("challenge.confirm", { challenge: chId, back: "/ru/challenges" })).e !== null, true, "the reporter cannot confirm their own result");
 assert.equal((await b.post("challenge.confirm", { challenge: chId, back: "/ru/challenges" })).ok, "result_confirmed");
-const q1 = await c3.post("quick.join", { game: "valorant" });
+// A game nobody waits for in this database, so the pairing below is between these two players only.
+const queuePage = (await c3.get("/ru/matchmaking")).text;
+const quickGame = [...queuePage.matchAll(/<option value="([a-z0-9-]+)"[^>]*>(.*?)<\/option>/gs)].find(([, , label]) => !label.includes("ждут"))?.[1];
+assert.ok(quickGame, "a game with an empty queue");
+const q1 = await c3.post("quick.join", { game: quickGame });
 assert.equal(q1.ok, "quick_queued");
-const q2 = await d4.post("quick.join", { game: "valorant" });
-assert.equal(q2.ok, "quick_matched", "a second real player is paired instead of queued");
+const q2 = await d4.post("quick.join", { game: quickGame });
+assert.equal(q2.ok, "quick_ready_check", "a second real player is found; both confirm before the match exists");
+const checkPage = (await c3.get("/ru/matchmaking")).text;
+const readyCheckId = uuidAfter(checkPage, "check");
+assert.ok(readyCheckId && checkPage.includes("подтвердите готовность"), "the ready check is shown with its buttons");
+assert.equal((await c3.post("quick.ready", { check: readyCheckId })).ok, "quick_ready");
+assert.equal((await d4.post("quick.ready", { check: readyCheckId })).ok, "quick_matched", "the last confirmation creates the match");
+assert.equal((await c3.post("quick.ready", { check: readyCheckId })).e, "ready_check_closed");
+// Party: invitation, leader-only search, the whole party leaves the queue when a member cancels.
+assert.equal((await a.post("party.create", { game: "cs2" })).ok, "party_created");
+assert.equal((await a.post("party.invite", { username: b.username })).ok, "party_invited");
+const partyInvite = uuidAfter((await b.get("/ru/matchmaking")).text, "invite");
+assert.ok(partyInvite, "the invitation is shown to the invited player");
+assert.equal((await b.post("party.respond", { invite: partyInvite, accept: "1" })).ok, "party_joined");
+assert.equal((await b.post("quick.join", { game: "cs2" })).e, "not_party_leader");
+assert.equal((await a.post("quick.join", { game: "cs2", region: "MENA" })).ok, "quick_queued");
+assert.ok((await b.get("/ru/matchmaking")).text.includes("Группа в очереди"), "every member sees the party queued");
+assert.equal((await b.post("quick.leave", {})).ok, "quick_left");
+assert.equal((await a.post("party.leave", {})).ok, "party_disbanded");
 assert.equal((await a.post("objective.claim", { objective: "first_challenge", back: "/ru/progress" })).ok, "reward_claimed");
 assert.equal((await a.post("objective.claim", { objective: "first_challenge", back: "/ru/progress" })).e, "already_claimed");
 assert.equal((await b.post("shop.buy", { item: "ivory", back: "/ru/progress" })).e, "insufficient_coins");
-log("1v1 challenge with confirmation, quick match pairing, objectives paid once, coins cannot overspend");
+log("1v1 challenge with confirmation, quick match with a ready check, a party queued and cancelled, objectives paid once, coins cannot overspend");
 
 // ---------- Membership (no payment configured in this run) ----------
 const applied = await b.post("membership.apply", { offer: "vegas-membership", objective: "Premium pass", back: "/ru/membership" });

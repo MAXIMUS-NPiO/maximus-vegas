@@ -22,11 +22,11 @@ import {
   confirmChallenge,
   createChallenge,
   disputeChallenge,
-  joinQuickMatch,
   reportChallenge,
   resolveChallenge,
   respondChallenge,
 } from "../src/server/challenges.ts";
+import { answerReadyCheck, joinQuickMatch } from "../src/server/quickmatch.ts";
 import { createSponsor, activeSponsors } from "../src/server/sponsors.ts";
 import { sniffImage } from "../src/server/media.ts";
 import { DomainError } from "../src/server/errors.ts";
@@ -146,13 +146,16 @@ test("quick match pairs only real queued players for the same game, never the pl
   const y = await mk("quicky");
   const z = await mk("quickz");
   const first = await joinQuickMatch(db, x, "valorant");
-  assert.equal(first.matched, null, "nobody waiting: queued, not matched with an invented opponent");
+  assert.equal(first.readyCheck, null, "nobody waiting: queued, not matched with an invented opponent");
   await rejects(joinQuickMatch(db, x, "valorant"), "already_queued");
   const other = await joinQuickMatch(db, z, "lol");
-  assert.equal(other.matched, null, "different game does not pair");
+  assert.equal(other.readyCheck, null, "different game does not pair");
   const second = await joinQuickMatch(db, y, "valorant");
-  assert.ok(second.matched);
-  const [c] = await db.query<{ kind: string; status: string; challenger_id: string; opponent_id: string }>("select * from challenges where id = $1", [second.matched]);
+  assert.ok(second.readyCheck, "a real waiting player is found; both confirm before the match exists");
+  assert.equal((await answerReadyCheck(db, x, second.readyCheck, true)).status, "pending");
+  const done = await answerReadyCheck(db, y, second.readyCheck, true);
+  assert.equal(done.status, "passed");
+  const [c] = await db.query<{ kind: string; status: string; challenger_id: string; opponent_id: string }>("select * from challenges where id = $1", [done.challengeId]);
   assert.equal(c.kind, "quick");
   assert.equal(c.status, "accepted");
   assert.deepEqual([c.challenger_id, c.opponent_id].sort(), [x.id, y.id].sort());

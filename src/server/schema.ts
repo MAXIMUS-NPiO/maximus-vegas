@@ -1029,4 +1029,107 @@ export const migrations: Migration[] = [
       `create unique index finder_one_pending on finder_applications(post_id, user_id) where status = 'pending'`,
     ],
   },
+  {
+    id: 14,
+    name: "parties_ready_check_rating",
+    statements: [
+      // Parties: a leader and up to four more players of one game; a player is in one party at a time.
+      `create table parties (
+        id uuid primary key default gen_random_uuid(),
+        leader_id uuid not null references users(id) on delete cascade,
+        game text not null,
+        created_at timestamptz not null default now()
+      )`,
+      `create table party_members (
+        party_id uuid not null references parties(id) on delete cascade,
+        user_id uuid not null references users(id) on delete cascade,
+        joined_at timestamptz not null default now(),
+        primary key (party_id, user_id)
+      )`,
+      `create unique index party_members_one_party on party_members(user_id)`,
+      `create table party_invites (
+        id uuid primary key default gen_random_uuid(),
+        party_id uuid not null references parties(id) on delete cascade,
+        user_id uuid not null references users(id) on delete cascade,
+        invited_by uuid not null references users(id),
+        status text not null default 'pending' check (status in ('pending','accepted','declined','revoked')),
+        created_at timestamptz not null default now(),
+        responded_at timestamptz
+      )`,
+      `create unique index party_invites_pending on party_invites(party_id, user_id) where status = 'pending'`,
+      // Ready check: every player of a found match confirms before the match exists.
+      `create table ready_checks (
+        id uuid primary key default gen_random_uuid(),
+        game text not null,
+        size int not null check (size between 1 and 5),
+        status text not null default 'pending' check (status in ('pending','passed','failed')),
+        reasons jsonb not null default '{}',
+        challenge_id uuid references challenges(id),
+        created_at timestamptz not null default now(),
+        expires_at timestamptz not null,
+        settled_at timestamptz
+      )`,
+      `create index ready_checks_pending on ready_checks(game, expires_at) where status = 'pending'`,
+      `create table ready_check_players (
+        ready_check_id uuid not null references ready_checks(id) on delete cascade,
+        user_id uuid not null references users(id) on delete cascade,
+        side text not null check (side in ('a','b')),
+        party_id uuid,
+        queued_at timestamptz not null,
+        region text not null default '',
+        answer text check (answer in ('ready','declined')),
+        answered_at timestamptz,
+        primary key (ready_check_id, user_id)
+      )`,
+      `create index ready_check_players_user on ready_check_players(user_id)`,
+      `alter table quick_queue add column party_id uuid references parties(id) on delete cascade`,
+      `alter table quick_queue add column region text not null default ''`,
+      `alter table quick_queue add column held_by uuid references ready_checks(id) on delete set null`,
+      // Players of each side of a quick match (party matches have several per side).
+      `create table challenge_members (
+        challenge_id uuid not null references challenges(id) on delete cascade,
+        user_id uuid not null references users(id) on delete cascade,
+        side text not null check (side in ('a','b')),
+        primary key (challenge_id, user_id)
+      )`,
+      `create index challenge_members_user on challenge_members(user_id)`,
+      // A declined or missed ready check: a queue cooldown that grows with repeats.
+      `create table quick_dodges (
+        id uuid primary key default gen_random_uuid(),
+        user_id uuid not null references users(id) on delete cascade,
+        game text not null,
+        ready_check_id uuid references ready_checks(id) on delete set null,
+        kind text not null check (kind in ('declined','missed')),
+        cooldown_until timestamptz not null,
+        created_at timestamptz not null default now()
+      )`,
+      `create index quick_dodges_user on quick_dodges(user_id, created_at desc)`,
+      // Quick-match rating per game (MV-RATING-1) and every change of it.
+      `create table ratings (
+        user_id uuid not null references users(id) on delete cascade,
+        game text not null,
+        rating int not null default 1000 check (rating >= 100),
+        matches int not null default 0,
+        wins int not null default 0,
+        losses int not null default 0,
+        peak int not null default 1000,
+        updated_at timestamptz not null default now(),
+        primary key (user_id, game)
+      )`,
+      `create index ratings_game on ratings(game, rating desc)`,
+      `create table rating_events (
+        id uuid primary key default gen_random_uuid(),
+        user_id uuid not null references users(id) on delete cascade,
+        game text not null,
+        challenge_id uuid not null references challenges(id),
+        result text not null check (result in ('win','loss')),
+        before int not null,
+        after int not null,
+        delta int not null,
+        created_at timestamptz not null default now(),
+        unique (user_id, challenge_id)
+      )`,
+      `create index rating_events_user on rating_events(user_id, game, created_at desc)`,
+    ],
+  },
 ];
