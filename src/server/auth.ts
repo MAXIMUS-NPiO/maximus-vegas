@@ -340,6 +340,15 @@ export async function exportAccount(db: Database, user: SessionUser) {
     finderApplications: await q(
       "select a.status, a.message, a.created_at, a.decided_at, p.kind, p.game from finder_applications a join finder_posts p on p.id = a.post_id where a.user_id = $1 order by a.created_at",
     ),
+    quickRatings: await q("select game, rating, matches, wins, losses, peak, updated_at from ratings where user_id = $1 order by game"),
+    ratingHistory: await q("select game, result, before, after, delta, created_at from rating_events where user_id = $1 order by created_at"),
+    party: await q(
+      "select p.game, (p.leader_id = $1) as leader, m.joined_at from party_members m join parties p on p.id = m.party_id where m.user_id = $1",
+    ),
+    readyChecks: await q(
+      "select rc.game, rc.status, rp.side, rp.region, rp.answer, rp.answered_at, rc.created_at from ready_check_players rp join ready_checks rc on rc.id = rp.ready_check_id where rp.user_id = $1 order by rc.created_at",
+    ),
+    queueCooldowns: await q("select game, kind, cooldown_until, created_at from quick_dodges where user_id = $1 order by created_at"),
     challenges: await q(
       `select c.kind, c.game, c.status, (c.challenger_id = $1) as sent_by_me, case when c.challenger_id = $1 then uo.username else uc.username end as opponent,
               c.score_challenger, c.score_opponent, (c.winner_id = $1) as won, c.created_at, c.completed_at
@@ -429,7 +438,17 @@ export async function deleteAccount(db: Database, user: SessionUser, confirmPass
     await q.query("delete from email_outbox where user_id = $1", [user.id]);
     await q.query("delete from mfa_factors where user_id = $1", [user.id]);
     await q.query("delete from mfa_recovery_codes where user_id = $1", [user.id]);
+    // Parties: the leader's party is disbanded, a member leaves; a queued party leaves the queue whole.
+    await q.query("delete from quick_queue where party_id in (select party_id from party_members where user_id = $1)", [user.id]);
+    await q.query("delete from parties where leader_id = $1", [user.id]);
+    await q.query("delete from party_members where user_id = $1", [user.id]);
+    await q.query("update party_invites set status = 'revoked', responded_at = now() where user_id = $1 and status = 'pending'", [user.id]);
     await q.query("delete from quick_queue where user_id = $1", [user.id]);
+    // Quick-match ratings, their history and queue cooldowns belong to the account alone.
+    await q.query("delete from rating_events where user_id = $1", [user.id]);
+    await q.query("delete from ratings where user_id = $1", [user.id]);
+    await q.query("delete from quick_dodges where user_id = $1", [user.id]);
+    await q.query("update ready_check_players set region = '' where user_id = $1", [user.id]);
     await q.query(
       "update challenges set status = 'cancelled', resolution = 'account_deleted' where $1 in (challenger_id, opponent_id) and status in ('pending','accepted')",
       [user.id],

@@ -1,8 +1,9 @@
 /**
  * 1v1 Challenges and Quick Match share one data model but stay distinct products:
  *  - a Challenge names a specific opponent, who accepts or declines;
- *  - Quick Match skips opponent choice and pairs the player with a real player already waiting for the
- *    same game — never a bot, never an invented opponent.
+ *  - Quick Match (`quickmatch.ts`) skips opponent choice and pairs the player, or their party, with real
+ *    players already waiting for the same game after everyone confirms a ready check — never a bot,
+ *    never an invented opponent. Only quick matches change the rating (`rating.ts`).
  * Both are stake-free: there is no stake field at all, no coins change hands and nothing is wagered.
  */
 import type { Database, Queryable } from "./db.ts";
@@ -12,11 +13,10 @@ import { isStaff, notify } from "./access.ts";
 import { fail, isUniqueViolation } from "./errors.ts";
 import { isGame } from "../lib/games.ts";
 import { grantXp, XP } from "./progression.ts";
+import { applyQuickRating, challengeSides } from "./rating.ts";
 import * as v from "./validate.ts";
 
 const CHALLENGE_HOURS = 72;
-const QUICK_MATCH_HOURS = 24;
-const QUEUE_MINUTES = 30;
 
 type Row = {
   id: string;
@@ -40,9 +40,22 @@ async function lock(q: Queryable, id: string): Promise<Row> {
 const other = (c: Row, userId: string) => (c.challenger_id === userId ? c.opponent_id : c.challenger_id);
 const isSide = (c: Row, userId: string) => c.challenger_id === userId || c.opponent_id === userId;
 
+/** Housekeeping: rows another request holds are left for the next pass, so this never waits on a lock. */
 export async function expireStale(q: Queryable) {
-  await q.query("update challenges set status = 'expired' where status in ('pending','accepted') and expires_at < now()");
-  await q.query("delete from quick_queue where expires_at < now()");
+  await q.query(
+    `update challenges set status = 'expired' where id in (
+       select id from challenges where status in ('pending','accepted') and expires_at < now() for update skip locked)`,
+  );
+  // Players inside a ready check keep their place until the check ends.
+  await q.query(
+    `delete from quick_queue where user_id in (
+       select user_id from quick_queue where expires_at < now() and held_by is null for update skip locked)`,
+  );
+}
+
+/** Everyone who should hear about a challenge: the two named players, or every player of a party match. */
+async function everyone(q: Queryable, c: Row): Promise<string[]> {
+  return c.kind === "quick" ? (await challengeSides(q, c)).map((s) => s.userId) : [c.challenger_id, c.opponent_id];
 }
 
 export async function createChallenge(db: Database, user: SessionUser, input: { opponent: unknown; game: unknown; message: unknown }) {
@@ -89,7 +102,7 @@ export async function cancelChallenge(db: Database, user: SessionUser, id: strin
     const cancellable = (c.status === "pending" && c.challenger_id === user.id) || (c.status === "accepted" && c.kind === "quick");
     if (!cancellable) fail("challenge_closed");
     await q.query("update challenges set status = 'cancelled' where id = $1", [c.id]);
-    await notify(q, [other(c, user.id)], "challenge_cancelled", { challengeId: c.id, by: user.username });
+    await notify(q, (await everyone(q, c)).filter((id) => id !== user.id), "challenge_cancelled", { challengeId: c.id, by: user.username });
     await audit(q, { actorId: user.id, action: "challenge.cancelled", entity: "challenge", entityId: c.id });
   });
 }
@@ -125,10 +138,13 @@ export async function reportChallenge(
 
 async function finish(q: Queryable, c: Row, winner: string) {
   await q.query("update challenges set status = 'completed', winner_id = $2, completed_at = now() where id = $1", [c.id, winner]);
-  const loser = winner === c.challenger_id ? c.opponent_id : c.challenger_id;
-  await grantXp(q, [winner], XP.challengeWin, "challenge_win", c.game, c.id, `challenge:${c.id}:win`);
-  await grantXp(q, [loser], XP.challengePlayed, "challenge_played", c.game, c.id, `challenge:${c.id}:played`);
-  await notify(q, [c.challenger_id, c.opponent_id], "challenge_completed", { challengeId: c.id });
+  // A party match credits every player of each side; a named challenge has one player per side.
+  const sides = await challengeSides(q, c);
+  const winSide = winner === c.challenger_id ? "a" : "b";
+  await grantXp(q, sides.filter((s) => s.side === winSide).map((s) => s.userId), XP.challengeWin, "challenge_win", c.game, c.id, `challenge:${c.id}:win`);
+  await grantXp(q, sides.filter((s) => s.side !== winSide).map((s) => s.userId), XP.challengePlayed, "challenge_played", c.game, c.id, `challenge:${c.id}:played`);
+  if (c.kind === "quick") await applyQuickRating(q, c, winner);
+  await notify(q, sides.map((s) => s.userId), "challenge_completed", { challengeId: c.id });
 }
 
 export async function confirmChallenge(db: Database, user: SessionUser, id: string) {
@@ -177,50 +193,6 @@ export async function resolveChallenge(db: Database, user: SessionUser, id: stri
   });
 }
 
-/**
- * Quick Match: pairs the player with the longest-waiting real player for the same game, or queues them.
- * Matching per game is serialised with an advisory lock, so two simultaneous joins pair with each other
- * instead of both waiting.
- */
-export async function joinQuickMatch(db: Database, user: SessionUser, gameInput: unknown): Promise<{ matched: string | null }> {
-  if (!isGame(gameInput)) fail("invalid_game");
-  const game = gameInput as string;
-  return db.tx(async (q) => {
-    await q.query("select pg_advisory_xact_lock(hashtext($1))", [`quick:${game}`]);
-    await expireStale(q);
-    const [queued] = await q.query("select 1 from quick_queue where user_id = $1", [user.id]);
-    if (queued) fail("already_queued");
-    const waiting = await q.query<{ user_id: string }>(
-      `select qq.user_id from quick_queue qq join users u on u.id = qq.user_id and u.status = 'active'
-        where qq.game = $1 and qq.user_id <> $2
-          and not exists (select 1 from challenges c where c.game = $1 and c.status in ('pending','accepted','reported','disputed')
-                            and least(c.challenger_id, c.opponent_id) = least(qq.user_id, $2::uuid)
-                            and greatest(c.challenger_id, c.opponent_id) = greatest(qq.user_id, $2::uuid))
-        order by qq.joined_at asc limit 1 for update of qq`,
-      [game, user.id],
-    );
-    if (!waiting.length) {
-      await q.query("insert into quick_queue (user_id, game, expires_at) values ($1, $2, now() + ($3 || ' minutes')::interval)", [user.id, game, String(QUEUE_MINUTES)]);
-      await audit(q, { actorId: user.id, action: "quick_match.queued", entity: "user", entityId: user.id, data: { game } });
-      return { matched: null };
-    }
-    const opponent = waiting[0].user_id;
-    await q.query("delete from quick_queue where user_id = $1", [opponent]);
-    const [row] = await q.query<{ id: string }>(
-      `insert into challenges (kind, game, challenger_id, opponent_id, status, responded_at, expires_at)
-       values ('quick', $1, $2, $3, 'accepted', now(), now() + ($4 || ' hours')::interval) returning id`,
-      [game, opponent, user.id, String(QUICK_MATCH_HOURS)],
-    );
-    await notify(q, [opponent, user.id], "quick_match_found", { challengeId: row.id, game });
-    await audit(q, { actorId: user.id, action: "quick_match.matched", entity: "challenge", entityId: row.id, data: { game, opponent } });
-    return { matched: row.id };
-  });
-}
-
-export async function leaveQuickMatch(db: Database, user: SessionUser) {
-  await db.query("delete from quick_queue where user_id = $1", [user.id]);
-}
-
 export async function challengesFor(q: Queryable, userId: string) {
   await expireStale(q);
   return q.query<{
@@ -228,22 +200,19 @@ export async function challengesFor(q: Queryable, userId: string) {
     challenger_id: string; opponent_id: string; challenger_name: string; opponent_name: string; reported_by: string | null;
     reported_winner: string | null; winner_id: string | null; score_challenger: number | null; score_opponent: number | null;
     evidence_url: string; resolution: string; expires_at: Date; created_at: Date; completed_at: Date | null;
+    /** The viewer's side: `a` is the challenger's side. Party players who are not leaders see but do not act. */
+    my_side: "a" | "b"; side_size: number;
   }>(
-    `select c.*, uc.username as challenger, uo.username as opponent, uc.display_name as challenger_name, uo.display_name as opponent_name
+    `select c.*, uc.username as challenger, uo.username as opponent, uc.display_name as challenger_name, uo.display_name as opponent_name,
+            coalesce((select m.side from challenge_members m where m.challenge_id = c.id and m.user_id = $1),
+                     case when c.challenger_id = $1 then 'a' else 'b' end) as my_side,
+            greatest(1, (select count(*)::int from challenge_members m where m.challenge_id = c.id and m.side = 'a')) as side_size
        from challenges c join users uc on uc.id = c.challenger_id join users uo on uo.id = c.opponent_id
       where c.challenger_id = $1 or c.opponent_id = $1
+         or exists (select 1 from challenge_members m where m.challenge_id = c.id and m.user_id = $1)
       order by case when c.status in ('pending','accepted','reported','disputed') then 0 else 1 end, c.created_at desc limit 60`,
     [userId],
   );
-}
-
-export async function queueState(q: Queryable, userId: string) {
-  const [mine] = await q.query<{ game: string; joined_at: Date; expires_at: Date }>(
-    "select game, joined_at, expires_at from quick_queue where user_id = $1 and expires_at > now()",
-    [userId],
-  );
-  const waiting = await q.query<{ game: string; n: number }>("select game, count(*)::int as n from quick_queue where expires_at > now() group by game");
-  return { mine: mine ?? null, waiting: Object.fromEntries(waiting.map((w) => [w.game, w.n])) as Record<string, number> };
 }
 
 export async function disputedChallenges(q: Queryable) {

@@ -74,7 +74,7 @@ import {
   startCheckout,
 } from "../src/server/billing.ts";
 import { claimObjective, moveCoins, balance } from "../src/server/progression.ts";
-import { joinQuickMatch } from "../src/server/challenges.ts";
+import { answerReadyCheck, createParty, inviteToParty, joinQuickMatch, respondPartyInvite } from "../src/server/quickmatch.ts";
 import { officialResult } from "../src/server/matches.ts";
 import { WebhookSignatureError, type PaymentProvider, type SessionState } from "../src/server/payments/provider.ts";
 
@@ -170,7 +170,35 @@ test("payments, coins, quick match and bracket decisions stay consistent under p
     const game = "rocket-league";
     await db.query("delete from quick_queue where game = $1", [game]);
     const joined = await Promise.all([joinQuickMatch(db, qa, game), joinQuickMatch(db, qb, game)]);
-    assert.equal(joined.filter((j) => j.matched).length, 1, "exactly one join creates the pairing");
+    assert.equal(joined.filter((j) => j.readyCheck).length, 1, "exactly one join creates the pairing");
+
+    // Parties: two parties of two queue at the same moment — one ready check holds all four players.
+    const pp = await Promise.all(["cpa1", "cpa2", "cpb1", "cpb2"].map((n) => mk(n)));
+    const pgame = "dota2";
+    await db.query("delete from quick_queue where game = $1", [pgame]);
+    for (const [leader, mate] of [
+      [pp[0], pp[1]],
+      [pp[2], pp[3]],
+    ]) {
+      await createParty(db, leader, pgame);
+      await inviteToParty(db, leader, mate.username);
+      const [inv] = await db.query<{ id: string }>("select id from party_invites where user_id = $1 and status = 'pending'", [mate.id]);
+      await respondPartyInvite(db, mate, inv.id, true);
+    }
+    const pj = await Promise.all([joinQuickMatch(db, pp[0], pgame), joinQuickMatch(db, pp[2], pgame)]);
+    const checkId = pj.find((j) => j.readyCheck)?.readyCheck;
+    assert.ok(checkId, "two simultaneous party joins are paired");
+    assert.equal(pj.filter((j) => j.readyCheck).length, 1, "one pairing, opened once");
+    const [held] = await db.query<{ n: number }>("select count(*)::int as n from quick_queue where held_by = $1", [checkId]);
+    assert.equal(held.n, 4, "the ready check holds both parties whole");
+    // All four confirm at the same moment: the match is created once.
+    const answers = await Promise.all(pp.map((p) => answerReadyCheck(db, p, checkId!, true)));
+    assert.equal(answers.filter((a) => a.status === "passed").length, 1, "exactly one answer completes the check");
+    const [made] = await db.query<{ n: number; matches: number }>(
+      "select count(*)::int as n, count(distinct m.challenge_id)::int as matches from challenge_members m join ready_checks rc on rc.challenge_id = m.challenge_id where rc.id = $1",
+      [checkId],
+    );
+    assert.deepEqual(made, { n: 4, matches: 1 });
 
     // Double elimination: ten parallel referee decisions on one match advance the winner once.
     const org = await mk("cdeorg");

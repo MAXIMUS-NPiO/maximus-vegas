@@ -23,6 +23,7 @@ import * as liveops from "@/server/liveops.ts";
 import * as repair from "@/server/repair.ts";
 import * as veto from "@/server/veto.ts";
 import * as finder from "@/server/finder.ts";
+import * as quick from "@/server/quickmatch.ts";
 import { storeUpload } from "@/server/media.ts";
 import { drainOutbox, mailConfigured } from "@/server/mail.ts";
 import { fail } from "@/server/errors.ts";
@@ -662,12 +663,47 @@ const handlers: Record<string, Handler> = {
     return { ok: "saved" };
   },
   "quick.join": async (c) => {
-    const r = await challenges.joinQuickMatch(c.db, u(c), c.form.game);
-    return { to: `/${c.lang}/matchmaking`, ok: r.matched ? "quick_matched" : "quick_queued" };
+    const r = await quick.joinQuickMatch(c.db, u(c), c.form.game, c.form.region);
+    return { to: `/${c.lang}/matchmaking`, ok: r.readyCheck ? "quick_ready_check" : "quick_queued" };
   },
   "quick.leave": async (c) => {
-    await challenges.leaveQuickMatch(c.db, u(c));
-    return { to: `/${c.lang}/matchmaking`, ok: "saved" };
+    await quick.leaveQuickMatch(c.db, u(c));
+    return { to: `/${c.lang}/matchmaking`, ok: "quick_left" };
+  },
+  "quick.ready": async (c) => {
+    const r = await quick.answerReadyCheck(c.db, u(c), c.form.check, true);
+    // The deadline had passed: the check is settled (and committed); the player sees why nothing started.
+    if (r.expired) fail("ready_check_closed");
+    return { to: `/${c.lang}/matchmaking`, ok: r.status === "passed" ? "quick_matched" : r.status === "pending" ? "quick_ready" : "quick_requeued" };
+  },
+  "quick.decline": async (c) => {
+    const r = await quick.answerReadyCheck(c.db, u(c), c.form.check, false);
+    if (r.expired) fail("ready_check_closed");
+    return { to: `/${c.lang}/matchmaking`, ok: "quick_declined" };
+  },
+  "party.create": async (c) => {
+    await quick.createParty(c.db, u(c), c.form.game);
+    return { to: `/${c.lang}/matchmaking`, ok: "party_created" };
+  },
+  "party.invite": async (c) => {
+    const r = await quick.inviteToParty(c.db, u(c), c.form.username);
+    return { to: `/${c.lang}/matchmaking`, ok: r.created ? "party_invited" : "party_already_invited" };
+  },
+  "party.revoke": async (c) => {
+    await quick.revokePartyInvite(c.db, u(c), c.form.invite);
+    return { to: `/${c.lang}/matchmaking`, ok: "party_invite_revoked" };
+  },
+  "party.respond": async (c) => {
+    const r = await quick.respondPartyInvite(c.db, u(c), c.form.invite, c.form.accept === "1");
+    return { to: `/${c.lang}/matchmaking`, ok: r.joined ? "party_joined" : "party_declined" };
+  },
+  "party.leave": async (c) => {
+    const r = await quick.leaveParty(c.db, u(c));
+    return { to: `/${c.lang}/matchmaking`, ok: r.disbanded ? "party_disbanded" : "party_left" };
+  },
+  "party.remove": async (c) => {
+    await quick.removeFromParty(c.db, u(c), c.form.member);
+    return { to: `/${c.lang}/matchmaking`, ok: "party_removed" };
   },
 
   // ---------- Membership and payments ----------

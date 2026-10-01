@@ -9,6 +9,8 @@ import { playerProfile } from "@/server/queries.ts";
 import { avatarColor, hasActiveMembership, rankFor, totalXp } from "@/server/progression.ts";
 import { reputation } from "@/server/disputes.ts";
 import { seasonHistory } from "@/server/circuits.ts";
+import { ratingHistory, ratingsFor } from "@/server/rating.ts";
+import { RatingBlock } from "@/components/rating-block";
 import { Badge, DbDown, Empty } from "@/components/ui";
 import { LocalTime } from "@/components/time";
 
@@ -43,11 +45,13 @@ export default async function Player({ params }: { params: Promise<{ lang: strin
     );
   const wins = p.history.filter((h) => h.won).length;
   const ru = lang === "ru";
-  const [xp, rep, member, seasons] = await Promise.all([
+  const [xp, rep, member, seasons, ratings, ratingEvents] = await Promise.all([
     totalXp(db, p.user.id),
     reputation(db, p.user.id),
     hasActiveMembership(db, p.user.id),
     seasonHistory(db, { userId: p.user.id, teamId: null }),
+    ratingsFor(db, p.user.id),
+    ratingHistory(db, p.user.id, "", 120),
   ]);
   const draws = p.history.filter((h) => h.drawn).length;
   const { rank } = rankFor(xp);
@@ -168,6 +172,8 @@ export default async function Player({ params }: { params: Promise<{ lang: strin
           </ul>
         </section>
       ) : null}
+
+      {ratings.length || p.self ? <RatingBlock lang={lang} ratings={ratings} history={ratingEvents} /> : null}
 
       <section className="section-tight">
         <h2 className="h3">{d.players.history}</h2>
