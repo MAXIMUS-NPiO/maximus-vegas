@@ -215,6 +215,10 @@ assert.ok(callId && refView.includes("e2e: opponent is not in the lobby"), "the 
 assert.equal((await org.post("match.call_close", { call: callId, note: "e2e: coming to your station", back: `/ru/matches/${gdMatch}` })).ok, "referee_call_closed");
 assert.ok((await players[0].get("/ru/gameday")).text.includes("e2e: coming to your station"), "the player sees the referee's reply");
 log("Game Day: current match and step, check-in returns to Game Day, referee call, duplicate and outsider refused, reply shown");
+const phoneList = (await players[0].get(`/ru/tournaments/${tSlug}`)).text;
+assert.ok(phoneList.includes('class="bracket-narrow"') && phoneList.includes("Мой матч") && phoneList.includes("round-chip"), "phone bracket list with round chips and the player's match");
+assert.ok(!(await guest.get(`/ru/tournaments/${tSlug}`)).text.includes("Мой матч"), "no personal chip for a guest");
+log("bracket on phones: round list with chips; the player's match is linked, a guest sees none");
 
 const passes = await playOut(players.slice(0, 4));
 const tPage = (await guest.get(`/ru/tournaments/${tSlug}`)).text;

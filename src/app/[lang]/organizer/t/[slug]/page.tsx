@@ -752,7 +752,7 @@ export default async function ManageTournament({ params, searchParams }: { param
           {playoff && playoffMatches.length ? (
             <div className="bracket-group">
               <h3 className="h3">{ru ? "Плей-офф" : "Playoff"}</h3>
-              <BracketView lang={lang} matches={playoffMatches} format={playoff.format} series={seriesById} />
+              <BracketView lang={lang} matches={playoffMatches} format={playoff.format} series={seriesById} scope="p" />
             </div>
           ) : null}
         </section>

@@ -792,12 +792,12 @@ export default async function TournamentPage({ params, searchParams }: { params:
             )
           ) : started ? (
             <>
-              <BracketView lang={lang} matches={rounds ? mainMatches : matches} format={t.format} series={seriesById} />
+              <BracketView lang={lang} matches={rounds ? mainMatches : matches} format={t.format} series={seriesById} mine={entry ? [entry.id] : undefined} />
               {playoff ? (
                 <div className="bracket-group">
                   <h3 className="h3">{ru ? "Плей-офф" : "Playoff"}</h3>
                   {playoffMatches.length ? (
-                    <BracketView lang={lang} matches={playoffMatches} format={playoff.format} series={seriesById} />
+                    <BracketView lang={lang} matches={playoffMatches} format={playoff.format} series={seriesById} mine={entry ? [entry.id] : undefined} scope="p" />
                   ) : t.stage === 2 ? (
                     <p className="muted">
                       {ru
@@ -859,7 +859,7 @@ export default async function TournamentPage({ params, searchParams }: { params:
                       : `Preview schedule by the current seeds: ${previewRounds} rounds in total${previewRounds > PREVIEW_ROUNDS ? `, the first ${PREVIEW_ROUNDS} shown` : ""}.`
                     : d.tournaments.bracketPreview}
               </p>
-              <BracketView lang={lang} matches={previewMatches} linkMatches={false} format={t.format} />
+              <BracketView lang={lang} matches={previewMatches} linkMatches={false} format={t.format} scope="v" />
               {playoff ? (
                 <p className="small muted">
                   {ru

@@ -14,6 +14,7 @@ import type { SeriesRules } from "@/server/series.ts";
 import type { Admission, Unmet } from "@/server/admission.ts";
 import { Badge } from "./ui";
 import { LocalTime } from "./time";
+import { hasEntry, isEmptySlot, isOpenMatch, roundSummary } from "@/lib/bracket-rounds.ts";
 
 export function formatLabel(format: string | undefined, lang: Locale) {
   const ru = lang === "ru";
@@ -121,14 +122,7 @@ export function TournamentCard({ lang, t }: { lang: Locale; t: Card & { format?:
   );
 }
 
-function Rounds({
-  lang,
-  matches,
-  label,
-  linkMatches,
-  grid = false,
-  series,
-}: {
+type RoundsProps = {
   lang: Locale;
   matches: BracketMatch[];
   label: (round: number) => string;
@@ -137,63 +131,132 @@ function Rounds({
   grid?: boolean;
   /** Series length per match id (shown when above best of 1). */
   series?: Map<string, number>;
-}) {
+  /** Registrations of the viewer: their matches are highlighted. */
+  mine?: Set<string>;
+  /** Prefix of the round anchors, unique on the page. */
+  anchor: string;
+};
+
+const isEmpty = isEmptySlot;
+const hasMine = hasEntry;
+
+function MatchCard({ m, lang, linkMatches, series, mine, withTime = false }: { m: BracketMatch; lang: Locale; linkMatches: boolean; series?: Map<string, number>; mine?: Set<string>; withTime?: boolean }) {
   const d = dict(lang);
   const ru = lang === "ru";
-  const rounds = [...new Set(matches.map((m) => m.round))].sort((a, b) => a - b);
+  const empty = isEmpty(m);
+  const side = (reg: string | null, name: string | null, score: number | null, isVoid?: boolean) => (
+    <div className={`b-side${m.winner_reg && reg === m.winner_reg ? " is-winner" : ""}${m.winner_reg && reg && reg !== m.winner_reg ? " is-loser" : ""}`}>
+      <span className="b-name">{name ?? (isVoid || (m.outcome === "bye" && (m.round === 1 || m.bracket === "SW")) ? d.common.bye : d.common.tbd)}</span>
+      <span className="b-score">{score ?? (m.winner_reg && reg === m.winner_reg && m.outcome !== "played" ? "W" : "")}</span>
+    </div>
+  );
+  const body = (
+    <>
+      {side(m.a_reg, m.a_name, m.score_a, m.a_void)}
+      {side(m.b_reg, m.b_name, m.score_b, m.b_void)}
+      <div className="b-foot">
+        <span className={`b-status b-${m.status}`}>
+          {empty
+            ? "—"
+            : m.status === "completed" && !m.winner_reg && m.a_reg && m.b_reg
+              ? ru
+                ? "Ничья"
+                : "Draw"
+              : m.outcome && m.outcome !== "played"
+                ? d.statuses.outcome[m.outcome]
+                : d.statuses.match[m.status]}
+        </span>
+        {(series?.get(m.id) ?? 1) > 1 ? <span className="b-series">Bo{series!.get(m.id)}</span> : null}
+        {withTime && m.scheduled_at && isOpenMatch(m) ? (
+          <span className="b-time">
+            <LocalTime iso={m.scheduled_at} lang={lang} withZone={false} />
+          </span>
+        ) : null}
+        {m.venue_name && m.status !== "completed" ? <span className="b-venue">{m.venue_name}</span> : null}
+        {hasMine(m, mine) ? <span className="b-mine">{d.common.you}</span> : null}
+      </div>
+    </>
+  );
   return (
-    <div className={grid ? "bracket round-grid" : "bracket"} role="list">
-      {rounds.map((round) => (
-        <section key={round} className="bracket-round" role="listitem" aria-label={label(round)}>
-          <h4 className="bracket-round-title">{label(round)}</h4>
+    <li className={`b-match b-${m.status}${empty ? " is-empty" : ""}${hasMine(m, mine) ? " is-mine" : ""}`}>
+      {linkMatches && m.outcome !== "bye" && !empty ? (
+        <Link href={`/${lang}/matches/${m.id}`} className="b-link">
+          {body}
+        </Link>
+      ) : (
+        <div className="b-link">{body}</div>
+      )}
+    </li>
+  );
+}
+
+/**
+ * Phones: the rounds as a list. Chips jump to a round and show how many of its matches are played; the round
+ * being played and the rounds with the viewer's open match are expanded, the others fold into one line each.
+ */
+function RoundList({ lang, matches, label, linkMatches, series, mine, anchor }: RoundsProps) {
+  const ru = lang === "ru";
+  const { rounds, current, myMatch } = roundSummary(matches, mine);
+  return (
+    <div className="bracket-narrow">
+      {rounds.length > 1 || myMatch ? (
+        <nav className="round-chips" aria-label={ru ? "Раунды" : "Rounds"}>
+          {myMatch && linkMatches ? (
+            <Link href={`/${lang}/matches/${myMatch}`} className="round-chip has-mine">
+              {ru ? "Мой матч" : "My match"}
+            </Link>
+          ) : null}
+          {rounds.length > 1
+            ? rounds.map((r) => (
+                <a key={r.round} href={`#${anchor}-r${r.round}`} className={`round-chip${r.round === current ? " is-current" : ""}${r.mine ? " has-mine" : ""}`}>
+                  {label(r.round)} <span className="muted">{r.done}/{r.total}</span>
+                </a>
+              ))
+            : null}
+        </nav>
+      ) : null}
+      {rounds.map((r) => (
+        <details key={r.round} id={`${anchor}-r${r.round}`} className="round-fold" open={rounds.length === 1 || r.round === current || r.mine}>
+          <summary>
+            <span className="round-fold-title">{label(r.round)}</span>
+            <span className="small muted">
+              {r.done}/{r.total} {ru ? "сыграно" : "played"}
+            </span>
+          </summary>
           <ol className="bracket-matches">
             {matches
-              .filter((m) => m.round === round)
-              .map((m) => {
-                const empty = m.a_void && m.b_void;
-                const side = (reg: string | null, name: string | null, score: number | null, isVoid?: boolean) => (
-                  <div className={`b-side${m.winner_reg && reg === m.winner_reg ? " is-winner" : ""}${m.winner_reg && reg && reg !== m.winner_reg ? " is-loser" : ""}`}>
-                    <span className="b-name">{name ?? (isVoid || (m.outcome === "bye" && (m.round === 1 || m.bracket === "SW")) ? d.common.bye : d.common.tbd)}</span>
-                    <span className="b-score">{score ?? (m.winner_reg && reg === m.winner_reg && m.outcome !== "played" ? "W" : "")}</span>
-                  </div>
-                );
-                const body = (
-                  <>
-                    {side(m.a_reg, m.a_name, m.score_a, m.a_void)}
-                    {side(m.b_reg, m.b_name, m.score_b, m.b_void)}
-                    <div className="b-foot">
-                      <span className={`b-status b-${m.status}`}>
-                        {empty
-                          ? "—"
-                          : m.status === "completed" && !m.winner_reg && m.a_reg && m.b_reg
-                            ? ru
-                              ? "Ничья"
-                              : "Draw"
-                            : m.outcome && m.outcome !== "played"
-                              ? d.statuses.outcome[m.outcome]
-                              : d.statuses.match[m.status]}
-                      </span>
-                      {(series?.get(m.id) ?? 1) > 1 ? <span className="b-series">Bo{series!.get(m.id)}</span> : null}
-                      {m.venue_name && m.status !== "completed" ? <span className="b-venue">{m.venue_name}</span> : null}
-                    </div>
-                  </>
-                );
-                return (
-                  <li key={m.id} className={`b-match b-${m.status}${empty ? " is-empty" : ""}`}>
-                    {linkMatches && m.outcome !== "bye" && !empty ? (
-                      <Link href={`/${lang}/matches/${m.id}`} className="b-link">
-                        {body}
-                      </Link>
-                    ) : (
-                      <div className="b-link">{body}</div>
-                    )}
-                  </li>
-                );
-              })}
+              .filter((m) => m.round === r.round)
+              .map((m) => (
+                <MatchCard key={m.id} m={m} lang={lang} linkMatches={linkMatches} series={series} mine={mine} withTime />
+              ))}
           </ol>
-        </section>
+        </details>
       ))}
     </div>
+  );
+}
+
+function Rounds(props: RoundsProps) {
+  const { lang, matches, label, linkMatches, grid = false, series, mine } = props;
+  const rounds = [...new Set(matches.map((m) => m.round))].sort((a, b) => a - b);
+  return (
+    <>
+      <div className={`${grid ? "bracket round-grid" : "bracket"} bracket-wide`} role="list">
+        {rounds.map((round) => (
+          <section key={round} className="bracket-round" role="listitem" aria-label={label(round)}>
+            <h4 className="bracket-round-title">{label(round)}</h4>
+            <ol className="bracket-matches">
+              {matches
+                .filter((m) => m.round === round)
+                .map((m) => (
+                  <MatchCard key={m.id} m={m} lang={lang} linkMatches={linkMatches} series={series} mine={mine} />
+                ))}
+            </ol>
+          </section>
+        ))}
+      </div>
+      <RoundList {...props} />
+    </>
   );
 }
 
@@ -203,14 +266,22 @@ export function BracketView({
   linkMatches = true,
   format = "single_elimination",
   series,
+  mine,
+  scope = "b",
 }: {
   lang: Locale;
   matches: BracketMatch[];
   linkMatches?: boolean;
   format?: string;
   series?: Map<string, number>;
+  /** Registration ids of the viewer: their matches are highlighted and their round opens on phones. */
+  mine?: string[];
+  /** Prefix of round anchors; differs when one page shows two brackets (main stage and playoff). */
+  scope?: string;
 }) {
   const ru = lang === "ru";
+  const own = new Set(mine ?? []);
+  const common = { lang, linkMatches, series, mine: own };
   if (format === "groups") {
     const groups = [...new Set(matches.map((m) => m.group_no ?? 0))].sort((a, b) => a - b);
     return (
@@ -218,14 +289,14 @@ export function BracketView({
         {groups.map((g) => (
           <div key={g} className="bracket-group">
             <h3 className="h4">{g ? groupTitle(g, lang) : ru ? "Матчи" : "Matches"}</h3>
-            <Rounds lang={lang} matches={matches.filter((m) => (m.group_no ?? 0) === g)} label={(r) => roundLabel(r, lang)} linkMatches={linkMatches} grid series={series} />
+            <Rounds {...common} matches={matches.filter((m) => (m.group_no ?? 0) === g)} label={(r) => roundLabel(r, lang)} grid anchor={`${scope}-g${g}`} />
           </div>
         ))}
       </div>
     );
   }
   if (format === "round_robin" || format === "swiss")
-    return <Rounds lang={lang} matches={matches} label={(r) => roundLabel(r, lang)} linkMatches={linkMatches} grid series={series} />;
+    return <Rounds {...common} matches={matches} label={(r) => roundLabel(r, lang)} grid anchor={`${scope}-r`} />;
   if (format === "gauntlet") {
     const rounds = Math.max(0, ...matches.map((m) => m.round));
     return (
@@ -235,13 +306,13 @@ export function BracketView({
             ? "Лесенка: первыми играют два нижних посева, победитель каждой ступени встречается со следующим посевом, первый посев играет только финал."
             : "Gauntlet: the two lowest seeds play first, each winner meets the next seed up, and the top seed plays only the final."}
         </p>
-        <Rounds lang={lang} matches={matches} label={(r) => gauntletRoundName(r, rounds, lang)} linkMatches={linkMatches} grid series={series} />
+        <Rounds {...common} matches={matches} label={(r) => gauntletRoundName(r, rounds, lang)} grid anchor={`${scope}-r`} />
       </div>
     );
   }
   if (format !== "double_elimination") {
     const rounds = Math.max(0, ...matches.map((m) => m.round));
-    return <Rounds lang={lang} matches={matches} label={(r) => roundName(r, rounds, lang)} linkMatches={linkMatches} series={series} />;
+    return <Rounds {...common} matches={matches} label={(r) => roundName(r, rounds, lang)} anchor={`${scope}-r`} />;
   }
   const w = matches.filter((m) => (m.bracket ?? "W") === "W");
   const l = matches.filter((m) => m.bracket === "L" && !(m.a_void && m.b_void));
@@ -252,13 +323,13 @@ export function BracketView({
     <div className="stack">
       <div className="bracket-group">
         <h3 className="h4">{ru ? "Верхняя сетка" : "Winners bracket"}</h3>
-        <Rounds lang={lang} matches={w} label={(r) => deRoundName("W", r, wRounds, lRounds, lang)} linkMatches={linkMatches} series={series} />
+        <Rounds {...common} matches={w} label={(r) => deRoundName("W", r, wRounds, lRounds, lang)} anchor={`${scope}-w`} />
       </div>
       {l.length ? (
         <div className="bracket-group">
           <h3 className="h4">{ru ? "Нижняя сетка" : "Losers bracket"}</h3>
           <p className="small muted">{ru ? "Одно поражение переводит в нижнюю сетку; второе — выбывание." : "One loss moves you to the losers bracket; a second one eliminates you."}</p>
-          <Rounds lang={lang} matches={l} label={(r) => deRoundName("L", r, wRounds, lRounds, lang)} linkMatches={linkMatches} series={series} />
+          <Rounds {...common} matches={l} label={(r) => deRoundName("L", r, wRounds, lRounds, lang)} anchor={`${scope}-l`} />
         </div>
       ) : null}
       <div className="bracket-group">
@@ -268,7 +339,7 @@ export function BracketView({
             ? "Если победитель нижней сетки выигрывает гранд-финал, играется перезапуск финала: у победителя верхней сетки это первое поражение."
             : "If the losers-bracket champion wins the grand final, a bracket reset is played: it is only the winners-bracket champion's first loss."}
         </p>
-        <Rounds lang={lang} matches={gf} label={(r) => deRoundName("GF", r, wRounds, lRounds, lang)} linkMatches={linkMatches} series={series} />
+        <Rounds {...common} matches={gf} label={(r) => deRoundName("GF", r, wRounds, lRounds, lang)} anchor={`${scope}-f`} />
       </div>
     </div>
   );
