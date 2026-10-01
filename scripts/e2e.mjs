@@ -37,7 +37,15 @@ class Client {
     return { status: res.status, text: await res.text(), location: res.headers.get("location") };
   }
   async post(action, fields, { origin = BASE } = {}) {
-    const body = new URLSearchParams({ lang: "ru", back: "/ru", ...fields });
+    const body = new URLSearchParams({ lang: "ru", back: "/ru" });
+    // An array value is sent as a repeated field (checkbox groups).
+    for (const [k, v] of Object.entries(fields)) {
+      if (!Array.isArray(v)) body.set(k, v);
+      else {
+        body.delete(k);
+        for (const x of v) body.append(k, x);
+      }
+    }
     const res = await fetch(`${BASE}/api/a/${action}?lang=ru`, {
       method: "POST",
       headers: { cookie: this.cookie, origin, "content-type": "application/x-www-form-urlencoded" },
@@ -537,6 +545,44 @@ assert.equal((await players[0].post("transfer.answer", { transfer: transferId, a
 const rivalPage = (await guest.get(rival.path)).text;
 assert.ok(rivalPage.includes("перешёл в команду") && !rivalPage.includes("e2e</p>"), "public roster history shows the move, not the negotiation note");
 log("transfer: proposed, agreed by the player and the releasing team, roster history public");
+
+// ---------- Clans and a clan war ----------
+const uuidsAfter = (html, name) => [...html.matchAll(new RegExp(`name="${name}" value="([0-9a-f-]{36})"`, "g"))].map((m) => m[1]);
+const tagA = `A${RUN.slice(-4).toUpperCase()}`;
+const tagB = `B${RUN.slice(-4).toUpperCase()}`;
+const clanA = await players[0].post("clan.create", { name: `E2E Clan A ${RUN}`, tag: tagA, description: "e2e", back: "/ru/clans" });
+assert.equal(clanA.ok, "clan_created", clanA.location);
+const clanAPage = (await players[0].get(clanA.path)).text;
+const clanAId = uuidAfter(clanAPage, "clan");
+assert.equal((await players[0].post("clan.invite", { clan: clanAId, username: players[1].username, back: clanA.path })).ok, "clan_invited");
+const clanInvite = uuidAfter((await players[1].get("/ru/clans")).text, "invite");
+assert.ok(clanInvite, "the invitation is listed on /clans");
+assert.equal((await players[1].post("clan.respond", { invite: clanInvite, accept: "1", back: "/ru/clans" })).ok, "clan_joined");
+const clanB = await players[2].post("clan.create", { name: `E2E Clan B ${RUN}`, tag: tagB, description: "", back: "/ru/clans" });
+assert.equal(clanB.ok, "clan_created");
+const clanBId = uuidAfter((await players[2].get(clanB.path)).text, "clan");
+assert.equal((await players[2].post("clan.invite", { clan: clanBId, username: players[3].username, back: clanB.path })).ok, "clan_invited");
+assert.equal((await players[3].post("clan.respond", { invite: uuidAfter((await players[3].get("/ru/clans")).text, "invite"), accept: "1" })).ok, "clan_joined");
+// The challenge form lists the clan's players as lineup choices.
+const lineupA = uuidsAfter((await players[0].get(clanA.path)).text, "lineup").slice(0, 2);
+assert.equal(lineupA.length, 2, "two lineup choices for the challenger");
+const startAt = new Date(Date.now() + 30 * 60_000).toISOString().slice(0, 16);
+const proposal = { clan: clanAId, opponent: tagB, game: "cs2", size: "2", bestOf: "3", at: startAt, tz: "UTC", message: "e2e war", back: clanA.path };
+assert.equal((await players[0].post("war.propose", { ...proposal, lineup: [lineupA[0]] })).e, "war_lineup", "a lineup has exactly the chosen size");
+assert.equal((await players[1].post("war.propose", { ...proposal, lineup: lineupA })).e, "not_clan_leader");
+assert.equal((await players[0].post("war.propose", { ...proposal, lineup: lineupA })).ok, "war_proposed");
+const bPage = (await players[2].get(clanB.path)).text;
+const warId = uuidAfter(bPage, "war");
+assert.ok(warId, "the challenged clan sees the war");
+const lineupB = uuidsAfter(bPage, "lineup").slice(0, 2);
+assert.equal((await players[2].post("war.answer", { war: warId, answer: "accept", lineup: lineupB, back: clanB.path })).ok, "war_accepted");
+assert.equal((await players[0].post("war.report", { war: warId, mine: "2", theirs: "0", back: clanA.path })).e, "war_not_started", "the score waits for the start");
+assert.equal((await players[2].post("war.cancel", { war: warId, back: clanB.path })).ok, "war_cancelled");
+const publicClan = (await guest.get(clanA.path)).text;
+assert.ok(publicClan.includes(`E2E Clan B ${RUN}`) && !publicClan.includes("e2e war"), "the war is public, the challenge message is for the clans' leaders");
+assert.ok((await guest.get(`/ru/clans?q=${tagA}`)).text.includes(`E2E Clan A ${RUN}`));
+assert.equal((await guest.get("/ru/ladders?game=cs2")).status, 200);
+log("clans: created, invitation accepted, war proposed with lineups, accepted, score refused before the start, called off; ladders page");
 
 // ---------- Challenges, quick match, objectives ----------
 const [a, b, c3, d4] = players;

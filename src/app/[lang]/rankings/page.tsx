@@ -69,7 +69,7 @@ export default async function Rankings({ params, searchParams }: { params: Promi
       {dbError ? (
         <DbDown lang={lang} />
       ) : (
-        <div className="grid grid-2">
+        <div className="grid grid-2 board-grid">
           <section>
             <h3 className="h4">{d.rankings.solo}</h3>
             {table(data.solo, "players")}

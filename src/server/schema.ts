@@ -1331,4 +1331,112 @@ export const migrations: Migration[] = [
       `create unique index transfer_disputes_one_open on transfer_disputes(transfer_id) where status = 'open'`,
     ],
   },
+  {
+    id: 18,
+    name: "clans_wars_ladders",
+    statements: [
+      // A clan: a community of players across games; a player belongs to one clan at a time.
+      `create table clans (
+        id uuid primary key default gen_random_uuid(),
+        slug text not null unique,
+        name text not null check (char_length(name) between 2 and 40),
+        tag text not null check (tag ~ '^[A-Z0-9]{2,5}$'),
+        description text not null default '' check (char_length(description) <= 500),
+        status text not null default 'active' check (status in ('active','disbanded')),
+        created_by uuid not null references users(id),
+        created_at timestamptz not null default now(),
+        disbanded_at timestamptz
+      )`,
+      `create unique index clans_tag_active on clans(tag) where status = 'active'`,
+      `create unique index clans_name_active on clans(lower(name)) where status = 'active'`,
+      `create table clan_members (
+        clan_id uuid not null references clans(id) on delete cascade,
+        user_id uuid not null references users(id) on delete cascade,
+        role text not null default 'member' check (role in ('owner','officer','member')),
+        joined_at timestamptz not null default now(),
+        primary key (clan_id, user_id)
+      )`,
+      `create unique index clan_members_one_clan on clan_members(user_id)`,
+      `create unique index clan_members_one_owner on clan_members(clan_id) where role = 'owner'`,
+      `create table clan_invites (
+        id uuid primary key default gen_random_uuid(),
+        clan_id uuid not null references clans(id) on delete cascade,
+        user_id uuid not null references users(id) on delete cascade,
+        invited_by uuid not null references users(id),
+        status text not null default 'pending' check (status in ('pending','accepted','declined','revoked')),
+        created_at timestamptz not null default now(),
+        responded_at timestamptz
+      )`,
+      `create unique index clan_invites_one_pending on clan_invites(clan_id, user_id) where status = 'pending'`,
+      // A clan war: a series between two clans in one game, lineups of the same size, a scheduled start.
+      `create table clan_wars (
+        id uuid primary key default gen_random_uuid(),
+        game text not null,
+        challenger_id uuid not null references clans(id),
+        opponent_id uuid not null references clans(id),
+        side_size int not null check (side_size between 1 and 6),
+        best_of int not null check (best_of in (1, 3, 5)),
+        scheduled_at timestamptz not null,
+        message text not null default '' check (char_length(message) <= 300),
+        status text not null default 'proposed' check (status in ('proposed','accepted','reported','completed','disputed','declined','cancelled','expired','void')),
+        proposed_by uuid not null references users(id),
+        answer_by timestamptz not null,
+        answered_by uuid references users(id),
+        reported_by uuid references users(id),
+        reported_clan uuid references clans(id),
+        score_challenger int check (score_challenger between 0 and 3),
+        score_opponent int check (score_opponent between 0 and 3),
+        reported_at timestamptz,
+        confirmed_by uuid references users(id),
+        winner_id uuid references clans(id),
+        completed_at timestamptz,
+        season text check (season ~ '^[0-9]{4}-Q[1-4]$'),
+        rated boolean not null default false,
+        dispute_reason text not null default '',
+        disputed_by uuid references users(id),
+        decided_by uuid references users(id),
+        decision text not null default '',
+        closed_by uuid references users(id),
+        created_at timestamptz not null default now(),
+        check (challenger_id <> opponent_id)
+      )`,
+      `create unique index clan_wars_one_open on clan_wars(least(challenger_id, opponent_id), greatest(challenger_id, opponent_id), game)
+        where status in ('proposed','accepted','reported','disputed')`,
+      `create index clan_wars_challenger on clan_wars(challenger_id, scheduled_at desc)`,
+      `create index clan_wars_opponent on clan_wars(opponent_id, scheduled_at desc)`,
+      `create index clan_wars_open on clan_wars(status) where status in ('proposed','accepted','reported','disputed')`,
+      `create table clan_war_lineups (
+        war_id uuid not null references clan_wars(id) on delete cascade,
+        clan_id uuid not null references clans(id),
+        user_id uuid not null references users(id),
+        primary key (war_id, user_id)
+      )`,
+      // Seasonal ladder of clans by game (MV-LADDER-1): a season is a calendar quarter in UTC.
+      `create table clan_ladder (
+        season text not null check (season ~ '^[0-9]{4}-Q[1-4]$'),
+        game text not null,
+        clan_id uuid not null references clans(id) on delete cascade,
+        rating int not null default 1000,
+        wars int not null default 0,
+        wins int not null default 0,
+        losses int not null default 0,
+        peak int not null default 1000,
+        updated_at timestamptz not null default now(),
+        primary key (season, game, clan_id)
+      )`,
+      `create index clan_ladder_board on clan_ladder(season, game, rating desc)`,
+      `create table clan_ladder_events (
+        war_id uuid not null references clan_wars(id) on delete cascade,
+        clan_id uuid not null references clans(id) on delete cascade,
+        season text not null,
+        game text not null,
+        result text not null check (result in ('win','loss')),
+        before int not null,
+        after int not null,
+        delta int not null,
+        created_at timestamptz not null default now(),
+        primary key (war_id, clan_id)
+      )`,
+    ],
+  },
 ];

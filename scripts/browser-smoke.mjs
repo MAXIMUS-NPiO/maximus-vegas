@@ -74,7 +74,7 @@ const step = (title) => console.log(`\n— ${title}`);
 async function main(browser) {
   const guest = await new Person(browser, "guest").open();
   step("public pages");
-  for (const path of ["/ru", "/en", "/ru/tournaments", "/ru/games", "/ru/rankings", "/ru/players", "/ru/teams", "/ru/finder", "/ru/matchmaking", "/ru/trust", "/ru/status", "/ru/help", "/ru/terms", "/ru/privacy", "/ru/signup", "/ru/signin", "/en/trust"])
+  for (const path of ["/ru", "/en", "/ru/tournaments", "/ru/games", "/ru/rankings", "/ru/players", "/ru/teams", "/ru/clans", "/ru/ladders", "/ru/finder", "/ru/matchmaking", "/ru/trust", "/ru/status", "/ru/help", "/ru/terms", "/ru/privacy", "/ru/signup", "/ru/signin", "/en/trust"])
     await guest.go(path);
 
   step("token pages post their forms (a wrong token is refused by the server, not by the browser's origin)");
@@ -157,6 +157,23 @@ async function main(browser) {
   await c.submit("transfer.answer", {}, { form: c.formWith("transfer.answer", "answer", "accept") });
   await b.go(ownTeam);
   await b.submit("transfer.answer", {}, { form: b.formWith("transfer.answer", "answer", "accept") });
+
+  step("clans and a clan war");
+  await b.go("/ru/clans");
+  await b.submit("clan.create", { name: `Smoke Clan ${RUN}`, tag: `B${RUN.slice(-4).toUpperCase()}`, description: "Browser smoke clan" });
+  const clanPath = new URL(b.pg.url()).pathname;
+  await b.submit("clan.invite", { username: c.username });
+  await c.go("/ru/clans");
+  await c.submit("clan.respond", {}, { form: c.formWith("clan.respond", "accept", "1") });
+  await a.go("/ru/clans");
+  await a.submit("clan.create", { name: `Smoke Rivals ${RUN}`, tag: `A${RUN.slice(-4).toUpperCase()}`, description: "" });
+  await a.go(clanPath);
+  await a.pg.locator("details#challenge summary").first().click();
+  const warAt = new Date(Date.now() + 2 * 3_600_000);
+  const warStart = `${warAt.getFullYear()}-${pad(warAt.getMonth() + 1)}-${pad(warAt.getDate())}T${pad(warAt.getHours())}:${pad(warAt.getMinutes())}`;
+  await a.submit("war.propose", { size: "1", bestOf: "1", at: warStart, lineup: true });
+  await b.go(clanPath);
+  await b.submit("war.answer", { lineup: true }, { form: b.formWith("war.answer", "answer", "accept") });
 
   step("team finder");
   await b.go("/ru/finder?kind=lfg");

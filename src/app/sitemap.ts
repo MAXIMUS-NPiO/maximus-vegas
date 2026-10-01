@@ -3,7 +3,7 @@ import { siteOrigin } from "@/lib/site.ts";
 import { GAMES } from "@/lib/games.ts";
 import { DIRECTIONS } from "@/lib/directions.ts";
 
-const PUBLIC = ["", "tournaments", "circuits", "games", "rankings", "players", "teams", "finder", "matchmaking", "membership", "partners", "organizer", "innovations", "trust", "help", "contact", "status", "terms", "privacy", "explore"];
+const PUBLIC = ["", "tournaments", "circuits", "games", "rankings", "players", "teams", "clans", "ladders", "finder", "matchmaking", "membership", "partners", "organizer", "innovations", "trust", "help", "contact", "status", "terms", "privacy", "explore"];
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const origin = siteOrigin() ?? "https://www.maximus.vegas";

@@ -27,6 +27,7 @@ import * as quick from "@/server/quickmatch.ts";
 import * as conduct from "@/server/conduct.ts";
 import * as scouting from "@/server/scouting.ts";
 import * as transfers from "@/server/transfers.ts";
+import * as clans from "@/server/clans.ts";
 import { storeUpload } from "@/server/media.ts";
 import { drainOutbox, mailConfigured } from "@/server/mail.ts";
 import { fail } from "@/server/errors.ts";
@@ -751,6 +752,84 @@ const handlers: Record<string, Handler> = {
     const reverse = c.form.reverse === "1";
     await transfers.decideTransferDispute(c.db, user, c.form.dispute, reverse, c.form.decision);
     return { to: conductAdmin(c), ok: reverse ? "transfer_reversed" : "transfer_upheld" };
+  },
+
+  // ---------- Clans and clan wars ----------
+  "clan.create": async (c) => {
+    const clan = await clans.createClan(c.db, u(c), { name: c.form.name, tag: c.form.tag, description: c.form.description });
+    return { to: `/${c.lang}/clans/${clan.slug}`, ok: "clan_created" };
+  },
+  "clan.update": async (c) => {
+    await clans.updateClan(c.db, u(c), c.form.clan, { description: c.form.description });
+    return { ok: "clan_updated" };
+  },
+  "clan.invite": async (c) => {
+    await clans.inviteToClan(c.db, u(c), c.form.clan, c.form.username);
+    return { ok: "clan_invited" };
+  },
+  "clan.respond": async (c) => {
+    const accept = c.form.accept === "1";
+    const r = await clans.respondClanInvite(c.db, u(c), c.form.invite, accept);
+    return accept ? { to: `/${c.lang}/clans/${r.slug}`, ok: "clan_joined" } : { ok: "clan_invite_declined" };
+  },
+  "clan.revoke": async (c) => {
+    await clans.revokeClanInvite(c.db, u(c), c.form.invite);
+    return { ok: "clan_invite_revoked" };
+  },
+  "clan.leave": async (c) => {
+    const r = await clans.leaveClan(c.db, u(c), c.form.clan);
+    return { to: `/${c.lang}/clans`, ok: r.disbanded ? "clan_disbanded" : "clan_left" };
+  },
+  "clan.remove": async (c) => {
+    await clans.removeClanMember(c.db, u(c), c.form.clan, c.form.member);
+    return { ok: "clan_member_removed" };
+  },
+  "clan.role": async (c) => {
+    await clans.setClanRole(c.db, u(c), c.form.clan, c.form.member, c.form.role);
+    return { ok: "clan_role_set" };
+  },
+  "war.propose": async (c) => {
+    await clans.proposeWar(c.db, u(c), c.form.clan, {
+      opponent: c.form.opponent,
+      game: c.form.game,
+      sideSize: c.form.size,
+      bestOf: c.form.bestOf,
+      at: c.form.at,
+      tz: c.form.tz,
+      lineup: c.multi.lineup ?? [],
+      message: c.form.message,
+    });
+    return { ok: "war_proposed" };
+  },
+  "war.answer": async (c) => {
+    const r = await clans.answerWar(c.db, u(c), c.form.war, c.form.answer === "accept" ? "accept" : "decline", c.multi.lineup ?? []);
+    return { ok: r.status === "accepted" ? "war_accepted" : "war_declined" };
+  },
+  "war.cancel": async (c) => {
+    await clans.cancelWar(c.db, u(c), c.form.war);
+    return { ok: "war_cancelled" };
+  },
+  "war.lineup": async (c) => {
+    await clans.setWarLineup(c.db, u(c), c.form.war, c.multi.lineup ?? []);
+    return { ok: "war_lineup_saved" };
+  },
+  "war.report": async (c) => {
+    await clans.reportWar(c.db, u(c), c.form.war, c.form.mine, c.form.theirs);
+    return { ok: "war_reported" };
+  },
+  "war.confirm": async (c) => {
+    await clans.confirmWar(c.db, u(c), c.form.war);
+    return { ok: "war_confirmed" };
+  },
+  "war.dispute": async (c) => {
+    await clans.disputeWar(c.db, u(c), c.form.war, c.form.reason);
+    return { ok: "war_disputed" };
+  },
+  "war.decide": async (c) => {
+    const user = await staff(c);
+    mfa.requireStepUp(user);
+    await clans.decideWar(c.db, user, c.form.war, c.form.outcome, c.form.decision);
+    return { to: conductAdmin(c), ok: "war_decided" };
   },
 
   // ---------- Fair play: reports, sanctions, appeals ----------

@@ -82,6 +82,8 @@ const COUNT_LABELS: Record<string, { ru: string; en: string; tab?: Tab }> = {
   new_applications: { ru: "Новые обращения", en: "New inquiries", tab: "applications" },
   conduct_reports: { ru: "Жалобы на нарушения", en: "Violation reports", tab: "conduct" },
   conduct_appeals: { ru: "Апелляции на санкции", en: "Sanction appeals", tab: "conduct" },
+  transfer_disputes: { ru: "Споры о переходах", en: "Transfer disputes", tab: "conduct" },
+  war_disputes: { ru: "Споры клановых войн", en: "Clan war disputes", tab: "conduct" },
 };
 
 export default async function Admin({ params, searchParams }: { params: Promise<{ lang: string }>; searchParams: SearchParams }) {
