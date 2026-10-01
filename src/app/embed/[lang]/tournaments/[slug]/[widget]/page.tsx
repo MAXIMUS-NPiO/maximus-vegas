@@ -5,9 +5,9 @@ import { gameBySlug } from "@/lib/games.ts";
 import { getDb } from "@/server/db.ts";
 import { bracket, getTournament } from "@/server/queries.ts";
 import { registrationOpen } from "@/server/tournaments.ts";
-import { isRoundFormat, settingsOf } from "@/server/format-settings.ts";
+import { isRoundFormat, playoffStage, settingsOf } from "@/server/format-settings.ts";
 import { standingsFor } from "@/server/partner-api.ts";
-import { BracketView, formatLabel } from "@/components/tournament";
+import { BracketView, chainStageLabel, formatLabel, stageTitle } from "@/components/tournament";
 import { EmbedFoot, EmbedHead, EmbedStandings } from "@/components/embed";
 import { Badge } from "@/components/ui";
 import { LocalTime } from "@/components/time";
@@ -45,12 +45,25 @@ export default async function TournamentWidget({ params }: { params: Promise<{ l
     } else {
       const matches = await bracket(db, t.id);
       const rounds = isRoundFormat(t.format);
-      const playoff = rounds ? (settingsOf(t).playoff ?? null) : null;
+      const settings = settingsOf(t);
+      const playoff = rounds ? (settings.playoff ?? null) : null;
+      const chain = rounds ? (settings.chain ?? []) : [];
       const main = matches.filter((m) => (m.stage ?? 1) === 1);
-      const second = matches.filter((m) => m.stage === 2);
+      const second = matches.filter((m) => m.stage === playoffStage(settings));
       body = matches.length ? (
         <div className="stack">
           <BracketView lang={lang} matches={rounds ? main : matches} format={t.format} linkMatches={false} />
+          {chain.map((c, i) => {
+            const stageMatches = matches.filter((m) => m.stage === i + 2);
+            return stageMatches.length ? (
+              <div key={i} className="bracket-group">
+                <h2 className="h4">
+                  {`${stageTitle(i + 2, lang)} · ${chainStageLabel(c, lang)}`}
+                </h2>
+                <BracketView lang={lang} matches={stageMatches} format={c.format} linkMatches={false} scope={`s${i + 2}`} />
+              </div>
+            ) : null;
+          })}
           {playoff && second.length ? (
             <div className="bracket-group">
               <h2 className="h4">{ru ? "Плей-офф" : "Playoff"}</h2>

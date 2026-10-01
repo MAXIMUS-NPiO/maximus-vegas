@@ -80,8 +80,9 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
       : null;
   const reported = results.some((r) => r.status === "pending" || r.status === "confirmed");
   const venueList = referee && !["completed", "cancelled"].includes(m.status) ? await venuesOf(db, m.tournament_id) : [];
-  // Once the playoff exists, the main stage that seeded it is final.
-  const stageLocked = (m.stage ?? 1) === 1 && m.t_stage === 2;
+  // Once the next stage exists (a chained stage or the playoff), the stage that seeded it is final.
+  const stageLocked = (m.stage ?? 1) < (m.t_stage ?? 1);
+  const chained = Boolean(tSettings.chain?.length);
   const drawsOk = inRounds && tSettings.allowDraws;
   const drawn = m.status === "completed" && !m.winner_reg && Boolean(m.a_reg && m.b_reg);
   const drawNote = inRounds
@@ -541,9 +542,13 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
           ) : null}
           {m.status === "completed" && m.outcome !== "bye" && both && stageLocked ? (
             <p className="small muted">
-              {ru
-                ? "Плей-офф уже начался: результат основного этапа зафиксирован и не исправляется."
-                : "The playoff has started: this main-stage result is final and cannot be corrected."}
+              {chained
+                ? ru
+                  ? "Следующий этап уже начался: результат этого этапа зафиксирован и не исправляется."
+                  : "The next stage has started: this stage's result is final and cannot be corrected."
+                : ru
+                  ? "Плей-офф уже начался: результат основного этапа зафиксирован и не исправляется."
+                  : "The playoff has started: this main-stage result is final and cannot be corrected."}
             </p>
           ) : m.status === "completed" && m.outcome !== "bye" && both && elimination ? (
             <details className="disclosure" id="repair" open={Boolean(repairView)}>
@@ -671,9 +676,13 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
             </ActionForm>
             {stageLocked ? (
               <p className="small muted">
-                {ru
-                  ? "Отмена недоступна: плей-офф уже начался и результаты основного этапа зафиксированы."
-                  : "Overturning is unavailable: the playoff has started and main-stage results are final."}
+                {chained
+                  ? ru
+                    ? "Отмена недоступна: следующий этап уже начался и результаты этого этапа зафиксированы."
+                    : "Overturning is unavailable: the next stage has started and this stage's results are final."
+                  : ru
+                    ? "Отмена недоступна: плей-офф уже начался и результаты основного этапа зафиксированы."
+                    : "Overturning is unavailable: the playoff has started and main-stage results are final."}
               </p>
             ) : (
               <ActionForm action="dispute.decide" lang={lang} back={back} hidden={{ dispute: openPost.id, decision: "overturn" }} className="stack">

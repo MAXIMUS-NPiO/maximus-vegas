@@ -14,8 +14,8 @@ import { planSingleElimination } from "@/server/bracket.ts";
 import { planDoubleElimination } from "@/server/double.ts";
 import { roundRobinSchedule } from "@/server/roundrobin.ts";
 import { pairSwissRound } from "@/server/swiss.ts";
-import { isRoundFormat, settingsOf, type FormatSettings } from "@/server/format-settings.ts";
-import { groupStandings, roundStandings } from "@/server/rounds.ts";
+import { isRoundFormat, playoffStage, settingsOf, type FormatSettings } from "@/server/format-settings.ts";
+import { groupStandings, roundStandings, stageTables } from "@/server/rounds.ts";
 import { roundTables } from "@/server/lobbies.ts";
 import { dealLobbies, ffaSettingsOf, planRounds } from "@/server/ffa.ts";
 import { planGauntlet, snakeGroups } from "@/server/stages.ts";
@@ -31,7 +31,23 @@ import { portalHost, StreamsBlock } from "@/components/streams";
 import type { Database } from "@/server/db.ts";
 import type { SessionUser } from "@/server/auth.ts";
 import { ActionForm, Badge, DbDown, Empty, Field, Flash, SignInPrompt, type SearchParams } from "@/components/ui";
-import { AdmissionView, AnswerFields, BracketView, FfaRounds, FfaRules, formatLabel, groupTitle, playoffFormatLabel, RoundRules, SeriesRulesView, StandingsTable, type StandingName } from "@/components/tournament";
+import {
+  AdmissionView,
+  AnswerFields,
+  BracketView,
+  chainStageLabel,
+  FfaRounds,
+  FfaRules,
+  formatLabel,
+  groupTitle,
+  playoffFormatLabel,
+  RoundRules,
+  SeriesRulesView,
+  StageStandings,
+  stageTitle,
+  StandingsTable,
+  type StandingName,
+} from "@/components/tournament";
 import { Countdown, LocalTime } from "@/components/time";
 import { reviewLabel } from "@/lib/labels.ts";
 import { seriesCustomised, seriesMap, seriesRulesOf } from "@/server/series.ts";
@@ -195,8 +211,10 @@ export default async function TournamentPage({ params, searchParams }: { params:
   const plannedRounds = ffa && !started ? planRounds(seededList(list).length, ffaRules) : [];
   const previewRounds = rounds === "round_robin" ? roundRobinSchedule(list.filter((p) => p.status === "registered"), settings.legs ?? 1).rounds : 0;
   const standings = t.status === "COMPLETED" ? list.filter((p) => p.placement !== null).sort((a, b) => (a.placement ?? 0) - (b.placement ?? 0)) : [];
-  // A main stage (round robin, Swiss or groups) may be followed by a playoff (stage 2).
+  // A main stage (round robin, Swiss or groups) may be followed by further round stages and a playoff (MV-STAGES-2).
   const playoff = rounds ? (settings.playoff ?? null) : null;
+  const chain = rounds ? (settings.chain ?? []) : [];
+  const playoffAt = playoffStage(settings);
   const seriesRules = seriesRulesOf(t);
   const seriesById =
     seriesCustomised(seriesRules) || matches.some((m) => m.series_override) ? seriesMap(seriesRules, matches, { main: t.format, playoff: playoff?.format ?? null }) : undefined;
@@ -204,7 +222,20 @@ export default async function TournamentPage({ params, searchParams }: { params:
   const [myStanding] = admission && user ? await playerStandings(db, t.game, [user.id]) : [];
   const unmet = admission && myStanding ? unmetCriteria(admission, myStanding) : [];
   const mainMatches = matches.filter((m) => (m.stage ?? 1) === 1);
-  const playoffMatches = matches.filter((m) => m.stage === 2);
+  const playoffMatches = matches.filter((m) => m.stage === playoffAt);
+  const chainStages = await Promise.all(
+    chain.map(async (spec, i) => {
+      const stage = i + 2;
+      const stageMatches = matches.filter((m) => m.stage === stage);
+      const data = stageMatches.length ? await stageTables(db, t, stage) : null;
+      return { stage, spec, matches: stageMatches, tables: data?.tables ?? [] };
+    }),
+  );
+  /** How many go on from a round stage: from groups, the top `advance` of each group; otherwise the next stage's field. */
+  const onFrom = (stage: number, rows: number) => {
+    const next = chain[stage - 1] ?? playoff;
+    return next ? Math.min(next.size, rows) : 0;
+  };
   const roundTable = (rounds === "round_robin" || rounds === "swiss") && started ? await roundStandings(db, t) : [];
   const groupTables = rounds === "groups" && started ? await groupStandings(db, t) : [];
   const groupCount = settings.groups?.count ?? 0;
@@ -247,13 +278,47 @@ export default async function TournamentPage({ params, searchParams }: { params:
         {groupTables.map((g) => (
           <div key={g.group} className="stack-sm">
             <h3 className="h4">{groupTitle(g.group, lang)}</h3>
-            <StandingsTable lang={lang} format="groups" rows={g.rows} names={names} final={false} advance={settings.groups?.advance ?? 0} />
+            <StandingsTable lang={lang} format="groups" rows={g.rows} names={names} final={false} advance={settings.groups?.advance ?? 0} onward={chain.length ? "stage" : "playoff"} />
           </div>
         ))}
       </div>
     ) : rounds ? (
-      <StandingsTable lang={lang} format={rounds} rows={roundTable} names={names} final={finished && !playoff} advance={playoff ? Math.min(playoff.size, roundTable.length) : 0} />
+      <StandingsTable
+        lang={lang}
+        format={rounds}
+        rows={roundTable}
+        names={names}
+        final={finished && !playoff && !chain.length}
+        advance={onFrom(1, roundTable.length)}
+        onward={chain.length ? "stage" : "playoff"}
+      />
     ) : null;
+  // Tables of every stage played in rounds, the latest first (with a chain of stages).
+  const ChainTables = () => (
+    <div className="stage-tables">
+      {[...chainStages]
+        .reverse()
+        .filter((s) => s.tables.length)
+        .map((s) => (
+          <div key={s.stage} className="stack-sm">
+            <h3 className="h4">{`${stageTitle(s.stage, lang)} · ${chainStageLabel(s.spec, lang)}`}</h3>
+            <StageStandings
+              lang={lang}
+              format={s.spec.format}
+              tables={s.tables}
+              names={names}
+              final={finished && !playoff && s.stage === chain.length + 1}
+              advance={s.spec.format === "groups" ? (s.spec.groups?.advance ?? 0) : onFrom(s.stage, s.tables[0]?.rows.length ?? 0)}
+              onward={s.stage < chain.length + 1 ? "stage" : "playoff"}
+            />
+          </div>
+        ))}
+      <div className="stack-sm">
+        <h3 className="h4">{ru ? "Основной этап" : "Main stage"}</h3>
+        <MainTables />
+      </div>
+    </div>
+  );
 
   return (
     <div className="container page">
@@ -295,12 +360,21 @@ export default async function TournamentPage({ params, searchParams }: { params:
             <dt>{d.tournaments.format}</dt>
             <dd>{formatLabel(t.format, lang)}</dd>
           </div>
+          {chain.length ? (
+            <div>
+              <dt>{ru ? "Следующие этапы" : "Further stages"}</dt>
+              <dd>
+                {chain.map((c, i) => `${stageTitle(i + 2, lang)}: ${chainStageLabel(c, lang)}`).join("; ")}
+                {(t.stage ?? 1) >= 2 && (t.stage ?? 1) < playoffAt && !finished ? ` · ${ru ? `идёт этап ${t.stage}` : `stage ${t.stage} under way`}` : ""}
+              </dd>
+            </div>
+          ) : null}
           {playoff ? (
             <div>
               <dt>{ru ? "Плей-офф" : "Playoff"}</dt>
               <dd>
                 {playoffFormatLabel(playoff.format, lang)} · {playoff.size}
-                {t.stage === 2 && !finished ? ` · ${ru ? "идёт" : "under way"}` : ""}
+                {t.stage === playoffAt && !finished ? ` · ${ru ? "идёт" : "under way"}` : ""}
               </dd>
             </div>
           ) : null}
@@ -835,22 +909,52 @@ export default async function TournamentPage({ params, searchParams }: { params:
           ) : started ? (
             <>
               <BracketView lang={lang} matches={rounds ? mainMatches : matches} format={t.format} series={seriesById} mine={entry ? [entry.id] : undefined} />
+              {chainStages.map((s) => (
+                <div key={s.stage} className="bracket-group">
+                  <h3 className="h3">
+                    {`${stageTitle(s.stage, lang)} · ${chainStageLabel(s.spec, lang)}`}
+                  </h3>
+                  {s.matches.length ? (
+                    <BracketView lang={lang} matches={s.matches} format={s.spec.format} series={seriesById} mine={entry ? [entry.id] : undefined} scope={`s${s.stage}`} />
+                  ) : (t.stage ?? 1) >= s.stage || finished ? (
+                    <p className="muted">
+                      {ru
+                        ? "Этап не состоялся: из предыдущего этапа вышло меньше двух участников. Места определены по сыгранным этапам."
+                        : "This stage was not played: fewer than two entrants came through the stage before. Places follow the stages played."}
+                    </p>
+                  ) : (
+                    <p className="muted">
+                      {ru
+                        ? "Этап будет создан автоматически после последнего матча предыдущего этапа и решения споров по нему."
+                        : "The stage is created automatically after the last match of the stage before it and any open disputes about it."}
+                    </p>
+                  )}
+                </div>
+              ))}
               {playoff ? (
                 <div className="bracket-group">
                   <h3 className="h3">{ru ? "Плей-офф" : "Playoff"}</h3>
                   {playoffMatches.length ? (
                     <BracketView lang={lang} matches={playoffMatches} format={playoff.format} series={seriesById} mine={entry ? [entry.id] : undefined} scope="p" />
-                  ) : t.stage === 2 ? (
+                  ) : t.stage === playoffAt || (finished && chain.length) ? (
                     <p className="muted">
-                      {ru
-                        ? "Плей-офф не состоялся: из основного этапа вышло меньше двух участников. Места определены по основному этапу."
-                        : "No playoff was played: fewer than two entrants came through the main stage. Places follow the main stage."}
+                      {chain.length
+                        ? ru
+                          ? "Плей-офф не состоялся: из предыдущего этапа вышло меньше двух участников. Места определены по сыгранным этапам."
+                          : "No playoff was played: fewer than two entrants came through the stage before. Places follow the stages played."
+                        : ru
+                          ? "Плей-офф не состоялся: из основного этапа вышло меньше двух участников. Места определены по основному этапу."
+                          : "No playoff was played: fewer than two entrants came through the main stage. Places follow the main stage."}
                     </p>
                   ) : (
                     <p className="muted">
-                      {ru
-                        ? `Плей-офф (${playoffFormatLabel(playoff.format, lang)}, ${playoff.size} участников) будет создан автоматически после последнего матча основного этапа.`
-                        : `The playoff (${playoffFormatLabel(playoff.format, lang)}, ${playoff.size} entrants) is created automatically after the last main-stage match.`}
+                      {chain.length
+                        ? ru
+                          ? `Плей-офф (${playoffFormatLabel(playoff.format, lang)}, ${playoff.size} участников) будет создан автоматически после последнего матча предыдущего этапа.`
+                          : `The playoff (${playoffFormatLabel(playoff.format, lang)}, ${playoff.size} entrants) is created automatically after the last match of the stage before it.`
+                        : ru
+                          ? `Плей-офф (${playoffFormatLabel(playoff.format, lang)}, ${playoff.size} участников) будет создан автоматически после последнего матча основного этапа.`
+                          : `The playoff (${playoffFormatLabel(playoff.format, lang)}, ${playoff.size} entrants) is created automatically after the last main-stage match.`}
                     </p>
                   )}
                 </div>
@@ -880,6 +984,12 @@ export default async function TournamentPage({ params, searchParams }: { params:
                   </div>
                 ))}
               </div>
+              {chain.length ? (
+                <p className="small muted">
+                  {ru ? "Следующие этапы: " : "Further stages: "}
+                  {chain.map((c, i) => `${stageTitle(i + 2, lang)} — ${chainStageLabel(c, lang)}`).join("; ")}.
+                </p>
+              ) : null}
               {playoff ? (
                 <p className="small muted">
                   {ru
@@ -902,11 +1012,21 @@ export default async function TournamentPage({ params, searchParams }: { params:
                     : d.tournaments.bracketPreview}
               </p>
               <BracketView lang={lang} matches={previewMatches} linkMatches={false} format={t.format} scope="v" />
+              {chain.length ? (
+                <p className="small muted">
+                  {ru ? "Следующие этапы: " : "Further stages: "}
+                  {chain.map((c, i) => `${stageTitle(i + 2, lang)} — ${chainStageLabel(c, lang)}`).join("; ")}.
+                </p>
+              ) : null}
               {playoff ? (
                 <p className="small muted">
-                  {ru
-                    ? `После основного этапа — плей-офф: ${playoffFormatLabel(playoff.format, lang)}, ${playoff.size} лучших по таблице.`
-                    : `After the main stage, a playoff: ${playoffFormatLabel(playoff.format, lang)} for the top ${playoff.size} of the table.`}
+                  {chain.length
+                    ? ru
+                      ? `Затем плей-офф: ${playoffFormatLabel(playoff.format, lang)}, ${playoff.size} участников.`
+                      : `Then a playoff: ${playoffFormatLabel(playoff.format, lang)}, ${playoff.size} entrants.`
+                    : ru
+                      ? `После основного этапа — плей-офф: ${playoffFormatLabel(playoff.format, lang)}, ${playoff.size} лучших по таблице.`
+                      : `After the main stage, a playoff: ${playoffFormatLabel(playoff.format, lang)} for the top ${playoff.size} of the table.`}
                 </p>
               ) : null}
             </>
@@ -918,7 +1038,7 @@ export default async function TournamentPage({ params, searchParams }: { params:
 
       <section id="standings" className="section-tight">
         <h2 className="h3">{d.tournaments.tabs.standings}</h2>
-        {playoff && finished && standings.length ? (
+        {(playoff || chain.length) && finished && standings.length ? (
           <>
             <ol className="standings">
               {standings.map((p) => (
@@ -929,20 +1049,31 @@ export default async function TournamentPage({ params, searchParams }: { params:
               ))}
             </ol>
             <p className="small muted">
-              {ru
-                ? "Места: сначала плей-офф, затем остальные по основному этапу."
-                : "Places: the playoff first, then everyone else by the main stage."}
+              {chain.length
+                ? ru
+                  ? "Места: чем дальше участник прошёл по этапам, тем выше; внутри этапа — по плей-офф или по таблице этапа (после групп одинаковое место в группе — общее место)."
+                  : "Places: the further an entrant went through the stages, the higher; within a stage, by the playoff or by that stage's table (after groups, the same group place is a shared place)."
+                : ru
+                  ? "Места: сначала плей-офф, затем остальные по основному этапу."
+                  : "Places: the playoff first, then everyone else by the main stage."}
             </p>
             {groupTables.length || roundTable.length ? (
               <details className="disclosure">
-                <summary>{ru ? "Таблица основного этапа" : "Main-stage table"}</summary>
-                <MainTables />
+                <summary>{chain.length ? (ru ? "Таблицы этапов" : "Stage tables") : ru ? "Таблица основного этапа" : "Main-stage table"}</summary>
+                {chain.length ? <ChainTables /> : <MainTables />}
               </details>
             ) : null}
           </>
         ) : rounds && (roundTable.length || groupTables.length) ? (
           <>
-            {!finished ? (
+            {!finished && chain.length ? (
+              <p className="small muted">
+                {ru
+                  ? "Промежуточные таблицы: выделены места, которые сейчас проходят дальше. Таблица этапа становится окончательной, когда создан следующий этап."
+                  : "Provisional tables: highlighted places currently go on. A stage's table becomes final once the next stage exists."}
+              </p>
+            ) : null}
+            {!finished && !chain.length ? (
               <p className="small muted">
                 {playoff
                   ? t.stage === 2
@@ -957,7 +1088,7 @@ export default async function TournamentPage({ params, searchParams }: { params:
                     : "Provisional table: places are fixed after the last round."}
               </p>
             ) : null}
-            <MainTables />
+            {chain.length ? <ChainTables /> : <MainTables />}
           </>
         ) : standings.length ? (
           <ol className="standings">

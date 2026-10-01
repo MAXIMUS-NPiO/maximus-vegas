@@ -4,7 +4,8 @@
  * A setting comes from the most general level and is overridden by a more specific one:
  *   tournament → stage (the playoff) → part of a bracket (the lower bracket) → group → round → match.
  * The round level covers numbered rounds of a main stage played in rounds (round robin, Swiss, groups) and
- * named rounds of a bracket: the final (single elimination and gauntlet: the last round; double elimination:
+ * named rounds of a bracket (the round and group levels of numbered rounds apply to the main stage only;
+ * chained round stages, MV-STAGES-2, follow the tournament's level): the final (single elimination and gauntlet: the last round; double elimination:
  * the grand final, including a reset) and the semi-finals (single elimination and gauntlet: the round before
  * the final; double elimination: the finals of the upper and the lower bracket).
  *
@@ -172,7 +173,7 @@ export function bracketDepth(matches: Array<{ stage?: number | null; bracket?: s
   return depth;
 }
 
-/** The bracket of each stage: stage 1 plays the tournament's format, stage 2 its playoff. */
+/** The bracket of each stage: stage 1 plays the tournament's format; a bracket at a later stage is the playoff. */
 export type StageFormats = { main: string; playoff?: string | null };
 
 /** Named part of a bracket a match belongs to: the final, a semi-final, or the lower bracket. */
@@ -180,7 +181,7 @@ export function bracketPart(m: SeriesMatch, formats: StageFormats, depth: Depth)
   const stage = m.stage ?? 1;
   const bracket = m.bracket ?? "W";
   if (bracket === "RR" || bracket === "SW") return null;
-  const format = stage === 2 ? (formats.playoff ?? "single_elimination") : formats.main;
+  const format = stage >= 2 ? (formats.playoff ?? "single_elimination") : formats.main;
   const top = depth.get(depthKey(stage, bracket)) ?? m.round;
   if (bracket === "GF") return "final";
   if (format === "double_elimination") {
@@ -197,9 +198,10 @@ export function seriesOf(rules: SeriesRules, m: SeriesMatch, formats: StageForma
   if (isLength(m.series_override)) return { bestOf: m.series_override, source: "match" };
   const bracket = m.bracket ?? "W";
   if (bracket === "RR" || bracket === "SW") {
-    const round = rules.rounds.find((r) => r.round === m.round && r.bestOf);
+    const main = (m.stage ?? 1) === 1;
+    const round = main ? rules.rounds.find((r) => r.round === m.round && r.bestOf) : undefined;
     if (round) return { bestOf: round.bestOf!, source: "round" };
-    const group = m.group_no ? rules.groups.find((g) => g.group === m.group_no && g.bestOf) : undefined;
+    const group = main && m.group_no ? rules.groups.find((g) => g.group === m.group_no && g.bestOf) : undefined;
     if (group) return { bestOf: group.bestOf!, source: "group" };
     return { bestOf: rules.bestOf, source: "tournament" };
   }
@@ -207,7 +209,7 @@ export function seriesOf(rules: SeriesRules, m: SeriesMatch, formats: StageForma
   if (part === "final" && rules.final) return { bestOf: rules.final, source: "final" };
   if (part === "semifinal" && rules.semifinal) return { bestOf: rules.semifinal, source: "semifinal" };
   if (bracket === "L" && rules.lower) return { bestOf: rules.lower, source: "lower" };
-  if ((m.stage ?? 1) === 2 && rules.playoff) return { bestOf: rules.playoff, source: "playoff" };
+  if ((m.stage ?? 1) >= 2 && rules.playoff) return { bestOf: rules.playoff, source: "playoff" };
   return { bestOf: rules.bestOf, source: "tournament" };
 }
 
@@ -217,12 +219,13 @@ export function seriesMap(rules: SeriesRules, matches: Array<SeriesMatch & { id:
   return new Map(matches.map((m) => [m.id, seriesOf(rules, m, formats, depth).bestOf]));
 }
 
-/** Points of a table match: match → round → group → the tournament's points table. */
+/** Points of a table match: match → round → group (main stage) → the tournament's points table. */
 export function pointsOf(rules: SeriesRules, base: PointsTable, m: SeriesMatch): { points: PointsTable; source: SeriesSource } {
   if (pointsOk(m.points_override)) return { points: m.points_override, source: "match" };
-  const round = rules.rounds.find((r) => r.round === m.round && r.points);
+  const main = (m.stage ?? 1) === 1;
+  const round = main ? rules.rounds.find((r) => r.round === m.round && r.points) : undefined;
   if (round) return { points: round.points!, source: "round" };
-  const group = m.group_no ? rules.groups.find((g) => g.group === m.group_no && g.points) : undefined;
+  const group = main && m.group_no ? rules.groups.find((g) => g.group === m.group_no && g.points) : undefined;
   if (group) return { points: group.points!, source: "group" };
   return { points: base, source: "tournament" };
 }

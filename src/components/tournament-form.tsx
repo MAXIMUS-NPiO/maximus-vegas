@@ -1,7 +1,17 @@
 import { dict, type Locale } from "@/lib/i18n.ts";
 import { GAMES } from "@/lib/games.ts";
 import { DEFAULT_WEIGHTS, mergeWeights, WEIGHT_KEYS } from "@/server/scoring.ts";
-import { editableSettings, GAUNTLET_MAX, isRoundFormat, MAX_GROUPS, PLAYOFF_MAX, ROUND_HOURS_MAX, RR_MAX_ENTRANTS, SWISS_MAX_ROUNDS } from "@/server/format-settings.ts";
+import {
+  CHAIN_SIZE_MAX,
+  editableSettings,
+  GAUNTLET_MAX,
+  isRoundFormat,
+  MAX_GROUPS,
+  PLAYOFF_MAX,
+  ROUND_HOURS_MAX,
+  RR_MAX_ENTRANTS,
+  SWISS_MAX_ROUNDS,
+} from "@/server/format-settings.ts";
 import { DEFAULT_POINTS } from "@/server/standings.ts";
 import { FFA_MAX_GAMES, FFA_MAX_LOBBY, ffaSettingsOf, pointsText } from "@/server/ffa.ts";
 import { fieldsOf, MAX_FIELDS, type RegField } from "@/server/registration.ts";
@@ -83,6 +93,43 @@ export function TournamentForm({
   const weights = mergeWeights(t?.scoring ?? null);
   // Round-robin and Swiss settings as the organiser entered them (never the values frozen at a start).
   const rs = t?.format && isRoundFormat(t.format) ? editableSettings({ format: t.format, format_settings: t.format_settings }) : null;
+  // Intermediate round stages between the main stage and the playoff (MV-STAGES-2): stage k is chain[k − 2].
+  const stageFields = (k: number) => {
+    const c = rs?.chain?.[k - 2] ?? null;
+    return (
+      <div className="form-grid form-grid-4">
+        <Field label={ru ? `Этап ${k}` : `Stage ${k}`}>
+          <select name={`stage${k}Format`} defaultValue={c?.format ?? "none"}>
+            <option value="none">{ru ? "Нет" : "None"}</option>
+            <option value="swiss">{ru ? "Швейцарская система" : "Swiss system"}</option>
+            <option value="round_robin">{ru ? "Круговая система" : "Round robin"}</option>
+            <option value="groups">{ru ? "Группы" : "Groups"}</option>
+          </select>
+        </Field>
+        <Field
+          label={ru ? `Участников этапа ${k}` : `Stage ${k} entrants`}
+          hint={ru ? `Лучшие N предыдущего этапа, 2–${CHAIN_SIZE_MAX}; после групп — все выходящие` : `The top N of the stage before, 2–${CHAIN_SIZE_MAX}; after groups, all who advance`}
+        >
+          <input name={`stage${k}Size`} type="number" min={2} max={CHAIN_SIZE_MAX} defaultValue={c?.size ?? 8} inputMode="numeric" />
+        </Field>
+        <Field label={ru ? "Туров (швейцарская)" : "Rounds (Swiss)"} hint={ru ? "Пусто — автоматически" : "Empty = automatic"}>
+          <input name={`stage${k}Rounds`} type="number" min={1} max={SWISS_MAX_ROUNDS} defaultValue={c?.rounds ?? ""} inputMode="numeric" />
+        </Field>
+        <Field label={ru ? "Круги (круговая, группы)" : "Legs (round robin, groups)"}>
+          <select name={`stage${k}Legs`} defaultValue={String(c?.legs ?? 1)}>
+            <option value="1">{ru ? "Один" : "One"}</option>
+            <option value="2">{ru ? "Два — дома и в гостях" : "Two — home and away"}</option>
+          </select>
+        </Field>
+        <Field label={ru ? "Групп" : "Groups"} hint={`2–${MAX_GROUPS}`}>
+          <input name={`stage${k}GroupCount`} type="number" min={2} max={MAX_GROUPS} defaultValue={c?.groups?.count ?? 2} inputMode="numeric" />
+        </Field>
+        <Field label={ru ? "Выходят из группы" : "Advance per group"} hint="1–16">
+          <input name={`stage${k}GroupAdvance`} type="number" min={1} max={16} defaultValue={c?.groups?.advance ?? 2} inputMode="numeric" />
+        </Field>
+      </div>
+    );
+  };
   const points = rs?.points ?? DEFAULT_POINTS;
   const ffa = ffaSettingsOf({ format_settings: t?.format === "ffa" ? t.format_settings : null });
   const fields = fieldsOf({ registration_fields: t?.registration_fields ?? null });
@@ -218,13 +265,13 @@ export function TournamentForm({
       </fieldset>
 
       <fieldset className="fieldset">
-        <legend>{ru ? "Этапы: группы, плей-офф, расписание туров" : "Stages: groups, playoff, round schedule"}</legend>
+        <legend>{ru ? "Этапы: группы, промежуточный этап, плей-офф, расписание туров" : "Stages: groups, intermediate stage, playoff, round schedule"}</legend>
         <p className="small muted">
           {ru
             ? "Для групп, круговой и швейцарской систем. Группы составляются змейкой по посеву; в группе — круговая система с очками выше. Плей-офф для групп обязателен (по умолчанию — олимпийская система), его размер — групп × выходящих; для круговой и швейцарской он необязателен. Всё фиксируется при старте."
             : "For groups, round robin and Swiss. Groups are dealt in a snake by seed; each group is a round robin with the points above. Groups always end in a playoff (single elimination by default) of groups × advancing entrants; for round robin and Swiss it is optional. Everything is frozen at the start."}
         </p>
-        <div className="fieldset-body">
+        <div className="fieldset-body stack">
           <div className="form-grid form-grid-4">
             <Field label={ru ? "Групп" : "Groups"} hint={`2–${MAX_GROUPS}`}>
               <input name="groupCount" type="number" min={2} max={MAX_GROUPS} defaultValue={rs?.groups?.count ?? 4} inputMode="numeric" />
@@ -250,6 +297,19 @@ export function TournamentForm({
               <input name="roundHours" type="number" min={0} max={ROUND_HOURS_MAX} defaultValue={rs?.roundHours ?? 0} inputMode="numeric" />
             </Field>
           </div>
+          <p className="small muted">
+            {ru
+              ? "Промежуточные этапы (необязательно) — этапы в турах между основным этапом и плей-офф, например: швейцарская система → группы → плей-офф. В каждый выходят лучшие N по таблице предыдущего этапа, после групп — все, кто выходит из групп. Плей-офф — из лучших последнего этапа; если это группы, размер плей-офф равен числу групп × выходящих. Очки, ничьи и правило дисквалификации общие для всех этапов."
+              : "Intermediate stages (optional): stages in rounds between the main stage and the playoff, for example Swiss → groups → playoff. The top N of the previous stage's table go on to each; after groups, everyone who advances from the groups. The playoff takes the best of the last stage; if that is groups, the playoff size is groups × advancing entrants. Points, draws and the disqualification rule are shared by every stage."}
+          </p>
+          {stageFields(2)}
+          <details className="disclosure" open={Boolean(rs?.chain && rs.chain.length > 1)}>
+            <summary>{ru ? "Ещё этапы: 3 и 4" : "More stages: 3 and 4"}</summary>
+            <div className="stack">
+              {stageFields(3)}
+              {stageFields(4)}
+            </div>
+          </details>
         </div>
       </fieldset>
 

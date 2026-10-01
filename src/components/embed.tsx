@@ -118,9 +118,12 @@ export function EmbedStandings({ lang, standings }: { lang: Locale; standings: S
     ) : (
       empty
     );
+  // From stage 2 on (MV-STAGES-2) the table is the current stage's.
+  const stageNote = standings.stage > 1 ? <p className="small muted">{ru ? `Этап ${standings.stage}` : `Stage ${standings.stage}`}</p> : null;
   if (standings.kind === "groups")
     return (
       <div className="stack">
+        {stageNote}
         {standings.groups.map((g) => (
           <div key={g.group} className="stack-sm">
             <h2 className="h4">{groupTitle(g.group, lang)}</h2>
@@ -129,5 +132,12 @@ export function EmbedStandings({ lang, standings }: { lang: Locale; standings: S
         ))}
       </div>
     );
-  return table(standings.rows);
+  return stageNote ? (
+    <div className="stack-sm">
+      {stageNote}
+      {table(standings.rows)}
+    </div>
+  ) : (
+    table(standings.rows)
+  );
 }

@@ -6,7 +6,7 @@ import type { BracketMatch } from "@/server/queries.ts";
 import { roundName } from "@/server/bracket.ts";
 import { deRoundName } from "@/server/double.ts";
 import type { StandingsRow } from "@/server/standings.ts";
-import type { FormatSettings, RoundFormat } from "@/server/format-settings.ts";
+import type { ChainStage, FormatSettings, RoundFormat } from "@/server/format-settings.ts";
 import { groupName } from "@/server/stages.ts";
 import type { FfaRow, FfaSettings } from "@/server/ffa.ts";
 import type { RegField } from "@/server/registration.ts";
@@ -51,6 +51,18 @@ export function playoffFormatLabel(format: string | undefined, lang: Locale) {
 
 export const groupTitle = (group: number, lang: Locale) => `${lang === "ru" ? "Группа" : "Group"} ${groupName(group)}`;
 
+/** Stages after the main stage are numbered from 2 (MV-STAGES-2). */
+export const stageTitle = (stage: number, lang: Locale) => `${lang === "ru" ? "Этап" : "Stage"} ${stage}`;
+
+/** A round stage in a chain, in a short form: "Groups · 8 · 2 groups, top 2 of each advance". */
+export function chainStageLabel(c: Pick<ChainStage, "format" | "size" | "groups">, lang: Locale) {
+  const ru = lang === "ru";
+  const name =
+    c.format === "groups" ? (ru ? "Группы" : "Groups") : c.format === "swiss" ? (ru ? "Швейцарская система" : "Swiss system") : ru ? "Круговая система" : "Round robin";
+  const groups = c.groups ? (ru ? ` · групп: ${c.groups.count}, из каждой выходят ${c.groups.advance}` : ` · ${c.groups.count} groups, top ${c.groups.advance} of each advance`) : "";
+  return `${name} · ${c.size}${groups}`;
+}
+
 /** Gauntlet rounds are steps up the ladder; the last one is the final against the top seed. */
 export const gauntletRoundName = (round: number, rounds: number, lang: Locale) =>
   round === rounds ? (lang === "ru" ? "Финал" : "Final") : lang === "ru" ? `Ступень ${round}` : `Step ${round}`;
@@ -68,8 +80,12 @@ export type LabelContext = {
 /** Where a match sits, for every format: "Group B · Round 2", "Playoff · Semi-final", "Step 3", "Grand final". */
 export function matchLabel(m: { bracket?: string | null; round: number; stage?: number | null; group_no?: number | null }, ctx: LabelContext, lang: Locale): string {
   const ru = lang === "ru";
-  if (m.bracket === "RR" || m.bracket === "SW") return m.group_no ? `${groupTitle(m.group_no, lang)} · ${roundLabel(m.round, lang)}` : roundLabel(m.round, lang);
-  const playoff = (m.stage ?? 1) === 2;
+  if (m.bracket === "RR" || m.bracket === "SW") {
+    const name = m.group_no ? `${groupTitle(m.group_no, lang)} · ${roundLabel(m.round, lang)}` : roundLabel(m.round, lang);
+    return (m.stage ?? 1) >= 2 ? `${stageTitle(m.stage!, lang)} · ${name}` : name;
+  }
+  // A bracket after round stages is the playoff (stage 2, or later after a chain).
+  const playoff = (m.stage ?? 1) >= 2;
   const bracketFormat = playoff ? (ctx.playoffFormat ?? "single_elimination") : ctx.format;
   const name =
     m.bracket === "G"
@@ -360,6 +376,7 @@ export function StandingsTable({
   names,
   final,
   advance = 0,
+  onward = "playoff",
 }: {
   lang: Locale;
   format: RoundFormat;
@@ -368,6 +385,8 @@ export function StandingsTable({
   final: boolean;
   /** Places that lead to the playoff (0 = none): marked in the table. */
   advance?: number;
+  /** Where the marked places go: the playoff, or the next round stage of a chain. */
+  onward?: "playoff" | "stage";
 }) {
   const ru = lang === "ru";
   const swiss = format === "swiss";
@@ -446,17 +465,54 @@ export function StandingsTable({
         </table>
       </div>
       <p className="small muted">
-        {advance === 1
+        {advance > 0 && onward === "stage"
           ? ru
-            ? "Первое место выходит в плей-офф. "
-            : "First place advances to the playoff. "
-          : advance > 1
+            ? `${advance === 1 ? "Первое место проходит" : `Места 1–${advance} проходят`} на следующий этап. `
+            : `${advance === 1 ? "First place goes" : `Places 1–${advance} go`} on to the next stage. `
+          : advance === 1
             ? ru
-              ? `Места 1–${advance} выходят в плей-офф. `
-              : `Places 1–${advance} advance to the playoff. `
-            : ""}
+              ? "Первое место выходит в плей-офф. "
+              : "First place advances to the playoff. "
+            : advance > 1
+              ? ru
+                ? `Места 1–${advance} выходят в плей-офф. `
+                : `Places 1–${advance} advance to the playoff. `
+              : ""}
         {tieCols.map(([h, title]) => `${h}: ${title}`).join(" · ")}
       </p>
+    </div>
+  );
+}
+
+/** Tables of a round stage: one per group (with its letter), or a single table. */
+export function StageStandings({
+  lang,
+  format,
+  tables,
+  names,
+  final,
+  advance,
+  onward,
+}: {
+  lang: Locale;
+  format: RoundFormat;
+  tables: Array<{ group: number; rows: StandingsRow[] }>;
+  names: Map<string, StandingName>;
+  final: boolean;
+  /** Groups: how many of each group go on; otherwise how many places of the table go on (0 = none). */
+  advance: number;
+  onward: "playoff" | "stage";
+}) {
+  if (format !== "groups")
+    return <StandingsTable lang={lang} format={format} rows={tables[0]?.rows ?? []} names={names} final={final} advance={advance} onward={onward} />;
+  return (
+    <div className="stage-tables">
+      {tables.map((g) => (
+        <div key={g.group} className="stack-sm">
+          <h4 className="h4">{groupTitle(g.group, lang)}</h4>
+          <StandingsTable lang={lang} format="groups" rows={g.rows} names={names} final={false} advance={advance} onward={onward} />
+        </div>
+      ))}
     </div>
   );
 }
@@ -499,11 +555,20 @@ export function RoundRules({ lang, format, settings, started }: { lang: Locale; 
       ru ? "Группы" : "Groups",
       ru ? `${settings.groups.count}; из каждой выходят ${settings.groups.advance}` : `${settings.groups.count}; ${settings.groups.advance} advance from each`,
     ]);
+  (settings.chain ?? []).forEach((c, i) =>
+    items.push([
+      stageTitle(i + 2, lang),
+      `${chainStageLabel(c, lang)}${c.format === "swiss" ? ` · ${ru ? "туров" : "rounds"}: ${c.rounds ?? (ru ? "автоматически" : "automatic")}` : c.legs === 2 ? (ru ? " · два круга" : " · two legs") : ""}`,
+    ]),
+  );
   if (settings.playoff)
     items.push([
       ru ? "Плей-офф" : "Playoff",
       `${playoffFormatLabel(settings.playoff.format, lang)} · ${settings.playoff.size} ${ru ? "участников" : "entrants"}`,
     ]);
+  const chained = Boolean(settings.chain?.length);
+  // The stage the playoff takes its field from: the main stage, or the last chained stage.
+  const beforePlayoff = settings.chain?.length ? settings.chain[settings.chain.length - 1].format : format;
   const hours = settings.roundHours ?? 0;
   items.push([
     ru ? "Расписание туров" : "Round schedule",
@@ -558,16 +623,29 @@ export function RoundRules({ lang, format, settings, started }: { lang: Locale; 
       ) : null}
       {settings.playoff ? (
         <p className="small muted">
-          {format === "groups"
+          {beforePlayoff === "groups"
             ? ru
               ? "В плей-офф сначала посеяны победители групп, затем вторые места и так далее; внутри одного места группы сравниваются по очкам, разнице и забитому за матч. Встреча соперников из одной группы в первом раунде плей-офф по возможности исключается."
               : "The playoff seeds group winners first, then runners-up and so on; entrants of the same group rank are compared by points, score difference and scored per game. Two entrants of the same group are kept apart in the first playoff round whenever possible."
+            : chained
+              ? ru
+                ? `В плей-офф выходят ${settings.playoff.size} лучших по таблице предыдущего этапа, посев — по месту в таблице.`
+                : `The top ${settings.playoff.size} of the previous stage's table make the playoff, seeded by their place in the table.`
+              : ru
+                ? `В плей-офф выходят ${settings.playoff.size} лучших по таблице основного этапа, посев — по месту в таблице.`
+                : `The top ${settings.playoff.size} of the main-stage table make the playoff, seeded by their place in the table.`}{" "}
+          {chained
+            ? null
             : ru
-              ? `В плей-офф выходят ${settings.playoff.size} лучших по таблице основного этапа, посев — по месту в таблице.`
-              : `The top ${settings.playoff.size} of the main-stage table make the playoff, seeded by their place in the table.`}{" "}
+              ? "Плей-офф создаётся автоматически после последнего матча основного этапа и открытых споров по нему; после этого результаты основного этапа не меняются. Итоговые места: сначала плей-офф, затем остальные по основному этапу (после групп — общее место для одинаковых мест в группах)."
+              : "The playoff is created automatically after the last main-stage match and any open disputes about it; from then on main-stage results are final. Final places: the playoff first, then everyone else by the main stage (after groups, the same group place is a shared place)."}
+        </p>
+      ) : null}
+      {chained ? (
+        <p className="small muted">
           {ru
-            ? "Плей-офф создаётся автоматически после последнего матча основного этапа и открытых споров по нему; после этого результаты основного этапа не меняются. Итоговые места: сначала плей-офф, затем остальные по основному этапу (после групп — общее место для одинаковых мест в группах)."
-            : "The playoff is created automatically after the last main-stage match and any open disputes about it; from then on main-stage results are final. Final places: the playoff first, then everyone else by the main stage (after groups, the same group place is a shared place)."}
+            ? "Каждый следующий этап составляется из лучших по итоговой таблице предыдущего (после групп — все, кто выходит из групп, победители групп посеяны первыми) и создаётся автоматически после последнего матча предыдущего этапа и открытых споров по нему; после этого результаты предыдущего этапа не меняются. Группы этапа составляются змейкой по новому посеву; если участников не хватает, групп становится меньше. Очки, ничьи и правило дисквалификации общие для всех этапов; правила серий по турам и группам действуют только в основном этапе. Итоговые места: чем дальше участник прошёл по этапам, тем выше; внутри этапа — по плей-офф или по таблице этапа (после групп — общее место для одинаковых мест в группах)."
+            : "Each further stage takes the best of the previous stage's final table (after groups, everyone who advances from the groups, group winners seeded first) and is created automatically after the last match of the previous stage and any open disputes about it; from then on the previous stage's results are final. A stage's groups are dealt in a snake by the new seeds; with too few entrants there are fewer groups. Points, draws and the disqualification rule are shared by every stage; series rules by round and group apply to the main stage only. Final places: the further an entrant went through the stages, the higher; within a stage, by the playoff or by that stage's table (after groups, the same group place is a shared place)."}
         </p>
       ) : null}
       <p className="small muted">

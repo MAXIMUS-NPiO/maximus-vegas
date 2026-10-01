@@ -1276,6 +1276,8 @@ function tournamentInput(c: Ctx) {
             playoffFormat: c.form.playoffFormat,
             playoffSize: c.form.playoffSize,
             roundHours: c.form.roundHours,
+            // Intermediate stages (MV-STAGES-2): stage2… to stage4… fields.
+            ...Object.fromEntries(Object.entries(c.form).filter(([k]) => /^stage[2-4](Format|Size|Rounds|GroupCount|GroupAdvance|Legs)$/.test(k))),
             lobbySize: c.form.lobbySize,
             ffaGames: c.form.ffaGames,
             ffaAdvance: c.form.ffaAdvance,

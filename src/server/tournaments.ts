@@ -19,6 +19,7 @@ import {
   roundTime,
   RR_MAX_ENTRANTS,
   settingsOf,
+  stageSpec,
   type FormatSettings,
   type FormatSettingsInput,
 } from "./format-settings.ts";
@@ -102,7 +103,7 @@ export type TournamentRow = {
   circuit_division: number | null;
   circuit_weight: number;
   qualifier_circuit_id: string | null;
-  /** 1 = main stage; 2 = the playoff that follows it. */
+  /** 1 = main stage; then the chained round stages (MV-STAGES-2); the playoff last. */
   stage: number;
   /** Organiser-defined registration questions (frozen after the first registration). */
   registration_fields: RegField[] | null;
@@ -348,6 +349,9 @@ function parseInput(input: TournamentInput) {
 
 /** Groups are round robins of 2–32 entrants each, with at least as many entrants as advance from each. */
 function checkGroupCapacity(format: string, maxParticipants: number, settings: object | null) {
+  const chained = (settings as FormatSettings | null)?.chain?.[0];
+  // A chained stage after a round robin or Swiss takes part of the field: never more entrants than the event holds.
+  if (chained && format !== "groups" && chained.size > maxParticipants) fail("invalid_stage_settings");
   const groups = (settings as FormatSettings | null)?.groups;
   if (format !== "groups" || !groups) return;
   const { count, advance } = groups;
@@ -554,6 +558,12 @@ export async function transition(db: Database, user: SessionUser, tournamentId: 
     await q.query("update tournaments set status = $2, updated_at = now() where id = $1", [t.id, to]);
     if (to === "CANCELLED") await q.query("update tournaments set check_in_open = false where id = $1", [t.id]);
     await audit(q, { actorId: user.id, action: "tournament.status", entity: "tournament", entityId: t.id, data: { from: t.status, to } });
+    // Resuming re-checks the current round stage: one finished without moving on (for example under code
+    // without stage chains, after a rollback) moves on now; otherwise nothing changes.
+    if (t.status === "PAUSED" && to === "IN_PROGRESS" && isRoundFormat(t.format)) {
+      const { afterRoundMatch } = await import("./rounds.ts");
+      await afterRoundMatch(q, t.id, user.id);
+    }
   });
 }
 
@@ -869,7 +879,7 @@ export async function notifyReady(q: Queryable, t: { id: string; name: string })
 export type BracketBuild = {
   /** single_elimination, double_elimination or gauntlet; defaults to the tournament's format. */
   format?: string;
-  /** 1 for a bracket tournament; 2 for the playoff after a main stage. */
+  /** 1 for a bracket tournament; the playoff's stage number after round stages (2, or later after a chain). */
   stage?: number;
   /** When the first round is scheduled; later winners rounds follow at the tournament's round interval. */
   firstRoundAt?: string | null;
@@ -1148,8 +1158,8 @@ export function bracketPlacements(format: string, matches: MatchRow[]): Map<stri
 
 /**
  * Final placements. Bracket formats rank by elimination (bracketPlacements); round formats by their table, or
- * by the playoff and then the main stage when a playoff follows; leaderboards use their standings. A
- * disqualified entrant never holds a place.
+ * stage by stage when a playoff or further stages follow (the latest stage first); leaderboards use their
+ * standings. A disqualified entrant never holds a place.
  */
 export async function computePlacements(q: Queryable, tournamentId: string) {
   const [t] = await q.query<{ format: Format; format_settings: unknown }>("select format, format_settings from tournaments where id = $1", [tournamentId]);
@@ -1161,7 +1171,8 @@ export async function computePlacements(q: Queryable, tournamentId: string) {
   }
   if (isRoundFormat(t.format)) {
     const rounds = await import("./rounds.ts");
-    if (settingsOf(t).playoff) await rounds.stagedPlacements(q, tournamentId);
+    const settings = settingsOf(t);
+    if (settings.playoff || settings.chain?.length) await rounds.stagedPlacements(q, tournamentId);
     else await rounds.roundPlacements(q, tournamentId);
     return;
   }
@@ -1219,12 +1230,13 @@ export async function disqualify(db: Database, user: SessionUser, tournamentId: 
     // Removing a registered entrant before the start frees a slot for the waitlist.
     if (reg.status === "registered") await promoteFromWaitlist(q, t);
     const running = t.status === "IN_PROGRESS" || t.status === "PAUSED";
-    // During a playoff the open matches are bracket matches, whatever the main stage was.
-    if (running && isRoundFormat(t.format) && t.stage === 1) {
+    // During a playoff the open matches are bracket matches, whatever the stages before it were.
+    const current = isRoundFormat(t.format) ? stageSpec(settingsOf(t), t.format, t.stage ?? 1)?.kind : null;
+    if (running && current === "round") {
       // Round robin: every remaining match is forfeited; Swiss: the current match, and no further pairings.
       const { forfeitOpenMatches } = await import("./rounds.ts");
       await forfeitOpenMatches(q, t.id, reg.id, user.id);
-    } else if (running && (isBracketFormat(t.format) || t.stage === 2)) {
+    } else if (running && (isBracketFormat(t.format) || current === "playoff")) {
       const [open] = await q.query<MatchRow>(
         `select * from matches where tournament_id = $1 and (a_reg = $2 or b_reg = $2)
            and status in ('ready','in_progress','result_submitted','disputed') for update`,
@@ -1481,8 +1493,8 @@ export async function regenerateMatches(db: Database, user: SessionUser, tournam
       await audit(q, { actorId: user.id, action: "tournament.regenerated", entity: "tournament", entityId: t.id, data: { entrants: entrants.length, ...summary } });
       return;
     }
-    // During the playoff only the playoff is rebuilt, from the final table of the main stage.
-    const stage = t.stage === 2 ? 2 : null;
+    // From the second stage on only the current stage is rebuilt, from the final table of the stage before it.
+    const stage = isRoundFormat(t.format) && (t.stage ?? 1) >= 2 ? t.stage : null;
     const [state] = await q.query<{ results: number; disputes: number; blocking: number; total: number }>(
       `select (select count(*)::int from match_results r join matches m on m.id = r.match_id where m.tournament_id = $1 and ($2::int is null or m.stage = $2)) as results,
               (select count(*)::int from disputes d join matches m on m.id = d.match_id where m.tournament_id = $1 and ($2::int is null or m.stage = $2)) as disputes,
@@ -1493,9 +1505,9 @@ export async function regenerateMatches(db: Database, user: SessionUser, tournam
       [t.id, stage],
     );
     if ((state?.results ?? 0) + (state?.disputes ?? 0) + (state?.blocking ?? 0) > 0) fail("regeneration_blocked");
-    if (stage === 2) {
-      const { regeneratePlayoff } = await import("./rounds.ts");
-      const summary = await regeneratePlayoff(q, t, user.id);
+    if (stage !== null) {
+      const { regenerateStage } = await import("./rounds.ts");
+      const summary = await regenerateStage(q, t, user.id);
       await notify(q, await rosterUsers(q, t.id), "bracket_regenerated", { tournament: t.name, slug: t.slug });
       await audit(q, { actorId: user.id, action: "tournament.regenerated", entity: "tournament", entityId: t.id, data: { removedMatches: state?.total ?? 0, ...summary } });
       return;

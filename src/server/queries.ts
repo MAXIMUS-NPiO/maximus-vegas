@@ -70,7 +70,7 @@ export type TournamentDetail = TournamentCard & {
   checked_in: number;
   format: "single_elimination" | "double_elimination" | "round_robin" | "swiss" | "groups" | "gauntlet" | "ffa" | "leaderboard";
   format_settings: unknown;
-  /** 1 = main stage; 2 = playoff. */
+  /** 1 = main stage; then the chained round stages; the playoff last (2 without a chain). */
   stage: number;
   registration_fields: RegField[] | null;
   approval_required: boolean;
@@ -138,7 +138,7 @@ export async function participants(db: Queryable, tournamentId: string) {
 export type BracketMatch = {
   id: string;
   bracket?: "W" | "L" | "GF" | "RR" | "SW" | "G";
-  /** 1 = main stage (or the only stage); 2 = the playoff after it. */
+  /** 1 = main stage (or the only stage); then the chained round stages and the playoff (2 without a chain). */
   stage?: number;
   /** Group number in a groups stage; 0 elsewhere. */
   group_no?: number;

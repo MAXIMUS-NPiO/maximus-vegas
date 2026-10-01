@@ -45,9 +45,9 @@ export async function lockMatchWithTournament(q: Queryable, matchId: string): Pr
   return m;
 }
 
-/** Once the playoff exists, the main stage that seeded it is final: its results no longer change. */
+/** Once the next stage exists (a chained stage or the playoff), the stage that seeded it is final: its results no longer change. */
 export function requireStageOpen(m: Locked) {
-  if (m.stage === 1 && m.t_stage === 2) fail("stage_locked");
+  if (m.stage < m.t_stage) fail("stage_locked");
 }
 
 /** Draws are accepted only in round robin and Swiss, and only when the organiser allowed them. */

@@ -4,8 +4,8 @@
  */
 import type { Queryable } from "./db.ts";
 import { bracket, getTournament, participants } from "./queries.ts";
-import { isRoundFormat } from "./format-settings.ts";
-import { groupStandings, roundStandings } from "./rounds.ts";
+import { isRoundFormat, settingsOf } from "./format-settings.ts";
+import { groupStandings, roundStandings, stageTables } from "./rounds.ts";
 import { leaderboardStandings } from "./leaderboard.ts";
 import { siteOrigin } from "../lib/site.ts";
 
@@ -148,12 +148,20 @@ export async function standingsFor(q: Queryable, t: StandingsTournament) {
     };
   }
   if (isRoundFormat(t.format) && !finished) {
+    // The latest round stage reached: the main stage, or a chained stage after it (MV-STAGES-2); stage 1 before the start.
+    const stage = Math.max(1, Math.min(t.stage ?? 1, 1 + (settingsOf(t).chain?.length ?? 0)));
+    if (stage > 1) {
+      const data = await stageTables(q, t, stage);
+      if (data?.format === "groups")
+        return { kind: "groups" as const, final: false, stage, groups: data.tables.map((g) => ({ group: g.group, rows: g.rows.map(tableRow) })) };
+      return { kind: "table" as const, final: false, stage, rows: (data?.tables[0]?.rows ?? []).map(tableRow) };
+    }
     if (t.format === "groups") {
       const groups = await groupStandings(q, t);
-      return { kind: "groups" as const, final: false, groups: groups.map((g) => ({ group: g.group, rows: g.rows.map(tableRow) })) };
+      return { kind: "groups" as const, final: false, stage, groups: groups.map((g) => ({ group: g.group, rows: g.rows.map(tableRow) })) };
     }
     const started = (await q.query("select 1 from matches where tournament_id = $1 limit 1", [t.id])).length > 0;
-    return { kind: "table" as const, final: false, rows: started ? (await roundStandings(q, t)).map(tableRow) : [] };
+    return { kind: "table" as const, final: false, stage, rows: started ? (await roundStandings(q, t)).map(tableRow) : [] };
   }
   const placed = list.filter((p) => p.placement !== null).sort((a, b) => (a.placement ?? 0) - (b.placement ?? 0));
   return { kind: "placements" as const, final: finished, rows: placed.map((p) => ({ registration: p.id, name: p.name, placement: p.placement })) };
