@@ -8,10 +8,12 @@ import { viewer } from "@/server/viewer.ts";
 import { orgBySlug } from "@/server/queries.ts";
 import { canManageOrg, orgRole } from "@/server/access.ts";
 import { listCircuits } from "@/server/circuits.ts";
+import { listTemplates } from "@/server/templates.ts";
 import { ActionForm, Badge, DbDown, Empty, Flash, type SearchParams } from "@/components/ui";
 import { TournamentForm } from "@/components/tournament-form";
 import { CircuitForm } from "@/components/circuit-form";
-import { LocalTime } from "@/components/time";
+import { LocalDateTimeInput, LocalTime, TimeZoneField } from "@/components/time";
+import { formatLabel } from "@/components/tournament";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string; slug: string }> }): Promise<Metadata> {
   const { lang, slug } = await params;
@@ -42,6 +44,8 @@ export default async function OrgPage({ params, searchParams }: { params: Promis
   const back = `/${lang}/organizer/${slug}`;
   const ru = lang === "ru";
   const circuits = await listCircuits(db, { orgId: data.org.id });
+  const templates = await listTemplates(db, data.org.id);
+  const categories = [...new Set(templates.map((x) => x.category))];
   return (
     <div className="container page">
       <p className="eyebrow">
@@ -136,6 +140,70 @@ export default async function OrgPage({ params, searchParams }: { params: Promis
             <CircuitForm lang={lang} back={back} orgId={data.org.id} />
           </details>
         ) : null}
+      </section>
+
+      <section className="section-tight">
+        <h2 className="h3">{ru ? "Шаблоны турниров" : "Tournament templates"}</h2>
+        <p className="small muted">
+          {ru
+            ? "Шаблон сохраняется со страницы управления турниром. Статистика — только по турнирам, действительно созданным из шаблона."
+            : "Save a template from a tournament's management page. Statistics count only tournaments actually created from the template."}
+        </p>
+        {templates.length ? (
+          categories.map((category) => (
+            <div key={category} className="stack-sm">
+              <h3 className="h4">{category || (ru ? "Без категории" : "No category")}</h3>
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>{ru ? "Шаблон" : "Template"}</th>
+                      <th>{o.game}</th>
+                      <th>{ru ? "Создано турниров" : "Created"}</th>
+                      <th>{ru ? "Завершено" : "Completed"}</th>
+                      <th>{ru ? "Участников в среднем" : "Avg entrants"}</th>
+                      {manager ? <th /> : null}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {templates
+                      .filter((x) => x.category === category)
+                      .map((x) => (
+                        <tr key={x.id}>
+                          <td>
+                            {x.name}
+                            <div className="small muted">{formatLabel(x.format, lang)}</div>
+                          </td>
+                          <td>{gameBySlug(x.game)?.name ?? x.game}</td>
+                          <td>{x.created}</td>
+                          <td>{x.completed}</td>
+                          <td>{x.avg_entrants ?? "—"}</td>
+                          {manager ? (
+                            <td>
+                              <details className="disclosure">
+                                <summary>{ru ? "Создать турнир" : "Create a tournament"}</summary>
+                                <ActionForm action="template.create" lang={lang} back={back} hidden={{ template: x.id }} className="stack-sm">
+                                  <TimeZoneField />
+                                  <input name="name" required minLength={2} maxLength={80} defaultValue={x.name} aria-label={o.tName} />
+                                  <LocalDateTimeInput name="startsAt" />
+                                  <button className="btn btn-primary btn-xs">{ru ? "Создать черновик" : "Create draft"}</button>
+                                </ActionForm>
+                              </details>
+                              <ActionForm action="template.delete" lang={lang} back={back} hidden={{ template: x.id }}>
+                                <button className="btn btn-ghost btn-xs">{ru ? "Удалить шаблон" : "Delete template"}</button>
+                              </ActionForm>
+                            </td>
+                          ) : null}
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))
+        ) : (
+          <p className="muted small">{ru ? "Шаблонов пока нет." : "No templates yet."}</p>
+        )}
       </section>
 
       <div className="split">

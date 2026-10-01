@@ -7,13 +7,17 @@ import { countryName } from "@/lib/countries.ts";
 import { pageMeta } from "@/lib/meta.ts";
 import { viewer } from "@/server/viewer.ts";
 import { bracket, getTournament, participants, type BracketMatch, type Participant } from "@/server/queries.ts";
-import { canManageTournament } from "@/server/tournaments.ts";
+import { canManageTournament, registrationOpen } from "@/server/tournaments.ts";
+import { rosterHistory, rosterLocked } from "@/server/rosters.ts";
+import { fieldsOf } from "@/server/registration.ts";
 import { planSingleElimination } from "@/server/bracket.ts";
 import { planDoubleElimination } from "@/server/double.ts";
 import { roundRobinSchedule } from "@/server/roundrobin.ts";
 import { pairSwissRound } from "@/server/swiss.ts";
 import { isRoundFormat, settingsOf, type FormatSettings } from "@/server/format-settings.ts";
 import { groupStandings, roundStandings } from "@/server/rounds.ts";
+import { roundTables } from "@/server/lobbies.ts";
+import { dealLobbies, ffaSettingsOf, planRounds } from "@/server/ffa.ts";
 import { planGauntlet, snakeGroups } from "@/server/stages.ts";
 import { leaderboardStandings, scoreLog } from "@/server/leaderboard.ts";
 import { DEFAULT_WEIGHTS, mergeWeights, WEIGHT_KEYS } from "@/server/scoring.ts";
@@ -22,7 +26,7 @@ import { mediaUrl } from "@/server/media.ts";
 import type { Database } from "@/server/db.ts";
 import type { SessionUser } from "@/server/auth.ts";
 import { ActionForm, Badge, DbDown, Empty, Field, Flash, SignInPrompt, type SearchParams } from "@/components/ui";
-import { BracketView, formatLabel, groupTitle, playoffFormatLabel, RoundRules, StandingsTable, type StandingName } from "@/components/tournament";
+import { AnswerFields, BracketView, FfaRounds, FfaRules, formatLabel, groupTitle, playoffFormatLabel, RoundRules, StandingsTable, type StandingName } from "@/components/tournament";
 import { Countdown, LocalTime } from "@/components/time";
 import { reviewLabel } from "@/lib/labels.ts";
 
@@ -36,8 +40,8 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
 }
 
 async function myEntry(db: Database, tournamentId: string, user: SessionUser) {
-  const [reg] = await db.query<{ id: string; status: string; checked_in_at: Date | null; leader: boolean; team_name: string | null }>(
-    `select r.id, r.status, r.checked_in_at, tm.name as team_name,
+  const [reg] = await db.query<{ id: string; status: string; checked_in_at: Date | null; leader: boolean; team_name: string | null; team_id: string | null; decision_note: string }>(
+    `select r.id, r.status, r.checked_in_at, tm.name as team_name, r.team_id, r.decision_note,
             (r.user_id = $2 or tm.owner_id = $2 or tm.captain_id = $2) as leader
        from registrations r left join teams tm on tm.id = r.team_id
       where r.tournament_id = $1 and r.status <> 'withdrawn'
@@ -151,11 +155,36 @@ export default async function TournamentPage({ params, searchParams }: { params:
   const settings = settingsOf(t);
   const [list, matches, sponsorsList] = await Promise.all([participants(db, t.id), leaderboard ? Promise.resolve([]) : bracket(db, t.id), tournamentSponsors(db, t.id)]);
   const entry = user ? await myEntry(db, t.id, user) : null;
-  const teams = user && !entry && t.participant_type === "team" && t.status === "REGISTRATION_OPEN" ? await eligibleTeams(db, user, t.game, t.team_size) : [];
+  const applying = !entry || entry.status === "rejected";
+  const teams = user && applying && t.participant_type === "team" && registrationOpen(t) ? await eligibleTeams(db, user, t.game, t.team_size) : [];
+  const fields = fieldsOf(t);
+  // A team leader's event roster: current line-up, the team's members to choose from, and the change history.
+  const rosterRows =
+    entry?.team_id && entry.leader
+      ? await Promise.all([
+          db.query<{ user_id: string; username: string }>(
+            "select re.user_id, u.username from roster_entries re join users u on u.id = re.user_id where re.registration_id = $1 order by u.username",
+            [entry.id],
+          ),
+          db.query<{ user_id: string; username: string; display_name: string }>(
+            "select m.user_id, u.username, u.display_name from team_members m join users u on u.id = m.user_id where m.team_id = $1 and u.status = 'active' order by u.username",
+            [entry.team_id],
+          ),
+          rosterHistory(db, entry.id),
+        ])
+      : null;
+  const entryRoster = rosterRows?.[0] ?? [];
+  const teamMembers = rosterRows?.[1] ?? [];
+  const entryHistory = rosterRows?.[2] ?? [];
   const game = gameBySlug(t.game);
   const back = `/${lang}/tournaments/${t.slug}`;
-  const started = matches.length > 0;
-  const previewMatches = !started && !leaderboard ? preview(list, t.format, settings) : [];
+  const ffa = t.format === "ffa";
+  const ffaRules = ffaSettingsOf(t);
+  const lobbyTables = ffa && t.started_at ? await roundTables(db, t) : [];
+  const started = matches.length > 0 || lobbyTables.length > 0;
+  const previewMatches = !started && !leaderboard && !ffa ? preview(list, t.format, settings) : [];
+  const plannedLobbies = ffa && !started && seededList(list).length >= 2 ? dealLobbies(seededList(list), ffaRules.lobbySize) : [];
+  const plannedRounds = ffa && !started ? planRounds(seededList(list).length, ffaRules) : [];
   const previewRounds = rounds === "round_robin" ? roundRobinSchedule(list.filter((p) => p.status === "registered"), settings.legs ?? 1).rounds : 0;
   const standings = t.status === "COMPLETED" ? list.filter((p) => p.placement !== null).sort((a, b) => (a.placement ?? 0) - (b.placement ?? 0)) : [];
   // A main stage (round robin, Swiss or groups) may be followed by a playoff (stage 2).
@@ -324,10 +353,18 @@ export default async function TournamentPage({ params, searchParams }: { params:
         <h2 id="reg-title" className="h3">
           {d.tournaments.registerTitle}
         </h2>
+        {t.registration_closes_at && t.status === "REGISTRATION_OPEN" ? (
+          <p className="small muted">
+            {ru ? "Регистрация до" : "Registration closes"} <LocalTime iso={t.registration_closes_at} lang={lang} />
+            {t.approval_required ? (ru ? " · заявки рассматривает организатор" : " · the organiser reviews applications") : ""}
+          </p>
+        ) : t.approval_required && t.status === "REGISTRATION_OPEN" ? (
+          <p className="small muted">{ru ? "Заявки рассматривает организатор." : "The organiser reviews applications."}</p>
+        ) : null}
         {entry ? (
           <div className="stack">
             <p>
-              {d.tournaments.yourStatus}: <Badge status={entry.status}>{d.statuses.registration[entry.status]}</Badge>
+              {d.tournaments.yourStatus}: <Badge status={entry.status === "pending" ? "in_review" : entry.status}>{d.statuses.registration[entry.status]}</Badge>
               {entry.team_name ? ` · ${entry.team_name}` : ""}
               {entry.checked_in_at ? (
                 <>
@@ -336,21 +373,76 @@ export default async function TournamentPage({ params, searchParams }: { params:
                 </>
               ) : null}
             </p>
+            {entry.status === "rejected" ? (
+              <p className="notice notice-warn">
+                {entry.decision_note === "expired"
+                  ? ru
+                    ? "Заявку не успели рассмотреть до старта, и она закрыта."
+                    : "The application was not reviewed before the start and is closed."
+                  : `${ru ? "Причина" : "Reason"}: ${entry.decision_note}`}
+              </p>
+            ) : null}
             <div className="row">
               {entry.leader && entry.status === "registered" && !entry.checked_in_at && t.check_in_open ? (
                 <ActionForm action="tournament.checkin" lang={lang} back={back} hidden={hidden}>
                   <button className="btn btn-primary btn-sm">{d.tournaments.checkInNow}</button>
                 </ActionForm>
               ) : null}
-              {entry.leader && ["registered", "waitlisted"].includes(entry.status) && ["PUBLISHED", "REGISTRATION_OPEN", "REGISTRATION_CLOSED"].includes(t.status) ? (
+              {entry.leader && ["registered", "waitlisted", "pending"].includes(entry.status) && ["PUBLISHED", "REGISTRATION_OPEN", "REGISTRATION_CLOSED"].includes(t.status) ? (
                 <ActionForm action="tournament.withdraw" lang={lang} back={back} hidden={hidden}>
                   <button className="btn btn-ghost btn-sm">{d.tournaments.withdraw}</button>
                 </ActionForm>
               ) : null}
             </div>
+            {entry.team_id && entry.leader && ["registered", "waitlisted", "pending"].includes(entry.status) ? (
+              <details className="disclosure">
+                <summary>{ru ? "Состав на турнир" : "Event roster"}</summary>
+                {rosterLocked(t) ? (
+                  <>
+                    <p className="small muted">
+                      {ru ? "Состав зафиксирован. Замену проводит организатор." : "The roster is locked. The organiser makes substitutions."}
+                    </p>
+                    <p>{entryRoster.map((m) => m.username).join(", ")}</p>
+                  </>
+                ) : (
+                  <ActionForm action="registration.roster" lang={lang} back={back} hidden={{ ...hidden, registration: entry.id }} className="stack-sm">
+                    <p className="small muted">
+                      {ru
+                        ? `Отметьте игроков: от ${t.team_size} до ${t.team_size + 3}. ${t.roster_locks_at ? "Изменения до " : "Изменения до старта."}`
+                        : `Tick the players: ${t.team_size} to ${t.team_size + 3}. ${t.roster_locks_at ? "Changes until " : "Changes until the start."}`}
+                      {t.roster_locks_at ? <LocalTime iso={t.roster_locks_at} lang={lang} /> : null}
+                    </p>
+                    {teamMembers.map((m) => (
+                      <label key={m.user_id} className="check">
+                        <input type="checkbox" name="member" value={m.user_id} defaultChecked={entryRoster.some((r) => r.user_id === m.user_id)} />
+                        <span>
+                          {m.display_name} <span className="muted">@{m.username}</span>
+                        </span>
+                      </label>
+                    ))}
+                    <button className="btn btn-ghost btn-sm">{d.common.save}</button>
+                  </ActionForm>
+                )}
+                {entryHistory.length ? (
+                  <ul className="list small">
+                    {entryHistory.map((h, i) => (
+                      <li key={i}>
+                        <LocalTime iso={h.created_at} lang={lang} /> ·{" "}
+                        {h.kind === "substitution"
+                          ? `${ru ? "замена" : "substitution"}: ${h.out_name ?? "—"} → ${h.in_name ?? "—"}${h.reason ? ` (${h.reason})` : ""}`
+                          : h.in_name
+                            ? `${ru ? "добавлен" : "added"} ${h.in_name}`
+                            : `${ru ? "убран" : "removed"} ${h.out_name ?? "—"}`}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </details>
+            ) : null}
           </div>
-        ) : t.status !== "REGISTRATION_OPEN" ? (
-          <p className="muted">{d.tournaments.registrationClosed}</p>
+        ) : null}
+        {entry && entry.status !== "rejected" ? null : !registrationOpen(t) ? (
+          entry ? null : <p className="muted">{d.tournaments.registrationClosed}</p>
         ) : !user ? (
           <SignInPrompt lang={lang} back={back} />
         ) : t.region_lock.length && !myCountry?.country_code ? (
@@ -362,12 +454,13 @@ export default async function TournamentPage({ params, searchParams }: { params:
           </div>
         ) : t.participant_type === "solo" ? (
           <ActionForm action="tournament.register" lang={lang} back={back} hidden={hidden} className="stack">
-            {full ? <p className="muted small">{d.tournaments.waitlistNote}</p> : null}
-            <button className="btn btn-primary">{d.tournaments.register}</button>
+            {full && !t.approval_required ? <p className="muted small">{d.tournaments.waitlistNote}</p> : null}
+            <AnswerFields lang={lang} fields={fields} />
+            <button className="btn btn-primary">{t.approval_required ? (ru ? "Подать заявку" : "Apply") : d.tournaments.register}</button>
           </ActionForm>
         ) : teams.length ? (
           <ActionForm action="tournament.register" lang={lang} back={back} hidden={hidden} className="stack">
-            {full ? <p className="muted small">{d.tournaments.waitlistNote}</p> : null}
+            {full && !t.approval_required ? <p className="muted small">{d.tournaments.waitlistNote}</p> : null}
             <label className="field">
               <span className="field-label">{d.tournaments.chooseTeam}</span>
               <select name="team" required>
@@ -378,7 +471,8 @@ export default async function TournamentPage({ params, searchParams }: { params:
                 ))}
               </select>
             </label>
-            <button className="btn btn-primary">{d.tournaments.registerTeam}</button>
+            <AnswerFields lang={lang} fields={fields} />
+            <button className="btn btn-primary">{t.approval_required ? (ru ? "Подать заявку команды" : "Apply with the team") : d.tournaments.registerTeam}</button>
           </ActionForm>
         ) : (
           <div className="stack">
@@ -393,7 +487,19 @@ export default async function TournamentPage({ params, searchParams }: { params:
       <nav className="tabs" aria-label={t.name}>
         {tabs.map((k) => (
           <a key={k} href={`#${k}`}>
-            {k === "leaderboard" ? (ru ? "Таблица" : "Leaderboard") : k === "bracket" && rounds ? (ru ? "Туры" : "Rounds") : d.tournaments.tabs[k as keyof typeof d.tournaments.tabs]}
+            {k === "leaderboard"
+              ? ru
+                ? "Таблица"
+                : "Leaderboard"
+              : k === "bracket" && ffa
+                ? ru
+                  ? "Лобби"
+                  : "Lobbies"
+                : k === "bracket" && rounds
+                  ? ru
+                    ? "Туры"
+                    : "Rounds"
+                  : d.tournaments.tabs[k as keyof typeof d.tournaments.tabs]}
           </a>
         ))}
       </nav>
@@ -422,6 +528,39 @@ export default async function TournamentPage({ params, searchParams }: { params:
         <h2 className="h3">{d.tournaments.tabs.rules}</h2>
         {t.rules ? <p className="prewrap">{t.rules}</p> : <p className="muted">{d.tournaments.noRules}</p>}
         {rounds ? <RoundRules lang={lang} format={rounds} settings={settings} started={Boolean(t.started_at)} /> : null}
+        {ffa ? <FfaRules lang={lang} settings={ffaRules} started={Boolean(t.started_at)} /> : null}
+        {t.no_show_minutes !== null || t.roster_locks_at || t.participant_type === "team" ? (
+          <ul className="kv-list card">
+            {t.no_show_minutes !== null ? (
+              <li>
+                <span>{ru ? "Неявка" : "No-show"}</span>
+                <strong>
+                  {ru
+                    ? `засчитывается через ${t.no_show_minutes} мин после назначенного времени`
+                    : `recorded ${t.no_show_minutes} min after the scheduled time`}
+                </strong>
+              </li>
+            ) : null}
+            {t.participant_type === "team" ? (
+              <li>
+                <span>{ru ? "Составы" : "Rosters"}</span>
+                <strong>
+                  {t.roster_locks_at ? (
+                    <>
+                      {ru ? "фиксируются " : "lock at "}
+                      <LocalTime iso={t.roster_locks_at} lang={lang} />
+                    </>
+                  ) : ru ? (
+                    "фиксируются при старте"
+                  ) : (
+                    "lock at the start"
+                  )}
+                  {ru ? "; после — замены только через организатора" : "; after that, substitutions only through the organiser"}
+                </strong>
+              </li>
+            ) : null}
+          </ul>
+        ) : null}
         {leaderboard ? (
           <div className="card stack-sm">
             <p className="field-label">{ru ? "Как считаются очки" : "How points are counted"}</p>
@@ -459,6 +598,9 @@ export default async function TournamentPage({ params, searchParams }: { params:
       <section id="participants" className="section-tight">
         <h2 className="h3">
           {d.tournaments.tabs.participants} <span className="muted">({list.filter((p) => p.status === "registered").length})</span>
+          {list.some((p) => p.status === "pending") ? (
+            <span className="muted small"> · {ru ? "на рассмотрении" : "under review"}: {list.filter((p) => p.status === "pending").length}</span>
+          ) : null}
         </h2>
         {list.length ? (
           <div className="table-wrap">
@@ -472,7 +614,7 @@ export default async function TournamentPage({ params, searchParams }: { params:
                 </tr>
               </thead>
               <tbody>
-                {list.map((p) => (
+                {list.filter((p) => p.status !== "rejected").map((p) => (
                   <tr key={p.id}>
                     <td>{p.seed ?? "—"}</td>
                     <td>
@@ -604,8 +746,34 @@ export default async function TournamentPage({ params, searchParams }: { params:
         </section>
       ) : (
         <section id="bracket" className="section-tight">
-          <h2 className="h3">{rounds ? (ru ? "Туры" : "Rounds") : d.tournaments.tabs.bracket}</h2>
-          {started ? (
+          <h2 className="h3">{ffa ? (ru ? "Лобби" : "Lobbies") : rounds ? (ru ? "Туры" : "Rounds") : d.tournaments.tabs.bracket}</h2>
+          {ffa ? (
+            lobbyTables.length ? (
+              <FfaRounds lang={lang} lobbies={lobbyTables} names={names} advance={ffaRules.advance} finished={finished} />
+            ) : plannedLobbies.length ? (
+              <>
+                <p className="muted small">
+                  {ru
+                    ? `Предварительно: лобби по текущему посеву (змейка). Раундов — ${plannedRounds.length}: ${plannedRounds.map((r) => `${r.entrants} в ${r.lobbies} лобби`).join(" → ")}.`
+                    : `Preview: lobbies by the current seeds (snake). Rounds — ${plannedRounds.length}: ${plannedRounds.map((r) => `${r.entrants} in ${r.lobbies} lobb${r.lobbies === 1 ? "y" : "ies"}`).join(" → ")}.`}
+                </p>
+                <div className="group-grid">
+                  {plannedLobbies.map((g, i) => (
+                    <div key={i} className="card">
+                      <h3 className="h4">{plannedLobbies.length === 1 ? (ru ? "Финальное лобби" : "Final lobby") : ru ? `Лобби ${i + 1}` : `Lobby ${i + 1}`}</h3>
+                      <ol>
+                        {g.map((p) => (
+                          <li key={p.id}>{p.name}</li>
+                        ))}
+                      </ol>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="muted">{d.tournaments.bracketNotYet}</p>
+            )
+          ) : started ? (
             <>
               <BracketView lang={lang} matches={rounds ? mainMatches : matches} format={t.format} />
               {playoff ? (

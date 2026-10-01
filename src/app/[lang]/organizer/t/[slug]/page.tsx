@@ -13,18 +13,22 @@ import { isRoundFormat, settingsOf } from "@/server/format-settings.ts";
 import { effectiveSwissRounds } from "@/server/swiss.ts";
 import { groupStandings, roundStandings } from "@/server/rounds.ts";
 import { listCircuits } from "@/server/circuits.ts";
+import { answerLines, fieldsOf } from "@/server/registration.ts";
+import { ffaActivity, roundTables } from "@/server/lobbies.ts";
+import { ffaSettingsOf, planRounds } from "@/server/ffa.ts";
+import { roundKeyOf } from "@/server/schedule.ts";
 import { ActionForm, Badge, DbDown, Field, Flash, type SearchParams } from "@/components/ui";
 import { TournamentForm } from "@/components/tournament-form";
-import { BracketView, formatLabel, groupTitle, labelContext, matchLabel, playoffFormatLabel, StandingsTable, type StandingName } from "@/components/tournament";
+import { BracketView, FfaRounds, formatLabel, groupTitle, labelContext, matchLabel, playoffFormatLabel, StandingsTable, type StandingName } from "@/components/tournament";
 import { LocalDateTimeInput, TimeZoneField } from "@/components/time";
 
 /** Matches of a playoff bracket for n entrants (double elimination: without a possible reset). */
 const playoffMatchCount = (format: string, n: number) => (format === "double_elimination" ? 2 * n - 2 : n - 1);
 
 /** What the structure will look like for n entrants, before anything is generated. */
-function structurePreview(format: string, n: number, settings: ReturnType<typeof settingsOf>, ru: boolean): Array<[string, string]> {
+function structurePreview(format: string, n: number, settings: ReturnType<typeof settingsOf>, ru: boolean, ffaRaw?: unknown): Array<[string, string]> {
   if (n < 2) return [[ru ? "Участников" : "Entrants", String(n)]];
-  const rows = structureMain(format, n, settings, ru);
+  const rows = structureMain(format, n, settings, ru, ffaRaw);
   const playoff = settings.playoff;
   if (playoff && (format === "round_robin" || format === "swiss" || format === "groups")) {
     const field = format === "groups" ? playoff.size : Math.min(playoff.size, n);
@@ -36,8 +40,18 @@ function structurePreview(format: string, n: number, settings: ReturnType<typeof
   return rows;
 }
 
-function structureMain(format: string, n: number, settings: ReturnType<typeof settingsOf>, ru: boolean): Array<[string, string]> {
+function structureMain(format: string, n: number, settings: ReturnType<typeof settingsOf>, ru: boolean, ffaRaw?: unknown): Array<[string, string]> {
   const size = 2 ** Math.ceil(Math.log2(n));
+  if (format === "ffa") {
+    const s = ffaSettingsOf({ format_settings: ffaRaw });
+    const plan = planRounds(n, s);
+    return [
+      [ru ? "Раундов" : "Rounds", String(plan.length)],
+      [ru ? "Путь" : "Path", plan.map((r) => (ru ? `${r.entrants} в ${r.lobbies} лобби` : `${r.entrants} in ${r.lobbies} lobb${r.lobbies === 1 ? "y" : "ies"}`)).join(" → ")],
+      [ru ? "Игр всего" : "Games in total", String(plan.reduce((sum, r) => sum + r.lobbies * s.games, 0))],
+      [ru ? "Финал" : "Final", plan.length && plan[plan.length - 1].lobbies === 1 ? (ru ? "одно лобби" : "one lobby") : ru ? "не достигается — измените настройки" : "not reached — change the settings"],
+    ];
+  }
   if (format === "gauntlet")
     return [
       [ru ? "Ступеней (матчей)" : "Steps (matches)", String(n - 1)],
@@ -158,19 +172,62 @@ export default async function ManageTournament({ params, searchParams }: { param
   const roundTable = (rounds === "round_robin" || rounds === "swiss") && matches.length ? await roundStandings(db, t) : [];
   const groupTables = rounds === "groups" && matches.length ? await groupStandings(db, t) : [];
   const finished = status === "COMPLETED" || status === "ARCHIVED";
+  const fields = fieldsOf(t);
+  const ffaLobbies = t.format === "ffa" && t.started_at ? await roundTables(db, t) : [];
+  // Rounds that still have unfinished matches, for batch rescheduling.
+  const openRounds = [
+    ...new Map(
+      matches
+        .filter((m) => !["completed", "cancelled"].includes(m.status))
+        .map((m) => [
+          roundKeyOf(m),
+          {
+            key: roundKeyOf(m),
+            label:
+              m.bracket === "RR" || m.bracket === "SW"
+                ? `${ru ? "Тур" : "Round"} ${m.round}${m.group_no ? (ru ? " (все группы)" : " (all groups)") : ""}`
+                : label(m),
+          },
+        ]),
+    ).values(),
+  ];
+  // Staff-only registration details: answers, decisions, team rosters and the team members available to substitute.
+  const regExtra = await db.query<{ id: string; answers: unknown; team_id: string | null; decision_note: string }>(
+    "select id, answers, team_id, decision_note from registrations where tournament_id = $1",
+    [t.id],
+  );
+  const answersOf = new Map(regExtra.filter((r) => r.answers).map((r) => [r.id, r.answers]));
+  const rejectionOf = new Map(regExtra.map((r) => [r.id, r.decision_note]));
+  const teamOf = new Map(regExtra.map((r) => [r.id, r.team_id]));
+  const rosterIds =
+    t.participant_type === "team"
+      ? await db.query<{ registration_id: string; user_id: string; username: string }>(
+          "select re.registration_id, re.user_id, u.username from roster_entries re join users u on u.id = re.user_id where re.tournament_id = $1 order by u.username",
+          [t.id],
+        )
+      : [];
+  const teamPool =
+    t.participant_type === "team" && manager
+      ? await db.query<{ team_id: string; user_id: string; username: string }>(
+          "select m.team_id, m.user_id, u.username from team_members m join users u on u.id = m.user_id where m.team_id = any($1) and u.status = 'active' order by u.username",
+          [regExtra.map((r) => r.team_id).filter(Boolean)],
+        )
+      : [];
   const names = new Map<string, StandingName>(list.map((p) => [p.id, { name: p.name, username: p.username, team_slug: p.team_slug }]));
-  const running = ["IN_PROGRESS", "PAUSED"].includes(status) && isMatchFormat(t.format);
+  const running = ["IN_PROGRESS", "PAUSED"].includes(status) && (isMatchFormat(t.format) || t.format === "ffa");
   // During a playoff only the playoff can be rebuilt (the server applies the same rule).
   const regenStage = t.stage === 2 ? 2 : null;
-  const [regen] = running
-    ? await db.query<{ blocking: number }>(
+  const [regen] = !running
+    ? []
+    : t.format === "ffa"
+      ? [{ blocking: await ffaActivity(db, t.id) }]
+      : await db.query<{ blocking: number }>(
         `select (select count(*)::int from match_results r join matches m on m.id = r.match_id where m.tournament_id = $1 and ($2::int is null or m.stage = $2))
               + (select count(*)::int from disputes x join matches m on m.id = x.match_id where m.tournament_id = $1 and ($2::int is null or m.stage = $2))
               + (select count(*)::int from matches where tournament_id = $1 and ($2::int is null or stage = $2) and (status in ('in_progress','result_submitted','disputed')
                    or (status = 'completed' and coalesce(outcome, '') not in ('bye','disqualification')))) as blocking`,
         [t.id, regenStage],
-      )
-    : [];
+      );
   // The playoff waits for open disputes about main-stage matches.
   const [waiting] =
     running && playoff && t.stage === 1 && mainMatches.length && mainMatches.every((m) => ["completed", "cancelled"].includes(m.status))
@@ -250,7 +307,11 @@ export default async function ManageTournament({ params, searchParams }: { param
               {(regen?.blocking ?? 0) === 0 ? (
                 <ActionForm action="tournament.regenerate" lang={lang} back={back} hidden={hidden} className="inline-form">
                   <button className="btn btn-ghost btn-sm">
-                    {t.stage === 2
+                    {t.format === "ffa"
+                      ? ru
+                        ? "Пересоздать лобби"
+                        : "Regenerate the lobbies"
+                      : t.stage === 2
                       ? ru
                         ? "Пересоздать плей-офф"
                         : "Regenerate the playoff"
@@ -310,7 +371,7 @@ export default async function ManageTournament({ params, searchParams }: { param
               : `For the ${registeredCount} entrants registered now. With check-in required only checked-in entrants start; seeds are fixed at the start.`}
           </p>
           <ul className="kv-list">
-            {structurePreview(t.format, registeredCount, settings, ru).map(([k, v]) => (
+            {structurePreview(t.format, registeredCount, settings, ru, t.format_settings).map(([k, v]) => (
               <li key={k}>
                 <span>{k}</span>
                 <strong>{v}</strong>
@@ -495,6 +556,13 @@ export default async function ManageTournament({ params, searchParams }: { param
       <section className="section-tight">
         <h2 className="h3">{o.participantsTitle}</h2>
         {preStart && manager ? <p className="small muted">{o.seedsNote}</p> : null}
+        {list.some((p) => p.status === "pending") ? (
+          <p className="notice notice-warn">
+            {ru
+              ? `Заявок ждут решения: ${list.filter((p) => p.status === "pending").length}. Нерассмотренные заявки закрываются при старте.`
+              : `Applications awaiting a decision: ${list.filter((p) => p.status === "pending").length}. Undecided applications close at the start.`}
+          </p>
+        ) : null}
         {list.length ? (
           <>
             <div className="table-wrap">
@@ -521,10 +589,73 @@ export default async function ManageTournament({ params, searchParams }: { param
                       <td>
                         {p.name}
                         {p.team_slug ? <div className="small muted">{p.roster.join(", ")}</div> : null}
+                        {fields.length && answersOf.get(p.id) ? (
+                          <details className="disclosure">
+                            <summary>{ru ? "Ответы при регистрации" : "Registration answers"}</summary>
+                            <ul className="kv-list small">
+                              {answerLines(fields, answersOf.get(p.id), ru ? "да" : "yes", ru ? "нет" : "no").map(([q, a]) => (
+                                <li key={q}>
+                                  <span>{q}</span>
+                                  <strong>{a}</strong>
+                                </li>
+                              ))}
+                            </ul>
+                          </details>
+                        ) : null}
+                        {manager && t.participant_type === "team" && ["registered", "waitlisted"].includes(p.status) && !finished && rosterIds.some((r) => r.registration_id === p.id) ? (
+                          <details className="disclosure">
+                            <summary>{ru ? "Замена в составе" : "Roster substitution"}</summary>
+                            <ActionForm action="tournament.substitute" lang={lang} back={back} hidden={{ ...hidden, registration: p.id }} className="stack-sm">
+                              <label className="field">
+                                <span className="field-label">{ru ? "Выходит" : "Out"}</span>
+                                <select name="out" required>
+                                  {rosterIds
+                                    .filter((r) => r.registration_id === p.id)
+                                    .map((r) => (
+                                      <option key={r.user_id} value={r.user_id}>
+                                        @{r.username}
+                                      </option>
+                                    ))}
+                                </select>
+                              </label>
+                              <label className="field">
+                                <span className="field-label">{ru ? "Входит (игрок команды)" : "In (team player)"}</span>
+                                <select name="in" required>
+                                  {teamPool
+                                    .filter((m) => m.team_id === teamOf.get(p.id) && !rosterIds.some((r) => r.registration_id === p.id && r.user_id === m.user_id))
+                                    .map((m) => (
+                                      <option key={m.user_id} value={m.user_id}>
+                                        @{m.username}
+                                      </option>
+                                    ))}
+                                </select>
+                              </label>
+                              <input name="reason" required minLength={5} maxLength={300} placeholder={o.reason} aria-label={o.reason} />
+                              <button className="btn btn-ghost btn-xs">{ru ? "Заменить" : "Substitute"}</button>
+                            </ActionForm>
+                          </details>
+                        ) : null}
                       </td>
                       <td>
-                        <Badge status={p.status}>{d.statuses.registration[p.status]}</Badge>
+                        <Badge status={p.status === "pending" ? "in_review" : p.status}>{d.statuses.registration[p.status]}</Badge>
                         {p.placement ? <strong> #{p.placement}</strong> : null}
+                        {manager && p.status === "pending" && preStart ? (
+                          <div className="stack-sm">
+                            <ActionForm action="tournament.approve" lang={lang} back={back} hidden={{ ...hidden, registration: p.id }}>
+                              <button className="btn btn-primary btn-xs">{ru ? "Одобрить" : "Approve"}</button>
+                            </ActionForm>
+                            <details className="disclosure">
+                              <summary>{ru ? "Отклонить" : "Reject"}</summary>
+                              <ActionForm action="tournament.reject" lang={lang} back={back} hidden={{ ...hidden, registration: p.id }} className="inline-form">
+                                <input name="reason" required minLength={5} maxLength={300} placeholder={ru ? "Причина для заявителя" : "Reason for the applicant"} aria-label={o.reason} />
+                                <button className="btn btn-danger btn-xs">{ru ? "Отклонить" : "Reject"}</button>
+                              </ActionForm>
+                            </details>
+                          </div>
+                        ) : null}
+                        {p.status === "rejected" && rejectionOf.get(p.id) ? (
+                          <div className="small muted">{rejectionOf.get(p.id) === "expired" ? (ru ? "не рассмотрена до старта" : "not reviewed before the start") : rejectionOf.get(p.id)}</div>
+                        ) : null}
                       </td>
                       <td>
                         {p.checked_in_at ? "✓" : "—"}
@@ -627,6 +758,48 @@ export default async function ManageTournament({ params, searchParams }: { param
         </section>
       ) : null}
 
+      {manager && running && openRounds.length ? (
+        <section className="section-tight">
+          <h2 className="h3">{ru ? "Расписание" : "Schedule"}</h2>
+          <p className="small muted">
+            {ru
+              ? "Перенос затрагивает только незавершённые матчи; обе стороны каждого перенесённого матча получают уведомление."
+              : "Only unfinished matches move; both sides of every moved match are notified."}
+          </p>
+          <div className="grid grid-2">
+            <ActionForm action="tournament.reschedule" lang={lang} back={back} hidden={hidden} className="stack-sm">
+              <TimeZoneField />
+              <Field label={ru ? "Тур или раунд" : "Round"}>
+                <select name="round" required>
+                  {openRounds.map((r) => (
+                    <option key={r.key} value={r.key}>
+                      {r.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label={ru ? "Новое время начала" : "New start time"}>
+                <LocalDateTimeInput name="at" required />
+              </Field>
+              <button className="btn btn-ghost btn-sm">{ru ? "Назначить время тура" : "Set the round time"}</button>
+            </ActionForm>
+            <ActionForm action="tournament.reschedule" lang={lang} back={back} hidden={{ ...hidden, round: "all" }} className="stack-sm">
+              <Field label={ru ? "Сдвинуть все назначенные матчи, минут" : "Shift every scheduled match, minutes"} hint={ru ? "Например 30 или −15" : "For example 30 or −15"}>
+                <input name="shiftMinutes" type="number" min={-1440} max={1440} required inputMode="numeric" />
+              </Field>
+              <button className="btn btn-ghost btn-sm">{ru ? "Сдвинуть расписание" : "Shift the schedule"}</button>
+            </ActionForm>
+          </div>
+        </section>
+      ) : null}
+
+      {ffaLobbies.length ? (
+        <section className="section-tight">
+          <h2 className="h3">{ru ? "Лобби" : "Lobbies"}</h2>
+          <FfaRounds lang={lang} lobbies={ffaLobbies} names={names} advance={ffaSettingsOf(t).advance} finished={finished} />
+        </section>
+      ) : null}
+
       {manager ? (
         <section className="section-tight">
           <h2 className="h3">{ru ? "Со-организаторы" : "Co-organisers"}</h2>
@@ -706,6 +879,22 @@ export default async function ManageTournament({ params, searchParams }: { param
               </Field>
             </div>
             <button className="btn btn-ghost btn-sm">{ru ? "Создать копию" : "Create a copy"}</button>
+          </ActionForm>
+        </section>
+      ) : null}
+
+      {orgManager ? (
+        <section className="section-tight">
+          <h2 className="h3">{ru ? "Сохранить как шаблон" : "Save as a template"}</h2>
+          <p className="small muted">
+            {ru
+              ? "Шаблон хранит формат, настройки, правила, вопросы регистрации и сроки относительно старта. Новые турниры создаются из него в пространстве организатора."
+              : "A template keeps the format, settings, rules, registration questions and deadlines relative to the start. New tournaments are created from it in the organiser space."}
+          </p>
+          <ActionForm action="template.save" lang={lang} back={back} hidden={hidden} className="inline-form">
+            <input name="name" required minLength={2} maxLength={80} defaultValue={t.name} aria-label={ru ? "Название шаблона" : "Template name"} />
+            <input name="category" maxLength={40} placeholder={ru ? "Категория, например: Кубки недели" : "Category, e.g. Weekly cups"} aria-label={ru ? "Категория" : "Category"} />
+            <button className="btn btn-ghost btn-sm">{ru ? "Сохранить шаблон" : "Save template"}</button>
           </ActionForm>
         </section>
       ) : null}

@@ -8,6 +8,8 @@ import { deRoundName } from "@/server/double.ts";
 import type { StandingsRow } from "@/server/standings.ts";
 import type { FormatSettings, RoundFormat } from "@/server/format-settings.ts";
 import { groupName } from "@/server/stages.ts";
+import type { FfaRow, FfaSettings } from "@/server/ffa.ts";
+import type { RegField } from "@/server/registration.ts";
 import { Badge } from "./ui";
 import { LocalTime } from "./time";
 
@@ -24,6 +26,8 @@ export function formatLabel(format: string | undefined, lang: Locale) {
       return ru ? "Группы + плей-офф" : "Groups + playoff";
     case "gauntlet":
       return ru ? "Лесенка (gauntlet)" : "Gauntlet (stepladder)";
+    case "ffa":
+      return ru ? "FFA (лобби)" : "FFA (lobbies)";
     case "leaderboard":
       return ru ? "Leaderboard (очки)" : "Leaderboard (points)";
     default:
@@ -491,6 +495,182 @@ export function RoundRules({ lang, format, settings, started }: { lang: Locale; 
         {settings.pairing ? ` · ${settings.pairing}` : ""}
         {settings.stages ? ` · ${settings.stages}` : ""}. {started ? (ru ? "Настройки зафиксированы при старте." : "Settings were frozen at the start.") : ru ? "Настройки фиксируются при старте." : "Settings are frozen at the start."}
       </p>
+    </div>
+  );
+}
+
+/** An FFA lobby table: points, then games won, kills and best placement — as the ranking applies them. */
+export function LobbyTableView({
+  lang,
+  rows,
+  names,
+  advance = 0,
+  final = false,
+}: {
+  lang: Locale;
+  rows: FfaRow[];
+  names: Map<string, StandingName>;
+  /** Places that lead to the next round (0 = none). */
+  advance?: number;
+  final?: boolean;
+}) {
+  const ru = lang === "ru";
+  return (
+    <div className="table-wrap">
+      <table className="table table-compact">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>{ru ? "Участник" : "Entrant"}</th>
+            <th className="num col-wide" title={ru ? "Сыграно игр" : "Games played"}>{ru ? "И" : "G"}</th>
+            <th className="num" title={ru ? "Побед в играх" : "Games won"}>{ru ? "Поб" : "W"}</th>
+            <th className="num" title={ru ? "Убийства" : "Kills"}>{ru ? "Уб" : "K"}</th>
+            <th className="num" title={ru ? "Очки за места" : "Placement points"}>{ru ? "За места" : "Place pts"}</th>
+            <th className="num">{ru ? "Очки" : "Pts"}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const who = names.get(r.id);
+            const label = who?.name ?? "—";
+            return (
+              <tr key={r.id} className={r.disqualified ? "is-out" : r.rank === 1 && final ? "is-first" : r.rank !== null && r.rank <= advance ? "is-advancing" : undefined}>
+                <td>{r.rank ?? "—"}</td>
+                <td>
+                  {who?.team_slug ? <Link href={`/${lang}/teams/${who.team_slug}`}>{label}</Link> : who?.username ? <Link href={`/${lang}/players/${who.username}`}>{label}</Link> : label}
+                  {r.disqualified ? <span className="small muted"> · {ru ? "дисквалифицирован" : "disqualified"}</span> : null}
+                </td>
+                <td className="num col-wide">{r.played}</td>
+                <td className="num">{r.wins}</td>
+                <td className="num">{r.kills}</td>
+                <td className="num">{r.placementPoints}</td>
+                <td className="num">
+                  <strong>{r.points}</strong>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export type LobbyCard = { id: string; round: number; lobby_no: number; status: string; scheduled_at: Date | null; games_done: number; games_total: number; rows: FfaRow[] };
+
+export const lobbyTitle = (round: number, lobbyNo: number, lobbies: number, lang: Locale) =>
+  lobbies === 1 ? (lang === "ru" ? `Раунд ${round} · финальное лобби` : `Round ${round} · final lobby`) : lang === "ru" ? `Раунд ${round} · лобби ${lobbyNo}` : `Round ${round} · lobby ${lobbyNo}`;
+
+/** Every round of an FFA event with its lobby tables; each lobby links to its page. */
+export function FfaRounds({ lang, lobbies, names, advance, finished }: { lang: Locale; lobbies: LobbyCard[]; names: Map<string, StandingName>; advance: number; finished: boolean }) {
+  const ru = lang === "ru";
+  const rounds = [...new Set(lobbies.map((l) => l.round))].sort((a, b) => b - a);
+  return (
+    <div className="stack">
+      {rounds.map((round) => {
+        const inRound = lobbies.filter((l) => l.round === round);
+        return (
+          <div key={round} className="bracket-group">
+            <h3 className="h4">
+              {inRound.length === 1 ? (ru ? `Раунд ${round} — финал` : `Round ${round} — final`) : ru ? `Раунд ${round}` : `Round ${round}`}
+            </h3>
+            <div className="lobby-grid">
+              {inRound.map((l) => (
+                <section key={l.id} className="card lobby-card" aria-label={lobbyTitle(l.round, l.lobby_no, inRound.length, lang)}>
+                  <div className="row-between">
+                    <Link href={`/${lang}/lobbies/${l.id}`} className="text-link">
+                      {inRound.length === 1 ? (ru ? "Финальное лобби" : "Final lobby") : ru ? `Лобби ${l.lobby_no}` : `Lobby ${l.lobby_no}`}
+                    </Link>
+                    <span className="small muted">
+                      {ru ? "игр" : "games"} {l.games_done}/{l.games_total}
+                    </span>
+                  </div>
+                  {l.scheduled_at ? (
+                    <p className="small muted">
+                      <LocalTime iso={l.scheduled_at} lang={lang} />
+                    </p>
+                  ) : null}
+                  <LobbyTableView lang={lang} rows={l.rows} names={names} advance={inRound.length > 1 ? advance : 0} final={finished && inRound.length === 1} />
+                </section>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** How an FFA event is scored and how lobbies advance, as the tables apply it. */
+export function FfaRules({ lang, settings, started }: { lang: Locale; settings: FfaSettings; started: boolean }) {
+  const ru = lang === "ru";
+  const items: Array<[string, string]> = [
+    [ru ? "Участников в лобби" : "Lobby size", ru ? `до ${settings.lobbySize}` : `up to ${settings.lobbySize}`],
+    [ru ? "Игр в каждом раунде" : "Games per round", String(settings.games)],
+    [ru ? "Выходят из лобби" : "Advance per lobby", ru ? `${settings.advance} (при нескольких лобби)` : `${settings.advance} (with several lobbies)`],
+    [ru ? "Очки за места" : "Placement points", settings.placementPoints.join(" · ")],
+    [ru ? "Очки за убийство" : "Points per kill", String(settings.killPoints)],
+  ];
+  return (
+    <div className="card stack-sm">
+      <p className="field-label">{ru ? "Как считаются очки FFA" : "How FFA points are counted"}</p>
+      <ul className="kv-list">
+        {items.map(([k, val]) => (
+          <li key={k}>
+            <span>{k}</span>
+            <strong>{val}</strong>
+          </li>
+        ))}
+      </ul>
+      <p className="small muted">
+        {ru
+          ? "Очки игры = очки за место + убийства × очки за убийство; места ниже таблицы — 0. Порядок в лобби: очки → победы в играх → убийства → лучшее место в игре → посев. Лобби составляются змейкой по посеву; в следующий раунд выходят лучшие из каждого лобби (никогда не всё лобби), они пересеиваются по месту в лобби и очкам за игру. Раунд с одним лобби — финал. Итог: места финала, затем выбывшие раньше; одинаковое место в лобби одного раунда — общее место."
+          : "Game points = placement points + kills × points per kill; places below the table score 0. Lobby order: points → games won → kills → best single-game placement → seed. Lobbies are dealt in a snake by seed; the best of each lobby advance (never a whole lobby) and are re-seeded by lobby place and points per game. A round with one lobby is the final. Final places: the final lobby, then those eliminated earlier; the same lobby place in one round is a shared place."}
+      </p>
+      <p className="small muted">
+        {ru ? "Версия правил" : "Rules version"}: {settings.ffa}. {started ? (ru ? "Настройки зафиксированы при старте." : "Settings were frozen at the start.") : ru ? "Настройки фиксируются при старте." : "Settings are frozen at the start."}
+      </p>
+    </div>
+  );
+}
+
+/** The organiser's registration questions inside a registration form (inputs answer_f1 …). */
+export function AnswerFields({ lang, fields }: { lang: Locale; fields: RegField[] }) {
+  const ru = lang === "ru";
+  if (!fields.length) return null;
+  return (
+    <div className="stack-sm">
+      {fields.map((f) =>
+        f.type === "checkbox" ? (
+          <label key={f.key} className="check">
+            <input type="checkbox" name={`answer_${f.key}`} required={f.required} />
+            <span>
+              {f.label}
+              {f.required ? " *" : ""}
+            </span>
+          </label>
+        ) : (
+          <label key={f.key} className="field">
+            <span className="field-label">
+              {f.label}
+              {f.required ? " *" : ""}
+            </span>
+            {f.type === "choice" ? (
+              <select name={`answer_${f.key}`} required={f.required} defaultValue="">
+                <option value="">—</option>
+                {f.options.map((o) => (
+                  <option key={o} value={o}>
+                    {o}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input name={`answer_${f.key}`} maxLength={300} required={f.required} />
+            )}
+          </label>
+        ),
+      )}
+      <p className="small muted">{ru ? "Ответы видят только организаторы и судьи турнира." : "Only the tournament's organisers and referees see the answers."}</p>
     </div>
   );
 }

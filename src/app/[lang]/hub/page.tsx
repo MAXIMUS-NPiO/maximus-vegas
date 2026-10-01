@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { lobbyTitle } from "@/components/tournament";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { dict, isLocale } from "@/lib/i18n.ts";
@@ -144,7 +145,7 @@ export default async function Hub({ params, searchParams }: { params: Promise<{ 
               </Link>
             ))}
           </div>
-        ) : (
+        ) : data.lobbies.length ? null : (
           <Empty
             title={d.hub.noMatches}
             action={
@@ -155,6 +156,30 @@ export default async function Hub({ params, searchParams }: { params: Promise<{ 
           />
         )}
       </section>
+
+      {data.lobbies.length ? (
+        <section className="section-tight">
+          <h2 className="h3">{lang === "ru" ? "Мои лобби" : "My lobbies"}</h2>
+          <div className="grid grid-2">
+            {data.lobbies.map((l) => (
+              <Link key={l.id} href={`/${lang}/lobbies/${l.id}`} className="card card-link">
+                <div className="row-between">
+                  <span className="small muted">
+                    {l.t_name} · {gameBySlug(l.t_game)?.name}
+                  </span>
+                  <Badge status="in_progress">FFA</Badge>
+                </div>
+                <h3>{lobbyTitle(l.round, l.lobby_no, l.lobbies, lang)}</h3>
+                <p className="small">
+                  {l.scheduled_at ? <LocalTime iso={l.scheduled_at} lang={lang} /> : d.match.notScheduled}
+                  {` · ${lang === "ru" ? "игр осталось" : "games left"}: ${l.games_left}`}
+                  {l.room_code ? ` · ${lang === "ru" ? "код" : "code"}: ${l.room_code}` : ""}
+                </p>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {data.invites.length ? (
         <section className="section-tight">

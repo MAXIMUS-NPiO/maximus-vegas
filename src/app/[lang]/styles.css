@@ -1737,6 +1737,29 @@ a.b-link:hover {
 .fieldset-body {
   container-type: inline-size;
 }
+.lobby-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr));
+  gap: 14px;
+}
+.lobby-card {
+  gap: 8px;
+  padding: 16px;
+}
+.result-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 90px 90px;
+  gap: 6px 10px;
+  align-items: center;
+}
+.result-grid input {
+  width: 100%;
+}
+.field-row {
+  align-items: end;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+}
 @container (max-width: 620px) {
   .fieldset-body .form-grid-4 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1769,6 +1792,13 @@ button:disabled {
   padding-top: 0;
 }
 
+/* Columns that give way on phones (the value is also available elsewhere on the page) */
+@media (max-width: 560px) {
+  .col-wide {
+    display: none;
+  }
+}
+
 /* Key–value lists used on tournament pages */
 .kv-list {
   list-style: none;
@@ -1785,6 +1815,11 @@ button:disabled {
   border-bottom: 1px solid var(--line);
   padding-bottom: 6px;
   overflow-wrap: anywhere;
+}
+.kv-list li > :first-child {
+  flex: 0 0 auto;
+  max-width: 45%;
+  overflow-wrap: normal;
 }
 
 /* Banners and logos */

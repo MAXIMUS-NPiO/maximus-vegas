@@ -11,6 +11,7 @@ import { mediaUrl } from "@/server/media.ts";
 import { ActionForm, Badge, DbDown, Field, Flash, type SearchParams } from "@/components/ui";
 import { LocalDateTimeInput, LocalTime, TimeZoneField } from "@/components/time";
 import { matchLabel } from "@/components/tournament";
+import { noShowFrom } from "@/server/matches.ts";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string; id: string }> }): Promise<Metadata> {
   const { lang, id } = await params;
@@ -42,6 +43,7 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
     { format: m.t_format, playoffFormat: tSettings.playoff?.format, wRounds: m.w_rounds, lRounds: m.l_rounds, gRounds: m.bracket === "G" ? m.rounds : 0 },
     lang,
   );
+  const noShowAt = noShowFrom({ scheduled_at: m.scheduled_at, t_no_show: m.t_no_show });
   // Once the playoff exists, the main stage that seeded it is final.
   const stageLocked = (m.stage ?? 1) === 1 && m.t_stage === 2;
   const drawsOk = inRounds && tSettings.allowDraws;
@@ -262,15 +264,22 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
                 </Field>
                 <button className="btn btn-primary">{d.match.decide}</button>
               </ActionForm>
-              <div className="row">
-                <span className="field-label">{d.match.noShowTitle}:</span>
-                <ActionForm action="match.noshow" lang={lang} back={back} hidden={{ ...hidden, absent: "a" }}>
-                  <button className="btn btn-ghost btn-sm">{fill(d.match.noShowA, { a: a?.name })}</button>
-                </ActionForm>
-                <ActionForm action="match.noshow" lang={lang} back={back} hidden={{ ...hidden, absent: "b" }}>
-                  <button className="btn btn-ghost btn-sm">{fill(d.match.noShowB, { b: b?.name })}</button>
-                </ActionForm>
-              </div>
+              {noShowAt && noShowAt.getTime() > Date.now() ? (
+                <p className="small muted">
+                  {ru ? "Неявку по правилам турнира можно отметить с " : "Under the tournament rules a no-show can be recorded from "}
+                  <LocalTime iso={noShowAt} lang={lang} />.
+                </p>
+              ) : (
+                <div className="row">
+                  <span className="field-label">{d.match.noShowTitle}:</span>
+                  <ActionForm action="match.noshow" lang={lang} back={back} hidden={{ ...hidden, absent: "a" }}>
+                    <button className="btn btn-ghost btn-sm">{fill(d.match.noShowA, { a: a?.name })}</button>
+                  </ActionForm>
+                  <ActionForm action="match.noshow" lang={lang} back={back} hidden={{ ...hidden, absent: "b" }}>
+                    <button className="btn btn-ghost btn-sm">{fill(d.match.noShowB, { b: b?.name })}</button>
+                  </ActionForm>
+                </div>
+              )}
             </>
           ) : null}
           {open ? (

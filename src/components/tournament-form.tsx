@@ -3,6 +3,8 @@ import { GAMES } from "@/lib/games.ts";
 import { DEFAULT_WEIGHTS, mergeWeights, WEIGHT_KEYS } from "@/server/scoring.ts";
 import { editableSettings, GAUNTLET_MAX, isRoundFormat, MAX_GROUPS, PLAYOFF_MAX, ROUND_HOURS_MAX, RR_MAX_ENTRANTS, SWISS_MAX_ROUNDS } from "@/server/format-settings.ts";
 import { DEFAULT_POINTS } from "@/server/standings.ts";
+import { FFA_MAX_GAMES, FFA_MAX_LOBBY, ffaSettingsOf, pointsText } from "@/server/ffa.ts";
+import { fieldsOf, MAX_FIELDS, type RegField } from "@/server/registration.ts";
 import { ActionForm, Check, Field } from "./ui";
 import { LocalDateTimeInput, TimeZoneField } from "./time";
 
@@ -30,6 +32,11 @@ export type TournamentDefaults = {
   circuit_division?: number | null;
   circuit_weight?: number;
   qualifier_circuit_id?: string | null;
+  registration_fields?: RegField[] | null;
+  approval_required?: boolean;
+  registration_closes_at?: Date | string | null;
+  roster_locks_at?: Date | string | null;
+  no_show_minutes?: number | null;
 };
 
 /** A circuit of the organising space, offered for linking. */
@@ -69,6 +76,9 @@ export function TournamentForm({
   // Round-robin and Swiss settings as the organiser entered them (never the values frozen at a start).
   const rs = t?.format && isRoundFormat(t.format) ? editableSettings({ format: t.format, format_settings: t.format_settings }) : null;
   const points = rs?.points ?? DEFAULT_POINTS;
+  const ffa = ffaSettingsOf({ format_settings: t?.format === "ffa" ? t.format_settings : null });
+  const fields = fieldsOf({ registration_fields: t?.registration_fields ?? null });
+  const iso = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString() : null);
   const activeCircuits = circuits.filter((c) => c.status === "active");
   const qualifiers = circuits.filter((c) => c.qualify_top > 0);
   const circuitLabel = (c: CircuitOption) => `${c.name} · ${c.season} · ${c.game} · ${c.participant_type === "team" ? o.team : o.solo}`;
@@ -89,8 +99,8 @@ export function TournamentForm({
           label={ru ? "Формат" : "Format"}
           hint={
             ru
-              ? "Сетки, круговая, швейцарская, группы и лесенка — для игр с матчами «сторона против стороны»; leaderboard — для королевских битв и любых игр со статистикой."
-              : "Brackets, round robin, Swiss, groups and the gauntlet suit head-to-head games; leaderboards suit battle royales and any game with stats."
+              ? "Сетки, круговая, швейцарская, группы и лесенка — для игр с матчами «сторона против стороны»; FFA — лобби, где все играют против всех (королевские битвы); leaderboard — самостоятельная отправка статистики."
+              : "Brackets, round robin, Swiss, groups and the gauntlet suit head-to-head games; FFA is lobbies where everyone plays everyone (battle royales); a leaderboard collects self-submitted stats."
           }
         >
           <select name="format" defaultValue={t?.format ?? "single_elimination"}>
@@ -100,6 +110,7 @@ export function TournamentForm({
             <option value="swiss">{ru ? "Швейцарская система — пары по очкам" : "Swiss system — pairings by points"}</option>
             <option value="groups">{ru ? "Группы + плей-офф" : "Groups + playoff"}</option>
             <option value="gauntlet">{ru ? `Лесенка (gauntlet) — до ${GAUNTLET_MAX}` : `Gauntlet (stepladder) — up to ${GAUNTLET_MAX}`}</option>
+            <option value="ffa">{ru ? "FFA — лобби с очками за места" : "FFA — lobbies with placement points"}</option>
             <option value="leaderboard">{ru ? "Leaderboard по очкам" : "Points leaderboard"}</option>
           </select>
         </Field>
@@ -208,13 +219,92 @@ export function TournamentForm({
               <input name="playoffSize" type="number" min={2} max={PLAYOFF_MAX} defaultValue={rs?.playoff?.size ?? 8} inputMode="numeric" />
             </Field>
             <Field
-              label={ru ? "Интервал между турами, часов" : "Hours between rounds"}
+              label={ru ? "Интервал между турами и раундами, часов" : "Hours between rounds"}
               hint={ru ? `0 — тур 1 в момент старта, остальные по договорённости; до ${ROUND_HOURS_MAX}` : `0 = round 1 at the start, later rounds by arrangement; up to ${ROUND_HOURS_MAX}`}
             >
               <input name="roundHours" type="number" min={0} max={ROUND_HOURS_MAX} defaultValue={rs?.roundHours ?? 0} inputMode="numeric" />
             </Field>
           </div>
         </div>
+      </fieldset>
+
+      <fieldset className="fieldset">
+        <legend>{ru ? "FFA: лобби и очки" : "FFA: lobbies and points"}</legend>
+        <p className="small muted">
+          {ru
+            ? "Только для формата FFA. Участники делятся на лобби змейкой по посеву; каждое лобби играет заданное число игр. Очки игры = очки за место + убийства × очки за убийство. Из каждого лобби в следующий раунд выходят лучшие; раунд с одним лобби — финал. Правила MV-FFA-1."
+            : "FFA only. Entrants are dealt into lobbies in a snake by seed; each lobby plays the set number of games. Game points = placement points + kills × points per kill. The best of each lobby advance; a round with one lobby is the final. Rules MV-FFA-1."}
+        </p>
+        <div className="fieldset-body">
+          <div className="form-grid form-grid-4">
+            <Field label={ru ? "Участников в лобби" : "Lobby size"} hint={`2–${FFA_MAX_LOBBY}`}>
+              <input name="lobbySize" type="number" min={2} max={FFA_MAX_LOBBY} defaultValue={ffa.lobbySize} inputMode="numeric" />
+            </Field>
+            <Field label={ru ? "Игр в раунде" : "Games per round"} hint={`1–${FFA_MAX_GAMES}`}>
+              <input name="ffaGames" type="number" min={1} max={FFA_MAX_GAMES} defaultValue={ffa.games} inputMode="numeric" />
+            </Field>
+            <Field label={ru ? "Выходят из лобби" : "Advance per lobby"} hint={ru ? "При нескольких лобби" : "With several lobbies"}>
+              <input name="ffaAdvance" type="number" min={1} max={FFA_MAX_LOBBY - 1} defaultValue={ffa.advance} inputMode="numeric" />
+            </Field>
+            <Field label={ru ? "Очки за убийство" : "Points per kill"} hint="0–10">
+              <input name="killPoints" type="number" min={0} max={10} defaultValue={ffa.killPoints} inputMode="numeric" />
+            </Field>
+          </div>
+        </div>
+        <Field label={ru ? "Очки за места 1, 2, 3 …" : "Points for places 1, 2, 3 …"} hint={ru ? "Через запятую, без роста к нижним местам; места ниже таблицы — 0" : "Comma-separated, never rising for lower places; places below the table score 0"}>
+          <input name="ffaPoints" maxLength={400} defaultValue={pointsText(ffa.placementPoints)} inputMode="numeric" />
+        </Field>
+      </fieldset>
+
+      <fieldset className="fieldset">
+        <legend>{ru ? "Регистрация и составы" : "Registration and rosters"}</legend>
+        <input type="hidden" name="registrationFields" value="1" />
+        <Check
+          name="approvalRequired"
+          label={ru ? "Заявки рассматривает организатор (подтверждение или отказ с причиной)" : "The organiser reviews applications (approve, or reject with a reason)"}
+          defaultChecked={t?.approval_required ?? false}
+        />
+        <div className="fieldset-body">
+          <div className="form-grid form-grid-4">
+            <Field label={ru ? "Регистрация до" : "Registration closes"} hint={ru ? "Пусто — до закрытия вручную" : "Empty = until closed manually"}>
+              <LocalDateTimeInput name="registrationClosesAt" iso={iso(t?.registration_closes_at)} />
+            </Field>
+            <Field label={ru ? "Составы фиксируются" : "Rosters lock"} hint={ru ? "Пусто — при старте" : "Empty = at the start"}>
+              <LocalDateTimeInput name="rosterLocksAt" iso={iso(t?.roster_locks_at)} />
+            </Field>
+            <Field label={ru ? "Неявка через, минут" : "No-show after, minutes"} hint={ru ? "После назначенного времени; пусто — по решению судьи" : "After the scheduled time; empty = at the referee's call"}>
+              <input name="noShowMinutes" type="number" min={0} max={240} defaultValue={t?.no_show_minutes ?? ""} inputMode="numeric" />
+            </Field>
+          </div>
+        </div>
+        <p className="field-label">{ru ? "Дополнительные вопросы при регистрации" : "Additional registration questions"}</p>
+        <p className="small muted">
+          {ru
+            ? `До ${MAX_FIELDS} вопросов: текст, выбор из списка (варианты через запятую) или флажок. Ответы видят только организаторы и судьи. Не запрашивайте документы, банковские реквизиты и пароли. Вопросы фиксируются после первой заявки.`
+            : `Up to ${MAX_FIELDS} questions: text, a choice from a list (comma-separated options) or a checkbox. Only organisers and referees see the answers. Do not ask for identity documents, bank details or passwords. Questions are frozen after the first application.`}
+        </p>
+        {Array.from({ length: MAX_FIELDS }, (_, i) => {
+          const f = fields[i];
+          const n = i + 1;
+          return (
+            <div key={n} className="form-grid form-grid-4 field-row">
+              <Field label={ru ? `Вопрос ${n}` : `Question ${n}`}>
+                <input name={`field${n}Label`} maxLength={80} defaultValue={f?.label ?? ""} />
+              </Field>
+              <Field label={ru ? "Тип" : "Type"}>
+                <select name={`field${n}Type`} defaultValue={f?.type ?? "text"}>
+                  <option value="text">{ru ? "Текст" : "Text"}</option>
+                  <option value="choice">{ru ? "Выбор из списка" : "Choice"}</option>
+                  <option value="checkbox">{ru ? "Флажок" : "Checkbox"}</option>
+                </select>
+              </Field>
+              <Field label={ru ? "Варианты" : "Options"}>
+                <input name={`field${n}Options`} maxLength={1200} defaultValue={f?.options.join(", ") ?? ""} />
+              </Field>
+              <Check name={`field${n}Required`} label={ru ? "Обязательный" : "Required"} defaultChecked={f?.required ?? false} />
+            </div>
+          );
+        })}
       </fieldset>
 
       {circuits.length ? (
