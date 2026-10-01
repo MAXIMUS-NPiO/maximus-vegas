@@ -278,9 +278,11 @@ export async function gameDay(q: Queryable, user: SessionUser, now = new Date())
         }
       } else if (last) {
         const lostInBracket = Boolean(last.winner_reg && last.winner_reg !== r.id && ELIMINATION_BRACKETS.has(last.bracket ?? ""));
-        const missedPlayoff =
-          r.t_stage === 2 && !(await q.query("select 1 from matches where tournament_id = $1 and stage = 2 and (a_reg = $2 or b_reg = $2) limit 1", [r.t_id, r.id])).length;
-        eliminated = lostInBracket || missedPlayoff;
+        // From the second stage on, an entry that did not go on to the current stage is out.
+        const missedStage =
+          (r.t_stage ?? 1) >= 2 &&
+          !(await q.query("select 1 from stage_entries where tournament_id = $1 and stage = $3 and registration_id = $2 limit 1", [r.t_id, r.id, r.t_stage])).length;
+        eliminated = lostInBracket || missedStage;
       }
       entryStep = eventStep({
         tStatus: r.t_status,

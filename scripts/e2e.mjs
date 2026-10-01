@@ -491,6 +491,30 @@ const finalId = [...grPage.matchAll(/\/ru\/matches\/([0-9a-f-]{36})/g)].map((m) 
 assert.ok((await guest.get(`/ru/matches/${finalId}`)).text.includes("Плей-офф · Финал"), "playoff match labelled");
 log(`groups → playoff for 5 entrants played in ${grPasses} passes; snake groups, automatic playoff, final places`);
 
+// ---------- A chain of stages: Swiss → round robin → playoff (MV-STAGES-2) ----------
+assert.equal((await org.post("tournament.create", { ...roundsBase, name: `E2E Chain Gap ${RUN}`, format: "swiss", stage3Format: "groups" })).e, "invalid_stage_settings", "a stage after a gap is refused");
+const chain = await org.post("tournament.create", {
+  ...roundsBase, name: `E2E Chain ${RUN}`, format: "swiss", swissRounds: "2",
+  stage2Format: "round_robin", stage2Size: "4", playoffFormat: "single_elimination", playoffSize: "2",
+});
+assert.equal(chain.ok, "tournament_created", chain.location);
+const chainSlug = chain.path.split("/").pop();
+const chainId = uuidAfter((await org.get(chain.path)).text, "tournament");
+for (const to of ["PUBLISHED", "REGISTRATION_OPEN"]) assert.equal((await org.post("tournament.transition", { tournament: chainId, to })).ok, "status_changed");
+for (const p of players) assert.equal((await p.post("tournament.register", { tournament: chainId })).ok, "registered");
+assert.ok((await org.get(chain.path)).text.includes("Этап 2"), "the organiser's structure preview lists the chained stage");
+assert.ok((await guest.get(`/ru/tournaments/${chainSlug}`)).text.includes("Следующие этапы"), "the public preview names the further stages");
+for (const to of ["REGISTRATION_CLOSED", "IN_PROGRESS"]) assert.equal((await org.post("tournament.transition", { tournament: chainId, to })).ok, "status_changed");
+const chainPasses = await playOut(players, 80);
+const chainPage = (await guest.get(`/ru/tournaments/${chainSlug}`)).text;
+assert.ok(chainPage.includes("Завершён") && chainPage.includes("Этап 2 · Круговая система") && chainPage.includes("Плей-офф") && chainPage.includes("MV-STAGES-2"), "three stages played to the end");
+assert.ok(chainPage.includes("Таблицы этапов"), "final places with every stage's table");
+const chainMatches = [...chainPage.matchAll(/\/ru\/matches\/([0-9a-f-]{36})/g)].map((m) => m[1]);
+const chainLabels = await Promise.all(chainMatches.map(async (id) => (await guest.get(`/ru/matches/${id}`)).text));
+assert.ok(chainLabels.some((t) => t.includes("Этап 2 · Тур 1")), "a chained-stage match is labelled with its stage");
+assert.ok((await guest.get(`/en/tournaments/${chainSlug}`)).text.includes("Stage 2 · Round robin"), "English page names the stage");
+log(`chain Swiss → round robin → playoff for 5 entrants played in ${chainPasses} passes; each stage from the table before it, places by stage`);
+
 const gt = await org.post("tournament.create", { org: orgId, name: `E2E Gauntlet ${RUN}`, game: "cs2", format: "gauntlet", participantType: "solo", teamSize: "5", maxParticipants: "8", startsAt: tomorrow, tz: "Asia/Dubai", description: "e2e", rules: "bo1" });
 assert.equal(gt.ok, "tournament_created", gt.location);
 const gtSlug = gt.path.split("/").pop();

@@ -1737,4 +1737,24 @@ export const migrations: Migration[] = [
       `create index progress_records_request on progress_records(request_id, created_at)`,
     ],
   },
+  {
+    id: 24,
+    name: "stage_chains",
+    statements: [
+      // Chains of stages (MV-STAGES-2): the main stage (1), further round stages (2…), the playoff last.
+      // The narrower stage checks are replaced by definition. The slot key (tournament, bracket, round, position)
+      // stays as it is, so earlier code keeps working: a chained stage numbers its matches after those of the
+      // earlier stages in the same round.
+      `do $$ declare r record; begin
+         for r in select conrelid::regclass::text as tbl, conname from pg_constraint
+                   where conrelid in ('tournaments'::regclass, 'matches'::regclass, 'stage_entries'::regclass)
+                     and contype = 'c' and pg_get_constraintdef(oid) ~ '\\mstage\\M' loop
+           execute format('alter table %s drop constraint %I', r.tbl, r.conname);
+         end loop;
+       end $$`,
+      `alter table tournaments add constraint tournaments_stage_check check (stage between 1 and 8)`,
+      `alter table matches add constraint matches_stage_check check (stage between 1 and 8)`,
+      `alter table stage_entries add constraint stage_entries_stage_check check (stage between 2 and 8)`,
+    ],
+  },
 ];

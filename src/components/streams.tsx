@@ -73,8 +73,11 @@ export async function StreamsManager({ db, lang, back, tournament }: { db: Datab
   const x = mediaText[lang];
   const [list, matches, origin] = await Promise.all([tournamentStreams(db, tournament.id), streamableMatches(db, tournament.id), portalOrigin()]);
   const editable = !["CANCELLED", "ARCHIVED"].includes(tournament.status);
+  // From stage 2 on: a round stage of a chain (MV-STAGES-2) is "Stage N", a bracket is the playoff.
+  const stagePart = (m: { bracket: string | null; stage: number | null }) =>
+    (m.stage ?? 1) < 2 ? "" : m.bracket === "RR" || m.bracket === "SW" ? `${lang === "ru" ? "Этап" : "Stage"} ${m.stage} · ` : lang === "ru" ? "Плей-офф · " : "Playoff · ";
   const label = (m: { round: number; bracket: string | null; stage: number | null; a_name: string | null; b_name: string | null }) =>
-    `${(m.stage ?? 1) === 2 ? (lang === "ru" ? "Плей-офф · " : "Playoff · ") : ""}${m.bracket && !["W", "RR", "SW"].includes(m.bracket) ? `${m.bracket} · ` : ""}${lang === "ru" ? "Раунд" : "Round"} ${m.round} · ${sides(m, lang)}`;
+    `${stagePart(m)}${m.bracket && !["W", "RR", "SW"].includes(m.bracket) ? `${m.bracket} · ` : ""}${lang === "ru" ? "Раунд" : "Round"} ${m.round} · ${sides(m, lang)}`;
   const streamed = [...new Set(list.map((s) => s.match_id).filter((id): id is string => Boolean(id)))];
   return (
     <section className="section-tight stack-sm" id="streams">

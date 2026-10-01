@@ -92,7 +92,7 @@ export async function decideDispute(db: Database, user: SessionUser, disputeId: 
       [d.id, decision, note, user.id],
     );
     if (isRoundBracket(m.bracket)) {
-      // A playoff waits for the open disputes of its main stage: deciding the last one may start it.
+      // The next stage waits for the open disputes of the stage before it: deciding the last one may start it.
       const { afterRoundMatch } = await import("./rounds.ts");
       await afterRoundMatch(q, m.tournament_id, user.id);
     }

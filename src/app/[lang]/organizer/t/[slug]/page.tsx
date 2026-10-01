@@ -10,9 +10,9 @@ import { bracket, getTournament, participants, tournamentHistory } from "@/serve
 import { canManageOrg } from "@/server/access.ts";
 import { allowedTransitions, canManageTournament, canRefereeTournament, isMatchFormat, type TournamentStatus } from "@/server/tournaments.ts";
 import { scoreLog } from "@/server/leaderboard.ts";
-import { isRoundFormat, settingsOf } from "@/server/format-settings.ts";
+import { isRoundFormat, playoffStage, settingsOf, stageSpec } from "@/server/format-settings.ts";
 import { effectiveSwissRounds } from "@/server/swiss.ts";
-import { groupStandings, roundStandings } from "@/server/rounds.ts";
+import { groupStandings, roundStandings, stageTables } from "@/server/rounds.ts";
 import { listCircuits } from "@/server/circuits.ts";
 import { answerLines, fieldsOf } from "@/server/registration.ts";
 import { ffaActivity, roundTables } from "@/server/lobbies.ts";
@@ -27,7 +27,20 @@ import { orgVenues } from "@/server/venues.ts";
 import { StreamsManager } from "@/components/streams";
 import { ActionForm, Badge, DbDown, Field, Flash, type SearchParams } from "@/components/ui";
 import { TournamentForm } from "@/components/tournament-form";
-import { BracketView, FfaRounds, formatLabel, groupTitle, labelContext, matchLabel, playoffFormatLabel, StandingsTable, type StandingName } from "@/components/tournament";
+import {
+  BracketView,
+  chainStageLabel,
+  FfaRounds,
+  formatLabel,
+  groupTitle,
+  labelContext,
+  matchLabel,
+  playoffFormatLabel,
+  StageStandings,
+  stageTitle,
+  StandingsTable,
+  type StandingName,
+} from "@/components/tournament";
 import { LocalDateTimeInput, LocalTime, TimeZoneField } from "@/components/time";
 
 /** Matches of a playoff bracket for n entrants (double elimination: without a possible reset). */
@@ -38,8 +51,17 @@ function structurePreview(format: string, n: number, settings: ReturnType<typeof
   if (n < 2) return [[ru ? "Участников" : "Entrants", String(n)]];
   const rows = structureMain(format, n, settings, ru, ffaRaw);
   const playoff = settings.playoff;
+  // Chained stages (MV-STAGES-2): each takes the best of the stage before it; groups shrink to fit a small field.
+  let onward = format === "groups" && settings.groups ? Math.min(n, settings.groups.count * settings.groups.advance) : n;
+  if (format === "round_robin" || format === "swiss" || format === "groups")
+    (settings.chain ?? []).forEach((c, i) => {
+      const entrants = Math.min(c.size, onward);
+      rows.push([`${ru ? "Этап" : "Stage"} ${i + 2}`, `${chainStageLabel(c, ru ? "ru" : "en")} → ${entrants}`]);
+      const groups = c.groups ? Math.max(1, Math.min(c.groups.count, Math.floor(entrants / Math.max(2, c.groups.advance)))) : 0;
+      onward = c.groups ? Math.min(entrants, groups * c.groups.advance) : entrants;
+    });
   if (playoff && (format === "round_robin" || format === "swiss" || format === "groups")) {
-    const field = format === "groups" ? playoff.size : Math.min(playoff.size, n);
+    const field = format === "groups" && !settings.chain?.length ? playoff.size : Math.min(playoff.size, onward);
     rows.push([ru ? "Плей-офф" : "Playoff", `${playoffFormatLabel(playoff.format, ru ? "ru" : "en")} · ${field}`]);
     rows.push([ru ? "Матчей плей-офф" : "Playoff matches", String(playoffMatchCount(playoff.format, field)) + (playoff.format === "double_elimination" ? (ru ? " (+1 при перезапуске)" : " (+1 with a reset)") : "")]);
   }
@@ -176,7 +198,18 @@ export default async function ManageTournament({ params, searchParams }: { param
   const labels = labelContext(matches, t.format, playoff?.format);
   const label = (m: (typeof matches)[number]) => matchLabel(m, labels, lang);
   const mainMatches = matches.filter((m) => (m.stage ?? 1) === 1);
-  const playoffMatches = matches.filter((m) => m.stage === 2);
+  // Further round stages before the playoff (MV-STAGES-2); the playoff is the stage after them.
+  const chain = rounds ? (settings.chain ?? []) : [];
+  const playoffAt = playoffStage(settings);
+  const playoffMatches = matches.filter((m) => m.stage === playoffAt);
+  const chainStages = await Promise.all(
+    chain.map(async (spec, i) => {
+      const stage = i + 2;
+      const stageMatches = matches.filter((m) => m.stage === stage);
+      const data = stageMatches.length ? await stageTables(db, t, stage) : null;
+      return { stage, spec, matches: stageMatches, tables: data?.tables ?? [] };
+    }),
+  );
   const roundTable = (rounds === "round_robin" || rounds === "swiss") && matches.length ? await roundStandings(db, t) : [];
   const groupTables = rounds === "groups" && matches.length ? await groupStandings(db, t) : [];
   const finished = status === "COMPLETED" || status === "ARCHIVED";
@@ -223,8 +256,8 @@ export default async function ManageTournament({ params, searchParams }: { param
       : [];
   const names = new Map<string, StandingName>(list.map((p) => [p.id, { name: p.name, username: p.username, team_slug: p.team_slug }]));
   const running = ["IN_PROGRESS", "PAUSED"].includes(status) && (isMatchFormat(t.format) || t.format === "ffa");
-  // During a playoff only the playoff can be rebuilt (the server applies the same rule).
-  const regenStage = t.stage === 2 ? 2 : null;
+  // From the second stage on only the current stage can be rebuilt (the server applies the same rule).
+  const regenStage = rounds && (t.stage ?? 1) >= 2 ? t.stage : null;
   const [regen] = !running
     ? []
     : t.format === "ffa"
@@ -236,12 +269,15 @@ export default async function ManageTournament({ params, searchParams }: { param
                    or (status = 'completed' and coalesce(outcome, '') not in ('bye','disqualification')))) as blocking`,
         [t.id, regenStage],
       );
-  // The playoff waits for open disputes about main-stage matches.
+  // The next stage (a chained stage or the playoff) waits for open disputes about the current stage's matches.
+  const currentStage = t.stage ?? 1;
+  const currentMatches = matches.filter((m) => (m.stage ?? 1) === currentStage);
+  const nextStage = rounds ? stageSpec(settings, rounds, currentStage + 1) : null;
   const [waiting] =
-    running && playoff && t.stage === 1 && mainMatches.length && mainMatches.every((m) => ["completed", "cancelled"].includes(m.status))
+    running && nextStage && currentMatches.length && currentMatches.every((m) => ["completed", "cancelled"].includes(m.status))
       ? await db.query<{ n: number }>(
-          "select count(*)::int as n from disputes d join matches m on m.id = d.match_id where m.tournament_id = $1 and m.stage = 1 and d.status = 'open'",
-          [t.id],
+          "select count(*)::int as n from disputes d join matches m on m.id = d.match_id where m.tournament_id = $1 and m.stage = $2 and d.status = 'open'",
+          [t.id, currentStage],
         )
       : [];
   const circuitOptions = manager ? await listCircuits(db, { orgId: t.org_id }) : [];
@@ -311,7 +347,11 @@ export default async function ManageTournament({ params, searchParams }: { param
         <section className="card section-card">
           <h2 className="h3">{o.lifecycle}</h2>
           <p className="small muted">
-            {playoff
+            {chain.length
+              ? ru
+                ? "Разрешены только допустимые переходы. Каждый следующий этап и плей-офф создаются автоматически после последнего матча предыдущего этапа (и решения открытых споров по нему); после этого результаты предыдущего этапа не меняются. Турнир завершается последним этапом."
+                : "Only valid transitions are offered. Each further stage and the playoff are created automatically after the last match of the stage before (and any open disputes about it); from then on that stage's results are final. The last stage completes the tournament."
+              : playoff
               ? ru
                 ? "Разрешены только допустимые переходы. Плей-офф создаётся автоматически после последнего матча основного этапа (и решения открытых споров по нему), турнир завершается финалом плей-офф."
                 : "Only valid transitions are offered. The playoff is created automatically after the last main-stage match (and any open disputes about it); the playoff final completes the tournament."
@@ -333,9 +373,13 @@ export default async function ManageTournament({ params, searchParams }: { param
           </div>
           {(waiting?.n ?? 0) > 0 ? (
             <p className="notice notice-warn">
-              {ru
-                ? `Основной этап сыгран. Плей-офф будет создан после решения открытых споров по его матчам: ${waiting!.n}.`
-                : `The main stage is complete. The playoff will be created once its open disputes are decided: ${waiting!.n}.`}
+              {currentStage > 1 || nextStage?.kind === "round"
+                ? ru
+                  ? `Этап ${currentStage} сыгран. Следующий этап будет создан после решения открытых споров по его матчам: ${waiting!.n}.`
+                  : `Stage ${currentStage} is complete. The next stage will be created once its open disputes are decided: ${waiting!.n}.`
+                : ru
+                  ? `Основной этап сыгран. Плей-офф будет создан после решения открытых споров по его матчам: ${waiting!.n}.`
+                  : `The main stage is complete. The playoff will be created once its open disputes are decided: ${waiting!.n}.`}
             </p>
           ) : null}
           {running ? (
@@ -771,6 +815,16 @@ export default async function ManageTournament({ params, searchParams }: { param
             </ul>
           ) : null}
           <BracketView lang={lang} matches={rounds ? mainMatches : matches} format={t.format} series={seriesById} />
+          {chainStages
+            .filter((s) => s.matches.length)
+            .map((s) => (
+              <div key={s.stage} className="bracket-group">
+                <h3 className="h3">
+                  {`${stageTitle(s.stage, lang)} · ${chainStageLabel(s.spec, lang)}`}
+                </h3>
+                <BracketView lang={lang} matches={s.matches} format={s.spec.format} series={seriesById} scope={`s${s.stage}`} />
+              </div>
+            ))}
           {playoff && playoffMatches.length ? (
             <div className="bracket-group">
               <h3 className="h3">{ru ? "Плей-офф" : "Playoff"}</h3>
@@ -787,7 +841,7 @@ export default async function ManageTournament({ params, searchParams }: { param
             {groupTables.map((g) => (
               <div key={g.group} className="stack-sm">
                 <h3 className="h4">{groupTitle(g.group, lang)}</h3>
-                <StandingsTable lang={lang} format="groups" rows={g.rows} names={names} final={false} advance={settings.groups?.advance ?? 0} />
+                <StandingsTable lang={lang} format="groups" rows={g.rows} names={names} final={false} advance={settings.groups?.advance ?? 0} onward={chain.length ? "stage" : "playoff"} />
               </div>
             ))}
           </div>
@@ -800,11 +854,37 @@ export default async function ManageTournament({ params, searchParams }: { param
             format={rounds}
             rows={roundTable}
             names={names}
-            final={finished && !playoff}
-            advance={playoff ? Math.min(playoff.size, roundTable.length) : 0}
+            final={finished && !playoff && !chain.length}
+            advance={(chain[0] ?? playoff) ? Math.min((chain[0] ?? playoff)!.size, roundTable.length) : 0}
+            onward={chain.length ? "stage" : "playoff"}
           />
         </section>
       ) : null}
+
+      {chainStages
+        .filter((s) => s.tables.length)
+        .map((s) => (
+          <section key={s.stage} className="section-tight">
+            <h2 className="h3">
+              {`${stageTitle(s.stage, lang)} · ${chainStageLabel(s.spec, lang)}`}
+            </h2>
+            <StageStandings
+              lang={lang}
+              format={s.spec.format}
+              tables={s.tables}
+              names={names}
+              final={finished && !playoff && s.stage === chain.length + 1}
+              advance={
+                s.spec.format === "groups"
+                  ? (s.spec.groups?.advance ?? 0)
+                  : (chain[s.stage - 1] ?? playoff)
+                    ? Math.min((chain[s.stage - 1] ?? playoff)!.size, s.tables[0]?.rows.length ?? 0)
+                    : 0
+              }
+              onward={s.stage < chain.length + 1 ? "stage" : "playoff"}
+            />
+          </section>
+        ))}
 
       {manager && !finished && status !== "CANCELLED" ? (
         <section className="section-tight" id="place">

@@ -17,6 +17,8 @@ import { bracketSize, seedOrder } from "./bracket.ts";
 import type { StandingsRow } from "./standings.ts";
 
 export const STAGES_VERSION = "MV-STAGES-1";
+/** Chains of round stages before the playoff (Swiss → groups → playoff and the like). */
+export const CHAIN_VERSION = "MV-STAGES-2";
 export const MAX_GROUPS = 32;
 export const GAUNTLET_MAX = 16;
 export const PLAYOFF_FORMATS = ["single_elimination", "double_elimination", "gauntlet"] as const;

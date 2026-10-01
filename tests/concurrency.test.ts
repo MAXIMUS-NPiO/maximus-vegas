@@ -332,6 +332,65 @@ test("groups: the last group results decided together create the playoff exactly
   }
 });
 
+// ---- Chains of stages (MV-STAGES-2): the end of every stage under real concurrency ----
+test("chains: the last results of each stage decided together create the next stage exactly once", { skip: !url }, async () => {
+  const db: Database = await openDatabase({ url });
+  const run = Date.now().toString(36);
+  const mk = async (name: string): Promise<SessionUser> => {
+    const s = await signUp(db, { email: `${name}${run}@example.com`, username: `${name}${run}`.slice(0, 24), displayName: name, password: "correct horse battery", adult: "on", terms: "on" });
+    return (await sessionUser(db, s.token))!;
+  };
+  try {
+    const org = await mk("cho");
+    const space = await createOrg(db, org, { name: `Chains ${run}`, description: "" });
+    const t = await createTournament(db, org, space.id, {
+      name: `chains ${run}`, game: "cs2", format: "swiss", participantType: "solo", teamSize: 1, maxParticipants: 8,
+      checkInRequired: "", region: "", startsAt: "2030-01-01T12:00", timeZone: "UTC", description: "", rules: "",
+      settings: { swissRounds: "1", stage2Format: "groups", stage2Size: "8", stage2GroupCount: "2", stage2GroupAdvance: "2", playoffFormat: "single_elimination" },
+    });
+    await transition(db, org, t.id, "PUBLISHED");
+    await transition(db, org, t.id, "REGISTRATION_OPEN");
+    for (let i = 0; i < 8; i++) await register(db, await mk(`ch${i}`), t.id);
+    await transition(db, org, t.id, "REGISTRATION_CLOSED");
+    await transition(db, org, t.id, "IN_PROGRESS");
+    const state = async () =>
+      (
+        await db.query<{ stage: number; entries2: number; entries3: number; stage2: number; stage3: number; started: number; playoff: number }>(
+          `select t.stage,
+                  (select count(*)::int from stage_entries e where e.tournament_id = t.id and e.stage = 2) as entries2,
+                  (select count(*)::int from stage_entries e where e.tournament_id = t.id and e.stage = 3) as entries3,
+                  (select count(*)::int from matches m where m.tournament_id = t.id and m.stage = 2) as stage2,
+                  (select count(*)::int from matches m where m.tournament_id = t.id and m.stage = 3) as stage3,
+                  (select count(*)::int from audit_log a where a.entity_id = t.id::text and a.action = 'tournament.stage_started') as started,
+                  (select count(*)::int from audit_log a where a.entity_id = t.id::text and a.action = 'tournament.playoff_started') as playoff
+             from tournaments t where t.id = $1`,
+          [t.id],
+        )
+      )[0];
+    // The single Swiss round: four games, each decided by eight racing requests.
+    const swiss = await db.query<{ id: string }>("select id from matches where tournament_id = $1 and stage = 1", [t.id]);
+    assert.equal(swiss.length, 4);
+    const first = await Promise.allSettled(
+      Array.from({ length: 8 }, () => swiss.map((g) => officialResult(db, org, g.id, { scoreA: 2, scoreB: 0, evidenceUrl: "", note: "" }))).flat(),
+    );
+    assert.equal(first.filter((r) => r.status === "fulfilled").length, 4, "one decision per game");
+    assert.deepEqual(await state(), { stage: 2, entries2: 8, entries3: 0, stage2: 12, stage3: 0, started: 1, playoff: 0 }, "one stage of two groups of four");
+    // Stage 2: all but the last game of each group, then the two last games by eight racing requests each.
+    const games = await db.query<{ id: string; group_no: number }>("select id, group_no from matches where tournament_id = $1 and stage = 2 order by round, group_no, position", [t.id]);
+    const last = new Map<number, string>();
+    for (const g of games) last.set(g.group_no, g.id);
+    for (const g of games.filter((g) => ![...last.values()].includes(g.id))) await officialResult(db, org, g.id, { scoreA: 2, scoreB: 0, evidenceUrl: "", note: "" });
+    const second = await Promise.allSettled(
+      Array.from({ length: 8 }, () => [...last.values()].map((id) => officialResult(db, org, id, { scoreA: 2, scoreB: 1, evidenceUrl: "", note: "" }))).flat(),
+    );
+    assert.equal(second.filter((r) => r.status === "fulfilled").length, 2, "one decision per game");
+    assert.deepEqual(await state(), { stage: 3, entries2: 8, entries3: 4, stage2: 12, stage3: 3, started: 1, playoff: 1 }, "one playoff of four");
+    assert.equal((await verifyAuditChain(db)).valid, true);
+  } finally {
+    await db.close();
+  }
+});
+
 // ---- Release 5: the end of an FFA round under real concurrency ----
 test("ffa: the last lobby games recorded together create the next round exactly once", { skip: !url }, async () => {
   const db: Database = await openDatabase({ url });
