@@ -8,6 +8,7 @@ import { fieldsOf, MAX_FIELDS, type RegField } from "@/server/registration.ts";
 import { SERIES_LENGTHS, SERIES_MAX_ROUND, SERIES_ROWS, seriesRulesOf } from "@/server/series.ts";
 import { groupName } from "@/server/stages.ts";
 import { admissionOf } from "@/server/admission.ts";
+import { mailConfigured } from "@/server/mail.ts";
 import { ActionForm, Check, Field } from "./ui";
 import { LocalDateTimeInput, TimeZoneField } from "./time";
 
@@ -427,6 +428,13 @@ export function TournamentForm({
             : "Criteria are checked for a solo player or every roster player — at application and whenever a roster changes; they are frozen after the first application. XP and matches count only confirmed activity in this game. The match length drives venues and schedule overlap checks (empty = 60 minutes)."}
         </p>
         <Check name="admissionEmail" label={ru ? "Нужен подтверждённый email" : "A confirmed email is required"} defaultChecked={admission?.emailVerified ?? false} />
+        {mailConfigured() ? null : (
+          <p className="small notice notice-warn">
+            {ru
+              ? "Почта портала не подключена: игроки не могут подтвердить email, поэтому этот критерий закроет регистрацию почти для всех."
+              : "The portal's email is not connected: players cannot confirm their email, so this criterion would close registration for nearly everyone."}
+          </p>
+        )}
         <div className="fieldset-body">
           <div className="form-grid form-grid-4">
             <Field label={ru ? "Аккаунт не моложе, дней" : "Account age at least, days"} hint="0–3650">
