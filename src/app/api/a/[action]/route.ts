@@ -33,6 +33,7 @@ import * as venues from "@/server/venues.ts";
 import * as messages from "@/server/messages.ts";
 import * as system from "@/server/system.ts";
 import * as streams from "@/server/streams.ts";
+import * as academy from "@/server/academy.ts";
 import { storeUpload } from "@/server/media.ts";
 import { drainOutbox, mailConfigured } from "@/server/mail.ts";
 import { fail } from "@/server/errors.ts";
@@ -1116,6 +1117,81 @@ const handlers: Record<string, Handler> = {
   "stream.remove": async (c) => {
     await streams.removeStream(c.db, u(c), c.form.stream);
     return { ok: "stream_removed" };
+  },
+  // ---------- Academy: coaches, programmes, training (MV-ACADEMY-1) ----------
+  "coach.save": async (c) => {
+    const r = await academy.saveCoachProfile(c.db, u(c), {
+      headline: c.form.headline,
+      bio: c.form.bio,
+      experience: c.form.experience,
+      games: c.multi.games ?? [],
+      languages: c.multi.languages ?? [],
+      formats: c.multi.formats ?? [],
+      city: c.form.city,
+      accepting: c.form.accepting,
+    });
+    return { ok: r.resubmitted ? "coach_resubmitted" : "coach_saved" };
+  },
+  "coach.submit": async (c) => {
+    await academy.submitCoach(c.db, u(c));
+    return { ok: "coach_submitted" };
+  },
+  "coach.review": async (c) => {
+    const user = await staff(c, "academy");
+    await academy.reviewCoach(c.db, user, c.form.coach, c.form.decision, c.form.note);
+    return { ok: "coach_reviewed" };
+  },
+  "programme.save": async (c) => {
+    await academy.saveProgramme(c.db, u(c), c.form.programme || null, {
+      title: c.form.title,
+      game: c.form.game,
+      level: c.form.level,
+      format: c.form.format,
+      description: c.form.description,
+      sessions: c.form.sessions,
+      minutes: c.form.minutes,
+    });
+    return { ok: "programme_saved" };
+  },
+  "programme.status": async (c) => {
+    await academy.setProgrammeStatus(c.db, u(c), c.form.programme, c.form.status);
+    return { ok: "saved" };
+  },
+  "training.request": async (c) => {
+    const r = await academy.requestTraining(c.db, u(c), c.form.coach, { programme: c.form.programme, game: c.form.game, goal: c.form.goal, availability: c.form.availability });
+    return { to: `/${c.lang}/training/${r.id}`, ok: "training_requested" };
+  },
+  "training.answer": async (c) => {
+    await academy.answerRequest(c.db, u(c), c.form.request, c.form.decision === "accept", c.form.note);
+    return { ok: "training_answered" };
+  },
+  "training.cancel": async (c) => {
+    await academy.cancelRequest(c.db, u(c), c.form.request);
+    return { ok: "training_cancelled" };
+  },
+  "training.complete": async (c) => {
+    await academy.completeRequest(c.db, u(c), c.form.request);
+    return { ok: "training_completed" };
+  },
+  "training.session": async (c) => {
+    await academy.scheduleSession(c.db, u(c), c.form.request, { startsAt: c.form.startsAt, tz: c.form.tz, minutes: c.form.minutes, place: c.form.place });
+    return { ok: "session_scheduled" };
+  },
+  "training.session_status": async (c) => {
+    await academy.setSessionStatus(c.db, u(c), c.form.session, c.form.status);
+    return { ok: "session_updated" };
+  },
+  "training.progress": async (c) => {
+    await academy.addProgress(c.db, u(c), c.form.request, {
+      kind: c.form.kind,
+      body: c.form.body,
+      evidence: c.form.evidence,
+      timeMark: c.form.timeMark,
+      metric: c.form.metric,
+      value: c.form.value,
+      session: c.form.session,
+    });
+    return { ok: "progress_added" };
   },
   // ---------- Portal-team messages and system controls (MV-STAFF-1) ----------
   "message.create": async (c) => {

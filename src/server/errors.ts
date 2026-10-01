@@ -239,6 +239,22 @@ export const ERROR_CODES = [
   "stream_match",
   "stream_limit",
   "stream_exists",
+  // Academy
+  "coach_experience",
+  "coach_state",
+  "coach_not_verified",
+  "coach_self",
+  "coach_unavailable",
+  "programme_limit",
+  "request_limit",
+  "request_exists",
+  "request_state",
+  "session_time",
+  "session_overlap",
+  "session_limit",
+  "session_state",
+  "progress_time_mark",
+  "progress_measure",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 

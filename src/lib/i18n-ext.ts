@@ -140,6 +140,18 @@ const okRu: Record<string, string> = {
   maintenance_off: "Режим обслуживания выключен.",
   stream_added: "Трансляция назначена: она видна на страницах турнира и матча.",
   stream_removed: "Ссылка удалена.",
+  coach_saved: "Профиль тренера сохранён.",
+  coach_resubmitted: "Профиль сохранён и снова отправлен на проверку: опыт или игры изменились.",
+  coach_submitted: "Профиль отправлен на проверку команде портала.",
+  coach_reviewed: "Решение по тренеру сохранено, тренер получил уведомление.",
+  programme_saved: "Программа сохранена.",
+  training_requested: "Заявка отправлена тренеру: ответ придёт уведомлением.",
+  training_answered: "Ответ отправлен игроку.",
+  training_cancelled: "Заявка отменена.",
+  training_completed: "Обучение отмечено завершённым.",
+  session_scheduled: "Занятие назначено, игрок получил уведомление.",
+  session_updated: "Статус занятия сохранён.",
+  progress_added: "Запись прогресса добавлена.",
 };
 
 const okEn: Record<string, string> = {
@@ -282,6 +294,18 @@ const okEn: Record<string, string> = {
   maintenance_off: "Maintenance is off.",
   stream_added: "Stream assigned: it shows on the tournament and match pages.",
   stream_removed: "Link removed.",
+  coach_saved: "Coach profile saved.",
+  coach_resubmitted: "Profile saved and sent for review again: the experience or games changed.",
+  coach_submitted: "Profile sent for review by the portal team.",
+  coach_reviewed: "Decision on the coach saved; the coach was notified.",
+  programme_saved: "Programme saved.",
+  training_requested: "Request sent to the coach: the answer arrives as a notification.",
+  training_answered: "Answer sent to the player.",
+  training_cancelled: "Request cancelled.",
+  training_completed: "Training marked as completed.",
+  session_scheduled: "Session booked; the player was notified.",
+  session_updated: "Session status saved.",
+  progress_added: "Progress record added.",
 };
 
 const errorsRu: Record<string, string> = {
@@ -456,6 +480,21 @@ const errorsRu: Record<string, string> = {
   stream_match: "Этот матч не относится к турниру.",
   stream_limit: "У турнира уже 30 ссылок на трансляции и записи: удалите лишние.",
   stream_exists: "Эта ссылка уже назначена.",
+  coach_experience: "Опишите опыт тренера не короче 20 символов: его проверяет команда портала.",
+  coach_state: "Профиль тренера сейчас нельзя отправить или проверить в этом статусе.",
+  coach_not_verified: "Публиковать программы может только тренер, чей опыт проверен.",
+  coach_self: "Нельзя отправить заявку самому себе.",
+  coach_unavailable: "Тренер сейчас не принимает заявки.",
+  programme_limit: "У тренера уже 10 действующих программ: перенесите лишние в архив.",
+  request_limit: "У вас уже 5 заявок без ответа: дождитесь ответа или отмените одну.",
+  request_exists: "У вас уже есть открытая заявка к этому тренеру.",
+  request_state: "Заявка уже в другом статусе.",
+  session_time: "Время занятия не подходит: назначить можно только на будущее, отметить проведённым — после начала.",
+  session_overlap: "В это время у тренера уже есть занятие.",
+  session_limit: "У этой заявки уже 50 занятий.",
+  session_state: "Занятие уже не запланировано.",
+  progress_time_mark: "Отметка времени — в виде 12:34 или 1:02:03.",
+  progress_measure: "Для замера нужны название показателя и число.",
 };
 
 const errorsEn: Record<string, string> = {
@@ -630,6 +669,21 @@ const errorsEn: Record<string, string> = {
   stream_match: "This match does not belong to the tournament.",
   stream_limit: "The tournament already has 30 stream and recording links: remove some first.",
   stream_exists: "This link is already assigned.",
+  coach_experience: "Describe the coach's experience in 20 characters or more: the portal team checks it.",
+  coach_state: "The coach profile cannot be sent or reviewed in its current status.",
+  coach_not_verified: "Only a coach whose experience is verified can publish programmes.",
+  coach_self: "You cannot send a request to yourself.",
+  coach_unavailable: "The coach is not taking requests right now.",
+  programme_limit: "The coach already has 10 active programmes: archive some first.",
+  request_limit: "You already have 5 requests without an answer: wait for one or cancel one.",
+  request_exists: "You already have an open request to this coach.",
+  request_state: "The request is already in another status.",
+  session_time: "The session time does not fit: book only in the future, mark as held only after the start.",
+  session_overlap: "The coach already has a session at that time.",
+  session_limit: "This request already has 50 sessions.",
+  session_state: "The session is no longer scheduled.",
+  progress_time_mark: "A time mark looks like 12:34 or 1:02:03.",
+  progress_measure: "A measurement needs a metric name and a number.",
 };
 
 const kindsRu: Record<string, string> = {
@@ -738,6 +792,19 @@ const kindsRu: Record<string, string> = {
   pass_issued: "Вам выдан пропуск на площадку «{venue}»",
   staff_message: "Сообщение команды портала: {title}",
   match_streamed: "Ваш матч в «{tournament}» будет транслироваться",
+  coach_submitted: "Профиль тренера @{coach} ждёт проверки",
+  coach_verified: "Ваш опыт тренера подтверждён: профиль опубликован",
+  coach_rejected: "Профиль тренера не подтверждён — смотрите ответ команды портала",
+  coach_suspended: "Профиль тренера приостановлен — смотрите ответ команды портала",
+  coaching_request: "Новая заявка на обучение от @{student}",
+  coaching_accepted: "Тренер @{coach} принял вашу заявку",
+  coaching_declined: "Тренер @{coach} не принял заявку",
+  coaching_cancelled: "@{student} отменил заявку на обучение",
+  coaching_completed: "Тренер @{coach} завершил обучение",
+  coaching_session: "Тренер @{coach} назначил занятие",
+  coaching_session_cancelled: "Занятие отменено",
+  coaching_progress: "Тренер @{coach} добавил запись прогресса",
+  coaching_coach_left: "Тренер закрыл профиль: заявка отменена",
 };
 
 const kindsEn: Record<string, string> = {
@@ -846,6 +913,19 @@ const kindsEn: Record<string, string> = {
   pass_issued: "You have a pass to venue “{venue}”",
   staff_message: "Message from the portal team: {title}",
   match_streamed: "Your match in “{tournament}” will be streamed",
+  coach_submitted: "Coach profile @{coach} is waiting for review",
+  coach_verified: "Your coaching experience is verified: the profile is published",
+  coach_rejected: "Coach profile not verified — see the portal team's answer",
+  coach_suspended: "Coach profile suspended — see the portal team's answer",
+  coaching_request: "New training request from @{student}",
+  coaching_accepted: "Coach @{coach} accepted your request",
+  coaching_declined: "Coach @{coach} did not accept the request",
+  coaching_cancelled: "@{student} cancelled a training request",
+  coaching_completed: "Coach @{coach} completed the training",
+  coaching_session: "Coach @{coach} booked a session",
+  coaching_session_cancelled: "A session was cancelled",
+  coaching_progress: "Coach @{coach} added a progress record",
+  coaching_coach_left: "The coach closed the profile: the request is cancelled",
 };
 
 export const extRu = {

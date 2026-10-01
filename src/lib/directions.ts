@@ -26,7 +26,7 @@ export const DIRECTIONS: Direction[] = [
       ru: ["Программы по играм и уровням", "Бронирование занятий и календарь", "Разбор по видео, replay или разрешённой телеметрии с тайм-кодами", "Командное обучение и школьные программы"],
       en: ["Programmes by game and level", "Session booking and calendar", "Reviews from video, replays or permitted telemetry with timestamps", "Team training and school programmes"],
     },
-    now: { ru: "Принимаем заявки от игроков, команд и учебных заведений. Физические академии и адреса не публикуются до подтверждения.", en: "We accept applications from players, teams and schools. Physical academies and addresses are not published until confirmed." },
+    now: { ru: "Работают программы проверенных тренеров по играм и уровням, заявки на обучение, занятия в календаре и записи прогресса (наблюдение, рекомендация, замер). ИИ-разбор, командное обучение и школьные программы — в разработке. Физические академии и адреса не публикуются до подтверждения.", en: "Programmes of verified coaches by game and level, training requests, sessions in the calendar and progress records (observation, recommendation, measurement) work. AI reviews, team training and school programmes are in development. Physical academies and addresses are not published until confirmed." },
     boundary: { ru: "Без гарантий роста рейтинга, контракта или стипендии. Работа с несовершеннолетними — только после запуска модуля согласий опекунов.", en: "No guaranteed rank gains, contracts or scholarships. Work with minors only after the guardian-consent module launches." },
   },
   {
@@ -39,7 +39,7 @@ export const DIRECTIONS: Direction[] = [
       ru: ["Профили тренеров с подтверждённым опытом", "Запрос на обучение и расписание", "Разделение факта, интерпретации модели и рекомендации тренера"],
       en: ["Coach profiles with verified experience", "Training requests and scheduling", "Separation of fact, model interpretation and coach recommendation"],
     },
-    now: { ru: "Тренеры могут подать заявку на включение в каталог. Каталог публикуется после проверки.", en: "Coaches can apply to join the directory. It is published after verification." },
+    now: { ru: "Каталог тренеров с опытом, проверенным командой портала, и заявки на обучение работают; тренер ведёт профиль, программы, очередь заявок и занятия в кабинете.", en: "The directory of coaches whose experience the portal team verified, and training requests, work; a coach keeps the profile, programmes, request queue and sessions in the workspace." },
   },
   {
     slug: "media",
@@ -202,7 +202,7 @@ export const MODULES: ModuleEntry[] = [
   { state: "connect", name: { ru: "Серверный контур CS2", en: "CS2 server contour" }, note: { ru: "Provisioning, RCON, demo и восстановление матчей — на отдельной инфраструктуре.", en: "Provisioning, RCON, demos and match recovery run on separate infrastructure." } },
   { state: "connect", name: { ru: "White-label домены", en: "White-label domains" }, note: { ru: "Собственный домен и оформление партнёра.", en: "Partner's own domain and branding." } },
   { state: "dev", name: { ru: "Цепочки из трёх и более этапов", en: "Chains of three or more stages" }, note: { ru: "Например швейцарская → группы → плей-офф.", en: "For example Swiss → groups → playoff." } },
-  { state: "dev", name: { ru: "Академия и тренеры", en: "Academy and coaches" }, note: { ru: "Программы, бронирование, разборы.", en: "Programmes, booking, reviews." } },
+  { state: "works", name: { ru: "Академия и тренеры", en: "Academy and coaches" }, note: { ru: "Тренер публикуется после проверки опыта командой портала; программы по играм и уровням; заявка на обучение попадает в очередь тренера; занятия без пересечений и в календаре; записи прогресса разделяют наблюдение, рекомендацию и замер. Оплату занятий портал не принимает; ИИ-разбор и школьные программы — в разработке.", en: "A coach is published after the portal team verifies the experience; programmes by game and level; a training request reaches the coach's queue; sessions without overlaps and in the calendar; progress records keep observation, recommendation and measurement apart. The portal takes no payment for sessions; AI reviews and school programmes are in development." } },
   { state: "dev", name: { ru: "Медиа и трансляции", en: "Media and broadcasts" }, note: { ru: "Live-центр, VOD, клипы, оверлеи.", en: "Live centre, VODs, clips, overlays." } },
   { state: "dev", name: { ru: "Сообщества, сообщения, голос", en: "Communities, messages, voice" }, note: { ru: "С модерацией и ограничениями для несовершеннолетних.", en: "With moderation and limits for minors." } },
   { state: "dev", name: { ru: "Площадки, Clubhouse, QR check-in", en: "Venues, Clubhouse, QR check-in" }, note: { ru: "Только подтверждённые адреса и статусы.", en: "Confirmed addresses and statuses only." } },

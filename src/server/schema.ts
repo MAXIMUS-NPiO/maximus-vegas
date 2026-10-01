@@ -1649,4 +1649,92 @@ export const migrations: Migration[] = [
       `create index streams_match on streams(match_id) where match_id is not null`,
     ],
   },
+  {
+    id: 23,
+    name: "academy_coaching",
+    statements: [
+      // Coaches are public only once portal staff verify the stated experience (MV-ACADEMY-1).
+      `create table coaches (
+        user_id uuid primary key references users(id) on delete cascade,
+        headline text not null check (char_length(headline) between 3 and 80),
+        bio text not null default '' check (char_length(bio) <= 1500),
+        experience text not null check (char_length(experience) between 20 and 1000),
+        games text[] not null check (cardinality(games) between 1 and 5),
+        languages text[] not null check (cardinality(languages) between 1 and 3),
+        formats text[] not null check (cardinality(formats) between 1 and 2),
+        city text not null default '' check (char_length(city) <= 80),
+        accepting boolean not null default true,
+        status text not null default 'draft' check (status in ('draft','submitted','verified','rejected','suspended')),
+        review_note text not null default '' check (char_length(review_note) <= 500),
+        reviewed_by uuid references users(id),
+        reviewed_at timestamptz,
+        verified_at timestamptz,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      )`,
+      `create index coaches_status on coaches(status)`,
+      `create table academy_programmes (
+        id uuid primary key default gen_random_uuid(),
+        coach_id uuid not null references coaches(user_id) on delete cascade,
+        title text not null check (char_length(title) between 3 and 80),
+        game text not null,
+        level text not null check (level in ('beginner','intermediate','advanced')),
+        format text not null check (format in ('online','offline')),
+        description text not null default '' check (char_length(description) <= 2000),
+        sessions int not null check (sessions between 1 and 50),
+        session_minutes int not null check (session_minutes between 30 and 240),
+        status text not null default 'draft' check (status in ('draft','published','archived')),
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      )`,
+      `create index academy_programmes_coach on academy_programmes(coach_id)`,
+      // A training request is the engagement between a student and a coach: sessions and progress hang on it.
+      `create table coaching_requests (
+        id uuid primary key default gen_random_uuid(),
+        coach_id uuid not null references users(id) on delete cascade,
+        student_id uuid not null references users(id) on delete cascade,
+        programme_id uuid references academy_programmes(id) on delete set null,
+        game text not null,
+        goal text not null check (char_length(goal) between 10 and 1000),
+        availability text not null default '' check (char_length(availability) <= 300),
+        status text not null default 'pending' check (status in ('pending','accepted','declined','cancelled','completed')),
+        coach_note text not null default '' check (char_length(coach_note) <= 500),
+        created_at timestamptz not null default now(),
+        decided_at timestamptz,
+        closed_at timestamptz,
+        check (coach_id <> student_id)
+      )`,
+      `create unique index coaching_requests_open on coaching_requests(coach_id, student_id) where status in ('pending','accepted')`,
+      `create index coaching_requests_coach on coaching_requests(coach_id, status, created_at)`,
+      `create index coaching_requests_student on coaching_requests(student_id, created_at desc)`,
+      `create table coaching_sessions (
+        id uuid primary key default gen_random_uuid(),
+        request_id uuid not null references coaching_requests(id) on delete cascade,
+        starts_at timestamptz not null,
+        minutes int not null check (minutes between 30 and 240),
+        place text not null default '' check (char_length(place) <= 300),
+        status text not null default 'scheduled' check (status in ('scheduled','done','cancelled','no_show')),
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      )`,
+      `create index coaching_sessions_request on coaching_sessions(request_id, starts_at)`,
+      // Progress keeps the coach's observation (a fact, with a time mark in a replay or video), the coach's
+      // recommendation (an exercise) and measurements apart.
+      `create table progress_records (
+        id uuid primary key default gen_random_uuid(),
+        request_id uuid not null references coaching_requests(id) on delete cascade,
+        session_id uuid references coaching_sessions(id) on delete set null,
+        author_id uuid not null references users(id),
+        kind text not null check (kind in ('observation','exercise','measure')),
+        body text not null check (char_length(body) between 3 and 1000),
+        evidence_url text not null default '' check (evidence_url = '' or evidence_url ~ '^https://'),
+        time_mark text not null default '' check (time_mark ~ '^([0-9]{1,2}:)?[0-9]{1,2}:[0-9]{2}$' or time_mark = ''),
+        metric text not null default '' check (char_length(metric) <= 60),
+        value numeric,
+        created_at timestamptz not null default now(),
+        check ((kind = 'measure') = (value is not null and metric <> ''))
+      )`,
+      `create index progress_records_request on progress_records(request_id, created_at)`,
+    ],
+  },
 ];

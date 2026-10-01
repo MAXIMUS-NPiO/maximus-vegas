@@ -35,6 +35,7 @@ import { sectionsFor, STAFF_ROLES } from "@/server/staff-roles.ts";
 import { roleNames } from "@/lib/staff-text.ts";
 import { recordStaffSearch } from "@/server/admin.ts";
 import { VenuesTab } from "@/components/venues-admin";
+import { AcademyTab } from "@/components/academy-admin";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
   const { lang } = await params;
@@ -50,6 +51,7 @@ const TABS = [
   "conduct",
   "applications",
   "venues",
+  "academy",
   "memberships",
   "offers",
   "payments",
@@ -71,6 +73,7 @@ const TAB_LABELS: Record<Tab, { ru: string; en: string }> = {
   conduct: { ru: "Честная игра", en: "Fair play" },
   applications: { ru: "Обращения", en: "Inquiries" },
   venues: { ru: "Площадки", en: "Venues" },
+  academy: { ru: "Тренеры", en: "Coaches" },
   memberships: { ru: "Членство", en: "Membership" },
   offers: { ru: "Предложения", en: "Offers" },
   payments: { ru: "Оплаты", en: "Payments" },
@@ -97,6 +100,7 @@ const COUNT_LABELS: Record<string, { ru: string; en: string; tab?: Tab }> = {
   transfer_disputes: { ru: "Споры о переходах", en: "Transfer disputes", tab: "conduct" },
   war_disputes: { ru: "Споры клановых войн", en: "Clan war disputes", tab: "conduct" },
   venue_reviews: { ru: "Площадки на проверке", en: "Venues in review", tab: "venues" },
+  coach_reviews: { ru: "Тренеры на проверке", en: "Coaches in review", tab: "academy" },
 };
 
 export default async function Admin({ params, searchParams }: { params: Promise<{ lang: string }>; searchParams: SearchParams }) {
@@ -244,6 +248,8 @@ export default async function Admin({ params, searchParams }: { params: Promise<
     body = <ConductTab db={db} user={user} lang={lang} back={back} />;
   } else if (tab === "venues") {
     body = <VenuesTab db={db} lang={lang} back={back} />;
+  } else if (tab === "academy") {
+    body = <AcademyTab db={db} lang={lang} back={back} />;
   } else if (tab === "applications") {
     const list = await adminApplications(db);
     body = list.length ? (
