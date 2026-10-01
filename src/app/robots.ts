@@ -5,6 +5,7 @@ export default function robots(): MetadataRoute.Robots {
   const origin = siteOrigin() ?? "https://www.maximus.vegas";
   const personal = [
     "hub",
+    "gameday",
     "settings",
     "admin",
     "notifications",

@@ -50,6 +50,8 @@ const LABELS: Record<string, { ru: string; en: string }> = {
   "match.official_result": { ru: "Решение судьи", en: "Referee decision" },
   "match.result_corrected": { ru: "Результат исправлен", en: "Result corrected" },
   "match.no_show": { ru: "Неявка", en: "No-show" },
+  "match.referee_called": { ru: "Вызван судья", en: "Referee called" },
+  "match.referee_call_closed": { ru: "Судья ответил на вызов", en: "Referee answered a call" },
   "match.disputed": { ru: "Спор по матчу", en: "Match disputed" },
   "match.details_updated": { ru: "Изменены детали матча", en: "Match details changed" },
   "match.checked_in": { ru: "Check-in к матчу", en: "Match check-in" },

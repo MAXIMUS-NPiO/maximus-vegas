@@ -929,4 +929,28 @@ export const migrations: Migration[] = [
       )`,
     ],
   },
+  {
+    id: 10,
+    name: "game_day_referee_calls",
+    statements: [
+      // Requests for staff attention during an event. Release scope: a participant's call to the referee
+      // for a match, one open call per side, closed by staff with a reply. The live-operations queue extends it.
+      `create table incidents (
+        id uuid primary key default gen_random_uuid(),
+        tournament_id uuid not null references tournaments(id) on delete cascade,
+        match_id uuid references matches(id) on delete cascade,
+        kind text not null check (kind in ('referee_call')),
+        side text check (side in ('a','b')),
+        opened_by uuid not null references users(id),
+        message text not null check (char_length(message) between 3 and 500),
+        status text not null default 'open' check (status in ('open','resolved')),
+        resolution text not null default '',
+        resolved_by uuid references users(id),
+        created_at timestamptz not null default now(),
+        resolved_at timestamptz
+      )`,
+      `create unique index incidents_one_open_call on incidents(match_id, side) where kind = 'referee_call' and status = 'open'`,
+      `create index incidents_open_by_tournament on incidents(tournament_id, created_at) where status = 'open'`,
+    ],
+  },
 ];

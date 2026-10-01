@@ -40,6 +40,9 @@ const okRu: Record<string, string> = {
   bracket_regenerated: "Сетка пересоздана из текущих участников.",
   circuit_created: "Серия создана.",
   season_closed: "Сезон закрыт, таблица зафиксирована.",
+  referee_called: "Судья вызван. Ответ придёт уведомлением и появится на экране игрового дня.",
+  referee_call_exists: "Вызов уже отправлен и ждёт ответа судьи.",
+  referee_call_closed: "Вызов закрыт, участники получили ответ.",
 };
 
 const okEn: Record<string, string> = {
@@ -82,6 +85,9 @@ const okEn: Record<string, string> = {
   bracket_regenerated: "The bracket was regenerated from the current entrants.",
   circuit_created: "Circuit created.",
   season_closed: "Season closed; the table is frozen.",
+  referee_called: "The referee has been called. The reply arrives as a notification and on the Game Day screen.",
+  referee_call_exists: "Your call has already been sent and is waiting for the referee.",
+  referee_call_closed: "Call closed; the participants have the reply.",
 };
 
 const errorsRu: Record<string, string> = {
@@ -168,6 +174,7 @@ const errorsRu: Record<string, string> = {
   venue_in_use: "На площадке назначены несыгранные матчи — сначала перенесите их.",
   no_venues: "Сначала добавьте площадки турнира.",
   feedback_closed: "Оценить турнир могут игроки его составов в течение 30 дней после завершения.",
+  match_closed: "Матч завершён. Чтобы оспорить решённый результат, используйте оспаривание на странице матча.",
 };
 
 const errorsEn: Record<string, string> = {
@@ -254,6 +261,7 @@ const errorsEn: Record<string, string> = {
   venue_in_use: "Unplayed matches are assigned to this venue — move them first.",
   no_venues: "Add the tournament's venues first.",
   feedback_closed: "Players on the tournament's rosters can rate it within 30 days of its end.",
+  match_closed: "The match is over. To challenge a decided result, use the dispute on the match page.",
 };
 
 const kindsRu: Record<string, string> = {
@@ -300,6 +308,8 @@ const kindsRu: Record<string, string> = {
   ffa_dispute_opened: "Турнир «{tournament}»: оспорен результат игры {game} — нужно решение",
   match_format_changed: "Турнир «{tournament}»: изменён формат вашего матча",
   match_venue: "Турнир «{tournament}»: ваш матч пройдёт на площадке «{venue}»",
+  referee_call: "Турнир «{tournament}»: {side} зовёт судью к матчу",
+  referee_call_closed: "Турнир «{tournament}»: судья ответил на ваш вызов",
 };
 
 const kindsEn: Record<string, string> = {
@@ -346,6 +356,8 @@ const kindsEn: Record<string, string> = {
   ffa_dispute_opened: "“{tournament}”: the result of game {game} is disputed — a decision is needed",
   match_format_changed: "“{tournament}”: the format of your match changed",
   match_venue: "“{tournament}”: your match is at venue “{venue}”",
+  referee_call: "“{tournament}”: {side} is calling the referee to a match",
+  referee_call_closed: "“{tournament}”: the referee answered your call",
 };
 
 export const extRu = {
@@ -354,7 +366,7 @@ export const extRu = {
   kinds: kindsRu,
   outcome: { decision: "Решение по спору" } as Record<string, string>,
   matchStatus: {} as Record<string, string>,
-  nav: { progress: "Прогресс", billing: "Членство и счета", challenges: "Вызовы 1v1", quick: "Быстрый матч", membership: "Членство" },
+  nav: { progress: "Прогресс", billing: "Членство и счета", challenges: "Вызовы 1v1", quick: "Быстрый матч", membership: "Членство", gameDay: "Игровой день" },
 };
 export type Ext = typeof extRu;
 
@@ -364,5 +376,5 @@ export const extEn: Ext = {
   kinds: kindsEn,
   outcome: { decision: "Dispute decision" },
   matchStatus: {},
-  nav: { progress: "Progress", billing: "Membership and billing", challenges: "1v1 challenges", quick: "Quick match", membership: "Membership" },
+  nav: { progress: "Progress", billing: "Membership and billing", challenges: "1v1 challenges", quick: "Quick match", membership: "Membership", gameDay: "Game Day" },
 };

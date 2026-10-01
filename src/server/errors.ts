@@ -142,6 +142,7 @@ export const ERROR_CODES = [
   "venue_in_use",
   "no_venues",
   "feedback_closed",
+  "match_closed",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 

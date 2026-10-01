@@ -9,12 +9,15 @@ import { canRefereeTournament } from "@/server/tournaments.ts";
 import { settingsOf } from "@/server/format-settings.ts";
 import { mediaUrl } from "@/server/media.ts";
 import { ActionForm, Badge, DbDown, Field, Flash, type SearchParams } from "@/components/ui";
-import { LocalDateTimeInput, LocalTime, TimeZoneField } from "@/components/time";
+import { Countdown, LocalDateTimeInput, LocalTime, TimeZoneField } from "@/components/time";
 import { matchLabel } from "@/components/tournament";
 import { noShowFrom } from "@/server/matches.ts";
 import { depthKey, pointsOf, SERIES_LENGTHS, seriesOf, seriesRulesOf, type SeriesSource } from "@/server/series.ts";
 import { venues as venuesOf } from "@/server/schedule.ts";
 import { seriesText } from "@/components/tournament";
+import { matchStep, openMatchFor, refereeCalls } from "@/server/gameday.ts";
+import { gameDayText, stepText, actionText } from "@/lib/gameday-text.ts";
+import { CallBlock, OpenCalls } from "@/components/referee-call";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string; id: string }> }): Promise<Metadata> {
   const { lang, id } = await params;
@@ -77,12 +80,36 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
     : null;
 
   const mySide = user ? (a?.leaders.includes(user.id) ? "a" : b?.leaders.includes(user.id) ? "b" : null) : null;
+  // A participant is a leader of a side or a player on its roster; only leaders act for the side.
+  const inSide = (s: typeof a) => Boolean(user && s && (s.leaders.includes(user.id) || s.roster.includes(user.username)));
+  const viewerSide: "a" | "b" | null = mySide ?? (inSide(a) ? "a" : inSide(b) ? "b" : null);
   const openPost = disputes.find((x) => x.kind === "post_result" && x.status === "open");
   // A decided winner can be disputed; a draw is corrected by the referee (versioned, logged).
   const canFilePost =
     Boolean(mySide) && m.status === "completed" && m.outcome !== "bye" && Boolean(m.winner_reg) && ["IN_PROGRESS", "PAUSED", "COMPLETED"].includes(m.t_status) && !openPost && !stageLocked;
   const live = m.t_status === "IN_PROGRESS";
   const pending = results.find((r) => r.status === "pending");
+  const viewerReg = viewerSide === "a" ? m.a_reg : viewerSide === "b" ? m.b_reg : null;
+  const liveOrPaused = ["IN_PROGRESS", "PAUSED"].includes(m.t_status);
+  const nextOpen = viewerReg && liveOrPaused ? await openMatchFor(db, m.tournament_id, viewerReg, m.id) : null;
+  const step = viewerSide
+    ? matchStep({
+        tStatus: m.t_status,
+        status: m.status,
+        outcome: m.outcome,
+        side: viewerSide,
+        aReg: m.a_reg,
+        bReg: m.b_reg,
+        winnerReg: m.winner_reg,
+        checkedIn: { a: Boolean(m.a_checked_in_at), b: Boolean(m.b_checked_in_at) },
+        pendingSide: (pending?.side as "a" | "b" | null | undefined) ?? null,
+        noShowAt,
+        hasNext: Boolean(nextOpen),
+        now: new Date(),
+      })
+    : null;
+  const calls = viewerSide || referee ? await refereeCalls(db, m.id) : [];
+  const g = gameDayText[lang];
   const confirmed = results.find((r) => r.status === "confirmed");
   const back = `/${lang}/matches/${m.id}`;
   const hidden = { match: m.id };
@@ -141,7 +168,33 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
       <div className="grid grid-3 facts">
         <div className="card">
           <p className="field-label">{d.match.whatNow}</p>
-          <p>{m.t_status === "PAUSED" ? d.statuses.tournament.PAUSED : d.match.explain[m.status]}</p>
+          {step ? (
+            <>
+              <p>
+                <strong>
+                  {stepText(step.key, lang, {
+                    series: series.bestOf > 1 ? seriesText(series.bestOf, lang) : undefined,
+                    score: pending ? `${a?.name ?? "A"} ${pending.score_a} : ${pending.score_b} ${b?.name ?? "B"}` : undefined,
+                  })}
+                </strong>
+              </p>
+              {step.deadline ? (
+                <p className="small">
+                  {g.deadline} <LocalTime iso={step.deadline} lang={lang} /> · <Countdown iso={step.deadline} lang={lang} />
+                </p>
+              ) : null}
+              {step.action === "next" && nextOpen ? (
+                <Link href={`/${lang}/matches/${nextOpen.id}`} className="btn btn-primary btn-sm">
+                  {actionText("next", lang)}
+                </Link>
+              ) : null}
+              <Link href={`/${lang}/gameday`} className="text-link small">
+                {g.title}
+              </Link>
+            </>
+          ) : (
+            <p>{m.t_status === "PAUSED" ? d.statuses.tournament.PAUSED : d.match.explain[m.status]}</p>
+          )}
           {m.outcome && m.outcome !== "played" ? <p className="small muted">{d.statuses.outcome[m.outcome]}</p> : null}
           {drawn ? <p className="small muted">{ru ? "Ничья: обе стороны получают очки за ничью." : "A draw: both sides earn draw points."}</p> : null}
           <p className="small">
@@ -196,6 +249,12 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
         </section>
       ) : null}
 
+      {viewerSide && open && liveOrPaused && both ? (
+        <section className="card" aria-label={g.referee}>
+          <CallBlock lang={lang} matchId={m.id} calls={calls.filter((c) => c.side === viewerSide)} open={step?.action === "call_referee"} canCall back={back} />
+        </section>
+      ) : null}
+
       {confirmed ? (
         <p className="notice notice-ok">
           {d.match.verification}: <strong>{d.statuses.source[confirmed.source]}</strong>
@@ -212,7 +271,7 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
       ) : null}
 
       {live && mySide && both ? (
-        <section className="card action-card">
+        <section className="card action-card" id="report">
           {m.status === "result_submitted" && pending && pending.side !== mySide ? (
             <>
               <h2 className="h3">{d.match.confirmTitle}</h2>
@@ -269,6 +328,12 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
           ) : m.status === "disputed" ? (
             <p>{d.match.explain.disputed}</p>
           ) : null}
+        </section>
+      ) : null}
+
+      {referee && calls.some((c) => c.status === "open") ? (
+        <section className="card action-card referee">
+          <OpenCalls lang={lang} calls={calls} back={back} sideNames={{ a: a?.name, b: b?.name }} />
         </section>
       ) : null}
 

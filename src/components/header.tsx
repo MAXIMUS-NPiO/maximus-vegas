@@ -103,6 +103,7 @@ export function Header({ lang, nav, extra, common, user }: { lang: Locale; nav: 
                 </summary>
                 <div className="account-panel">
                   <Link href={`/${lang}/hub`}>{nav.hub}</Link>
+                  <Link href={`/${lang}/gameday`}>{extra.gameDay}</Link>
                   <Link href={`/${lang}/players/${user.username}`}>{nav.profile}</Link>
                   <Link href={`/${lang}/progress`}>{extra.progress}</Link>
                   <Link href={`/${lang}/challenges`}>{extra.challenges}</Link>
