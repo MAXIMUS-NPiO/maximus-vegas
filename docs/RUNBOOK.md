@@ -39,6 +39,7 @@ Webhook провайдера: `https://www.maximus.vegas/api/payments/stripe/web
 - Release 6 выкачен, если на `/ru/status` модуль «Серии Bo1–Bo7 и очки по уровням» указан как работающий. Миграция 9 применена, если несуществующий матч `/ru/matches/<uuid>` отвечает `404`, а не ошибкой сервера (страница читает `tournaments.series_rules`, `tournaments.match_minutes` и `tournament_venues`).
 - `/ru/admin` у сотрудника: без второго фактора — переход на `/ru/admin/security`.
 - **Не запускать `scripts/e2e.mjs` против production**: сценарий создаёт аккаунты, турниры и заявки. Он предназначен для локальной сборки или изолированного preview с отдельной базой.
+- `scripts/browser-smoke.mjs` — те же основные пути в настоящем Chromium: формы отправляются кликом, как у человека, поэтому видны ошибки, которых не видит HTTP-сценарий (заголовки браузера, скрытые кнопки, ошибки клиента). Запуск: `BASE=http://127.0.0.1:3100 node scripts/browser-smoke.mjs`; браузер — из `PLAYWRIGHT_BROWSERS_PATH` или `CHROMIUM_PATH`. Против production не запускается: адрес `maximus.vegas` скрипт отвергает сам.
 
 ## 5. Откат
 
