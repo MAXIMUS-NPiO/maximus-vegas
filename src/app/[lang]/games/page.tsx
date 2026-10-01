@@ -32,9 +32,9 @@ export default async function Games({ params }: { params: Promise<{ lang: string
             </div>
             <p className="muted">{g.genre[lang]}</p>
             <p className="small">
-              {g.platforms.map((p) => d.games.platforms[p]).join(" · ")} · {d.games.teamSize}: {g.teamSize === 1 ? d.games.solo : `${g.teamSize}v${g.teamSize}`}
+              {g.platforms.map((p) => d.games.platforms[p]).join(" · ")} · {d.games.teamSize}: {g.teamSize === 1 ? d.games.solo : g.bracket ? `${g.teamSize}v${g.teamSize}` : d.games.squads.replace("{n}", String(g.teamSize))}
             </p>
-            <p className={g.bracket ? "small ok-text" : "small warn-text"}>{g.bracket ? d.games.formatBracket : d.games.formatFfa}</p>
+            <p className="small ok-text">{g.bracket ? d.games.formatBracket : d.games.formatFfa}</p>
           </Link>
         ))}
       </div>

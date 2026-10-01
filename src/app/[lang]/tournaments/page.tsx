@@ -57,7 +57,7 @@ export default async function Tournaments({ params, searchParams }: { params: Pr
           </label>
           <select id="game-filter" name="game" defaultValue={game ?? ""}>
             <option value="">{d.tournaments.anyGame}</option>
-            {GAMES.filter((g) => g.bracket).map((g) => (
+            {GAMES.map((g) => (
               <option key={g.slug} value={g.slug}>
                 {g.name}
               </option>
