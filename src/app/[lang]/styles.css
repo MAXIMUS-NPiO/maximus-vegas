@@ -2296,3 +2296,87 @@ button:disabled {
     gap: 2px;
   }
 }
+
+/* Bracket on phones: the rounds as a list with round chips; finished rounds fold into one line */
+.bracket-narrow {
+  display: none;
+}
+.round-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.round-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.round-chip.is-current {
+  border-color: rgba(89, 215, 234, 0.6);
+}
+.round-chip.has-mine::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.round-fold {
+  border-top: 1px solid var(--line);
+  scroll-margin-top: 88px;
+}
+.round-fold > summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding: 12px 0;
+  cursor: pointer;
+  list-style: none;
+}
+.round-fold > summary::-webkit-details-marker {
+  display: none;
+}
+.round-fold-title {
+  font-weight: 700;
+}
+.round-fold-title::before {
+  content: "+ ";
+  color: var(--dim);
+}
+.round-fold[open] .round-fold-title::before {
+  content: "− ";
+}
+.round-fold > .bracket-matches {
+  padding-bottom: 14px;
+}
+.b-match.is-mine {
+  border-color: var(--accent);
+}
+.b-mine {
+  color: var(--accent);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.b-time {
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+}
+@media (max-width: 720px) {
+  .bracket.bracket-wide {
+    display: none;
+  }
+  .bracket-narrow {
+    display: block;
+  }
+}
