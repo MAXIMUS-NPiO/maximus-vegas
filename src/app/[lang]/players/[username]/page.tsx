@@ -11,6 +11,7 @@ import { reputation } from "@/server/disputes.ts";
 import { seasonHistory } from "@/server/circuits.ts";
 import { ratingHistory, ratingsFor } from "@/server/rating.ts";
 import { playerHistory } from "@/server/transfers.ts";
+import { clanOf } from "@/server/clans.ts";
 import { transferText } from "@/lib/transfer-text.ts";
 import { RatingBlock } from "@/components/rating-block";
 import { Badge, DbDown, Empty } from "@/components/ui";
@@ -55,7 +56,7 @@ export default async function Player({ params }: { params: Promise<{ lang: strin
     ratingsFor(db, p.user.id),
     ratingHistory(db, p.user.id, "", 120),
   ]);
-  const teamEvents = await playerHistory(db, p.user.id);
+  const [teamEvents, clan] = await Promise.all([playerHistory(db, p.user.id), clanOf(db, p.user.id)]);
   const draws = p.history.filter((h) => h.drawn).length;
   const { rank } = rankFor(xp);
   const color = avatarColor(p.user.avatar_color);
@@ -74,6 +75,11 @@ export default async function Player({ params }: { params: Promise<{ lang: strin
           <p className="row">
             <Badge status="info">{ru ? rank.ru : rank.en}</Badge>
             {member ? <Badge status="ok">{ru ? "Членство VEGAS" : "VEGAS member"}</Badge> : null}
+            {clan ? (
+              <Link href={`/${lang}/clans/${clan.slug}`} className="badge badge-muted">
+                {ru ? "Клан" : "Clan"} [{clan.tag}] {clan.name}
+              </Link>
+            ) : null}
           </p>
           {p.user.bio ? <p className="prewrap">{p.user.bio}</p> : null}
           {p.self ? (

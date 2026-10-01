@@ -2588,3 +2588,29 @@ button:disabled {
     order: -1;
   }
 }
+
+/* Clans: lineup choices in columns on wide screens; war lineups and long names wrap. */
+.check-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 6px 14px;
+}
+.war-lineups {
+  display: grid;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+.war-score > .field {
+  flex: 0 1 150px;
+}
+/* Tables side by side: a wide table scrolls inside its frame instead of widening the page. */
+.board-grid > * {
+  min-width: 0;
+}
+.clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}

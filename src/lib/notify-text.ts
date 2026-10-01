@@ -13,6 +13,8 @@ export function notificationLink(lang: Locale, data: Record<string, string>) {
   if (data.lobbyId) return `/${lang}/lobbies/${data.lobbyId}`;
   if (data.slug) return `/${lang}/tournaments/${data.slug}`;
   if (data.teamSlug) return `/${lang}/teams/${data.teamSlug}`;
+  if (data.clanSlug) return `/${lang}/clans/${data.clanSlug}`;
+  if (data.clans) return `/${lang}/clans#invites`;
   if (data.orgSlug) return `/${lang}/organizer/${data.orgSlug}`;
   if (data.circuitSlug) return `/${lang}/circuits/${data.circuitSlug}`;
   if (data.quick) return `/${lang}/matchmaking`;

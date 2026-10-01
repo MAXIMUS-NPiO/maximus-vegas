@@ -5,6 +5,8 @@ import type { Database } from "@/server/db.ts";
 import type { SessionUser } from "@/server/auth.ts";
 import { CONFIDENCE, conductQueue, currentRules, evidenceIntact, OTHER_RULE, PROTECTIVE_MAX_HOURS, SANCTION_KINDS } from "@/server/conduct.ts";
 import { openTransferDisputes } from "@/server/transfers.ts";
+import { openWarDisputes } from "@/server/clans.ts";
+import { gameBySlug } from "@/lib/games.ts";
 import { ActionForm, Badge, Empty, Field } from "@/components/ui";
 import { LocalTime } from "@/components/time";
 
@@ -61,6 +63,11 @@ const T = {
     noTransferDisputes: "Открытых споров о переходах нет.",
     uphold2: "Переход в силе",
     reverse: "Отменить переход — вернуть игрока",
+    warDisputes: "Споры клановых войн",
+    noWarDisputes: "Открытых споров клановых войн нет.",
+    scoreBy: "счёт от клана",
+    winFor: "Победа",
+    voidWar: "Аннулировать результат",
   },
   en: {
     reports: "Reports under review",
@@ -114,6 +121,11 @@ const T = {
     noTransferDisputes: "No open transfer disputes.",
     uphold2: "The transfer stands",
     reverse: "Reverse the transfer — return the player",
+    warDisputes: "Clan war disputes",
+    noWarDisputes: "No open clan war disputes.",
+    scoreBy: "score from",
+    winFor: "Win for",
+    voidWar: "Void the result",
   },
 };
 
@@ -199,7 +211,7 @@ function IssueForm({
 export async function ConductTab({ db, user, lang, back }: { db: Database; user: SessionUser; lang: Locale; back: string }) {
   const x = T[lang];
   const c = conductText[lang];
-  const [queue, rules, transferDisputes] = await Promise.all([conductQueue(db), currentRules(db), openTransferDisputes(db)]);
+  const [queue, rules, transferDisputes, warDisputes] = await Promise.all([conductQueue(db), currentRules(db), openTransferDisputes(db), openWarDisputes(db)]);
   const ruleList = rules.map((r) => ({ code: r.code, title: lang === "ru" ? r.title_ru : r.title_en }));
   const admin = user.roles.includes("admin");
   return (
@@ -341,6 +353,48 @@ export async function ConductTab({ db, user, lang, back }: { db: Database; user:
           </ul>
         ) : (
           <Empty title={x.noTransferDisputes} />
+        )}
+      </section>
+
+      <section className="stack-sm">
+        <h2 className="h3">{x.warDisputes}</h2>
+        {warDisputes.length ? (
+          <ul className="list">
+            {warDisputes.map((w) => (
+              <li key={w.id} className="stack-sm">
+                <span>
+                  <Link href={`/${lang}/clans/${w.challenger_slug}`}>[{w.challenger_tag}] {w.challenger_name}</Link> —{" "}
+                  <Link href={`/${lang}/clans/${w.opponent_slug}`}>[{w.opponent_tag}] {w.opponent_name}</Link> · {gameBySlug(w.game)?.name ?? w.game} · Bo{w.best_of} ·{" "}
+                  <LocalTime iso={w.scheduled_at} lang={lang} />
+                </span>
+                <span className="small">
+                  {x.scoreBy} «{w.reported_clan === w.challenger_id ? w.challenger_name : w.opponent_name}»:{" "}
+                  <strong>
+                    {w.score_challenger}:{w.score_opponent}
+                  </strong>
+                </span>
+                <p className="small prewrap">{w.dispute_reason}</p>
+                <ActionForm action="war.decide" lang={lang} back={back} hidden={{ war: w.id }} className="stack-sm">
+                  <Field label={x.answer}>
+                    <textarea name="decision" required minLength={20} maxLength={2000} rows={2} />
+                  </Field>
+                  <div className="row">
+                    <button className="btn btn-ghost btn-sm" name="outcome" value="challenger">
+                      {x.winFor} [{w.challenger_tag}]
+                    </button>
+                    <button className="btn btn-ghost btn-sm" name="outcome" value="opponent">
+                      {x.winFor} [{w.opponent_tag}]
+                    </button>
+                    <button className="btn btn-danger btn-sm" name="outcome" value="void">
+                      {x.voidWar}
+                    </button>
+                  </div>
+                </ActionForm>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <Empty title={x.noWarDisputes} />
         )}
       </section>
 

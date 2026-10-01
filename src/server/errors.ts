@@ -183,6 +183,27 @@ export const ERROR_CODES = [
   "transfer_blocked_event",
   "transfer_dispute_exists",
   "transfer_player_owner",
+  // Clans, clan wars and ladders
+  "invalid_clan_tag",
+  "clan_already_member",
+  "clan_tag_taken",
+  "clan_name_taken",
+  "not_clan_leader",
+  "clan_full",
+  "clan_invite_limit",
+  "clan_owner_cannot_leave",
+  "clan_too_small",
+  "war_same_clan",
+  "war_lineup",
+  "war_lineup_restricted",
+  "war_time",
+  "war_open_exists",
+  "war_limit",
+  "war_closed",
+  "war_started",
+  "war_not_started",
+  "war_score",
+  "war_own_report",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
