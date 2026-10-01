@@ -10,8 +10,10 @@ import { mediaUrl } from "@/server/media.ts";
 import { ActionForm, Badge, DbDown, Field, Flash, type SearchParams } from "@/components/ui";
 import { LocalTime } from "@/components/time";
 import { finderText } from "@/lib/finder-text.ts";
-import { applicationsToDecide, pendingPostIds, teamVacancies } from "@/server/finder.ts";
+import { applicationsToDecide, ledTeams, pendingPostIds, teamVacancies } from "@/server/finder.ts";
 import { PostCard } from "@/components/finder-post";
+import { TeamTransfers } from "@/components/team-transfers";
+import { teamHistory, teamTransfers } from "@/server/transfers.ts";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string; slug: string }> }): Promise<Metadata> {
   const { lang, slug } = await params;
@@ -48,6 +50,7 @@ export default async function TeamPage({ params, searchParams }: { params: Promi
   const vacancyIds = new Set(vacancies.map((p) => p.id));
   const toDecide = isLeader && user ? (await applicationsToDecide(db, user.id)).filter((a) => vacancyIds.has(a.post_id)) : [];
   const applied = user && vacancies.length && !isMember ? await pendingPostIds(db, user.id) : new Set<string>();
+  const [transferRows, history, myLedTeams] = await Promise.all([teamTransfers(db, team.id), teamHistory(db, team.id), user ? ledTeams(db, user.id) : Promise.resolve([])]);
   return (
     <div className="container page">
       {team.banner_media_id ? <img src={mediaUrl(team.banner_media_id)!} alt="" className="banner-img" /> : null}
@@ -293,6 +296,17 @@ export default async function TeamPage({ params, searchParams }: { params: Promi
           </>
         ) : null}
       </section>
+
+      <TeamTransfers
+        lang={lang}
+        teamId={team.id}
+        transfers={transferRows}
+        history={history}
+        viewerId={user?.id ?? null}
+        leader={isLeader}
+        leadsTeam={myLedTeams.map((t) => t.id)}
+        back={`${back}#transfers`}
+      />
 
       {!user ? (
         <p className="small muted">

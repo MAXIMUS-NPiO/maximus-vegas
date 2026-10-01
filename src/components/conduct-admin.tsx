@@ -4,6 +4,7 @@ import { conductText } from "@/lib/conduct-text.ts";
 import type { Database } from "@/server/db.ts";
 import type { SessionUser } from "@/server/auth.ts";
 import { CONFIDENCE, conductQueue, currentRules, evidenceIntact, OTHER_RULE, PROTECTIVE_MAX_HOURS, SANCTION_KINDS } from "@/server/conduct.ts";
+import { openTransferDisputes } from "@/server/transfers.ts";
 import { ActionForm, Badge, Empty, Field } from "@/components/ui";
 import { LocalTime } from "@/components/time";
 
@@ -56,6 +57,10 @@ const T = {
     sourceEn: "Источник (EN)",
     publish: "Опубликовать",
     adminOnly: "Публикует только администратор; прежняя редакция сохраняется.",
+    transferDisputes: "Споры о переходах",
+    noTransferDisputes: "Открытых споров о переходах нет.",
+    uphold2: "Переход в силе",
+    reverse: "Отменить переход — вернуть игрока",
   },
   en: {
     reports: "Reports under review",
@@ -105,6 +110,10 @@ const T = {
     sourceEn: "Source (EN)",
     publish: "Publish",
     adminOnly: "Only an administrator publishes; the previous version is kept.",
+    transferDisputes: "Transfer disputes",
+    noTransferDisputes: "No open transfer disputes.",
+    uphold2: "The transfer stands",
+    reverse: "Reverse the transfer — return the player",
   },
 };
 
@@ -190,7 +199,7 @@ function IssueForm({
 export async function ConductTab({ db, user, lang, back }: { db: Database; user: SessionUser; lang: Locale; back: string }) {
   const x = T[lang];
   const c = conductText[lang];
-  const [queue, rules] = await Promise.all([conductQueue(db), currentRules(db)]);
+  const [queue, rules, transferDisputes] = await Promise.all([conductQueue(db), currentRules(db), openTransferDisputes(db)]);
   const ruleList = rules.map((r) => ({ code: r.code, title: lang === "ru" ? r.title_ru : r.title_en }));
   const admin = user.roles.includes("admin");
   return (
@@ -300,6 +309,38 @@ export async function ConductTab({ db, user, lang, back }: { db: Database; user:
           </ul>
         ) : (
           <Empty title={x.noAppeals} />
+        )}
+      </section>
+
+      <section className="stack-sm">
+        <h2 className="h3">{x.transferDisputes}</h2>
+        {transferDisputes.length ? (
+          <ul className="list">
+            {transferDisputes.map((d) => (
+              <li key={d.id} className="stack-sm">
+                <span>
+                  @{d.player}: <Link href={`/${lang}/teams/${d.from_slug}`}>{d.from_name}</Link> → <Link href={`/${lang}/teams/${d.to_slug}`}>{d.to_name}</Link> · {x.from} @{d.opened_by} ·{" "}
+                  <LocalTime iso={d.created_at} lang={lang} />
+                </span>
+                <p className="small prewrap">{d.reason}</p>
+                <ActionForm action="transfer.decide" lang={lang} back={back} hidden={{ dispute: d.id }} className="stack-sm">
+                  <Field label={x.answer}>
+                    <textarea name="decision" required minLength={20} maxLength={2000} rows={2} />
+                  </Field>
+                  <div className="row">
+                    <button className="btn btn-ghost btn-sm" name="reverse" value="0">
+                      {x.uphold2}
+                    </button>
+                    <button className="btn btn-danger btn-sm" name="reverse" value="1">
+                      {x.reverse}
+                    </button>
+                  </div>
+                </ActionForm>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <Empty title={x.noTransferDisputes} />
         )}
       </section>
 

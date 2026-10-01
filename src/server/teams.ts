@@ -132,6 +132,8 @@ export async function removeMember(db: Database, user: SessionUser, teamId: stri
     if (memberId === team.owner_id) fail("forbidden");
     if (memberId === user.id) fail("cannot_modify_self");
     if (memberId === team.captain_id && user.id !== team.owner_id) fail("forbidden");
+    // Roster history records this as a removal, not as the player leaving.
+    await q.query("select set_config('mv.membership', 'removed', true)");
     const removed = await q.query("delete from team_members where team_id = $1 and user_id = $2 returning user_id", [teamId, memberId]);
     if (!removed.length) fail("not_found");
     if (team.captain_id === memberId) await q.query("update teams set captain_id = owner_id where id = $1", [teamId]);

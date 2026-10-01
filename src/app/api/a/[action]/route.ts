@@ -26,6 +26,7 @@ import * as finder from "@/server/finder.ts";
 import * as quick from "@/server/quickmatch.ts";
 import * as conduct from "@/server/conduct.ts";
 import * as scouting from "@/server/scouting.ts";
+import * as transfers from "@/server/transfers.ts";
 import { storeUpload } from "@/server/media.ts";
 import { drainOutbox, mailConfigured } from "@/server/mail.ts";
 import { fail } from "@/server/errors.ts";
@@ -728,6 +729,28 @@ const handlers: Record<string, Handler> = {
   "scout.unwatch": async (c) => {
     await scouting.unwatchPlayer(c.db, u(c), c.form.username);
     return { ok: "watch_removed" };
+  },
+
+  // ---------- Transfers ----------
+  "transfer.propose": async (c) => {
+    const r = await transfers.proposeTransfer(c.db, u(c), c.form.team, c.form.username, c.form.note);
+    return { ok: r.created ? "transfer_proposed" : "transfer_exists" };
+  },
+  "transfer.answer": async (c) => {
+    const answer = c.form.answer === "accept" ? "accept" : c.form.answer === "cancel" ? "cancel" : "decline";
+    const r = await transfers.answerTransfer(c.db, u(c), c.form.transfer, answer);
+    return { ok: r.status === "completed" ? "transfer_completed" : r.status === "proposed" ? "transfer_agreed" : r.status === "cancelled" ? "transfer_cancelled" : "transfer_declined" };
+  },
+  "transfer.dispute": async (c) => {
+    await transfers.disputeTransfer(c.db, u(c), c.form.transfer, c.form.reason);
+    return { ok: "transfer_disputed" };
+  },
+  "transfer.decide": async (c) => {
+    const user = await staff(c);
+    mfa.requireStepUp(user);
+    const reverse = c.form.reverse === "1";
+    await transfers.decideTransferDispute(c.db, user, c.form.dispute, reverse, c.form.decision);
+    return { to: conductAdmin(c), ok: reverse ? "transfer_reversed" : "transfer_upheld" };
   },
 
   // ---------- Fair play: reports, sanctions, appeals ----------

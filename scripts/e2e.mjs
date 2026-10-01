@@ -524,6 +524,20 @@ assert.equal((await players[1].post("team.respond", { invite: inviteId, accept: 
 assert.equal((await players[1].post("team.media", { team: teamId })).e, "not_team_leader", "only leaders change team media");
 log("team created, invitation accepted from hub, media restricted to leaders");
 
+// ---------- Transfer between two teams of one game ----------
+const rival = await players[2].post("team.create", { name: `E2E Rival ${RUN}`, tag: "RIV", game: "cs2" });
+assert.equal(rival.ok, "team_created");
+const rivalId = uuidAfter((await players[2].get(rival.path)).text, "team");
+assert.equal((await players[2].post("transfer.propose", { team: rivalId, username: players[1].username, note: "e2e", back: rival.path })).ok, "transfer_proposed");
+const offerPage = (await players[1].get(rival.path)).text;
+const transferId = uuidAfter(offerPage, "transfer");
+assert.ok(transferId, "the player sees the offer on the receiving team's page");
+assert.equal((await players[1].post("transfer.answer", { transfer: transferId, answer: "accept", back: rival.path })).ok, "transfer_agreed");
+assert.equal((await players[0].post("transfer.answer", { transfer: transferId, answer: "accept", back: team.path })).ok, "transfer_completed");
+const rivalPage = (await guest.get(rival.path)).text;
+assert.ok(rivalPage.includes("перешёл в команду") && !rivalPage.includes("e2e</p>"), "public roster history shows the move, not the negotiation note");
+log("transfer: proposed, agreed by the player and the releasing team, roster history public");
+
 // ---------- Challenges, quick match, objectives ----------
 const [a, b, c3, d4] = players;
 assert.equal((await a.post("challenge.create", { opponent: b.username, game: "cs2", message: "gg" })).ok, "challenge_sent");
