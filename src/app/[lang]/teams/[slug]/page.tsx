@@ -9,6 +9,9 @@ import { teamBySlug } from "@/server/queries.ts";
 import { mediaUrl } from "@/server/media.ts";
 import { ActionForm, Badge, DbDown, Field, Flash, type SearchParams } from "@/components/ui";
 import { LocalTime } from "@/components/time";
+import { finderText } from "@/lib/finder-text.ts";
+import { applicationsToDecide, pendingPostIds, teamVacancies } from "@/server/finder.ts";
+import { PostCard } from "@/components/finder-post";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string; slug: string }> }): Promise<Metadata> {
   const { lang, slug } = await params;
@@ -40,6 +43,11 @@ export default async function TeamPage({ params, searchParams }: { params: Promi
   const isMember = Boolean(user && members.some((m) => m.id === user.id));
   const back = `/${lang}/teams/${team.slug}`;
   const hidden = { team: team.id };
+  const fx = finderText[lang];
+  const vacancies = await teamVacancies(db, team.id);
+  const vacancyIds = new Set(vacancies.map((p) => p.id));
+  const toDecide = isLeader && user ? (await applicationsToDecide(db, user.id)).filter((a) => vacancyIds.has(a.post_id)) : [];
+  const applied = user && vacancies.length && !isMember ? await pendingPostIds(db, user.id) : new Set<string>();
   return (
     <div className="container page">
       {team.banner_media_id ? <img src={mediaUrl(team.banner_media_id)!} alt="" className="banner-img" /> : null}
@@ -195,6 +203,97 @@ export default async function TeamPage({ params, searchParams }: { params: Promi
           )}
         </section>
       </div>
+      <section className="section-tight" id="vacancies">
+        <div className="row-between">
+          <h2 className="h3">{fx.teamVacancies}</h2>
+          <Link href={`/${lang}/finder?kind=vacancy&game=${team.game}`} className="text-link small">
+            {fx.toFinder}
+          </Link>
+        </div>
+        {vacancies.length ? (
+          <div className="grid grid-2">
+            {vacancies.map((p) => (
+              <PostCard
+                key={p.id}
+                lang={lang}
+                p={p}
+                viewer={user}
+                teams={isLeader ? [{ id: team.id, name: team.name, game: team.game }] : []}
+                memberOf={isMember ? [team.id] : []}
+                applied={applied.has(p.id)}
+                moderator={Boolean(user?.roles.includes("admin"))}
+                back={back}
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="small muted">{fx.noPosts}</p>
+        )}
+        {isLeader ? (
+          <>
+            {toDecide.length ? (
+              <div className="stack-sm">
+                <h3 className="h4">{fx.toDecide}</h3>
+                <ul className="list">
+                  {toDecide.map((a) => (
+                    <li key={a.id}>
+                      <span className="grow">
+                        <Link href={`/${lang}/players/${a.username}`}>{a.display_name}</Link> <span className="small muted">@{a.username}</span>
+                        {a.message ? <span className="small prewrap"> — {a.message}</span> : null}
+                      </span>
+                      <span className="row">
+                        <ActionForm action="finder.decide" lang={lang} back={back} hidden={{ application: a.id, accept: "1" }}>
+                          <button className="btn btn-primary btn-xs">{fx.accept}</button>
+                        </ActionForm>
+                        <ActionForm action="finder.decide" lang={lang} back={back} hidden={{ application: a.id, accept: "0" }}>
+                          <button className="btn btn-ghost btn-xs">{fx.decline}</button>
+                        </ActionForm>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            <details className="disclosure card">
+              <summary>{fx.openVacancy}</summary>
+              <p className="small muted">{fx.vacancyNote}</p>
+              <ActionForm action="finder.post" lang={lang} back={back} hidden={{ kind: "vacancy", team: team.id }} className="stack-sm">
+                <div className="form-grid">
+                  <Field label={fx.roles}>
+                    <input name="roles" maxLength={80} required />
+                  </Field>
+                  <Field label={fx.slots}>
+                    <select name="slots" defaultValue="1">
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <option key={n} value={n}>
+                          {n}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label={fx.level}>
+                    <input name="level" maxLength={60} />
+                  </Field>
+                  <Field label={fx.languages}>
+                    <input name="languages" maxLength={60} />
+                  </Field>
+                  <Field label={fx.region}>
+                    <input name="region" maxLength={40} />
+                  </Field>
+                  <Field label={fx.schedule}>
+                    <input name="schedule" maxLength={80} />
+                  </Field>
+                </div>
+                <Field label={fx.note}>
+                  <textarea name="note" rows={3} maxLength={500} />
+                </Field>
+                <button className="btn btn-primary btn-sm">{fx.publish}</button>
+              </ActionForm>
+            </details>
+          </>
+        ) : null}
+      </section>
+
       {!user ? (
         <p className="small muted">
           <Link href={`/${lang}/signin?next=${encodeURIComponent(back)}`} className="text-link">

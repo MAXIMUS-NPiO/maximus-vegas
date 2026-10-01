@@ -149,6 +149,8 @@ export const ERROR_CODES = [
   "veto_unavailable",
   "veto_complete",
   "not_your_turn",
+  "finder_closed",
+  "finder_limit",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 

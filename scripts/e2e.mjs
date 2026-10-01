@@ -115,7 +115,7 @@ async function playOut(players, maxPasses = 40) {
 
 // ---------- Public surface ----------
 const guest = new Client("guest");
-const pages = ["", "/tournaments", "/circuits", "/games", "/games/cs2", "/rankings", "/players", "/teams", "/membership", "/matchmaking", "/challenges", "/partners", "/organizer",
+const pages = ["", "/tournaments", "/circuits", "/games", "/games/cs2", "/rankings", "/players", "/teams", "/finder", "/membership", "/matchmaking", "/challenges", "/partners", "/organizer",
   "/innovations", "/trust", "/help", "/contact", "/status", "/terms", "/privacy", "/explore", "/search?q=cup", "/search?q=xp", "/academy", "/cloud-gaming", "/shop",
   "/signin", "/signup", "/signup/check-email", "/forgot-password", "/verify-email", "/activate?token=short", "/reset-password"];
 for (const lang of ["ru", "en"])
@@ -240,6 +240,22 @@ const vetoTurn = await players[0].post("match.veto", { match: gdMatch, map: "Alp
 assert.ok(vetoTurn.ok === "veto_saved" || vetoTurn.e === "not_your_turn", `a veto turn is taken or refused by turn order: ${vetoTurn.location}`);
 assert.equal((await players[4].post("match.veto", { match: gdMatch, map: "Bravo", back: `/ru/matches/${gdMatch}` })).e, "not_your_turn", "an outsider has no turn");
 log("map veto: the event's pool on the match page, turn order enforced");
+
+// ---------- Team finder ----------
+assert.equal((await players[0].post("finder.post", { kind: "lft", game: "cs2", region: "MENA", roles: "e2e AWP", back: "/ru/finder?kind=lft" })).ok, "finder_posted");
+assert.ok((await guest.get("/ru/finder?kind=lft&game=cs2")).text.includes("e2e AWP"), "an LFT post is public");
+assert.equal((await players[1].post("finder.post", { kind: "lfg", game: "cs2", note: "e2e group tonight", back: "/ru/finder?kind=lfg" })).ok, "finder_posted");
+const lfgPage = (await players[2].get("/ru/finder?kind=lfg")).text;
+const lfgPost = uuidAfter(lfgPage, "post");
+assert.ok(lfgPost && lfgPage.includes("e2e group tonight"));
+assert.equal((await players[2].post("finder.apply", { post: lfgPost, message: "e2e: me too", back: "/ru/finder?kind=lfg" })).ok, "finder_applied");
+assert.equal((await players[2].post("finder.apply", { post: lfgPost, message: "again", back: "/ru/finder?kind=lfg" })).ok, "finder_already_applied");
+assert.ok((await players[2].get("/ru/finder?kind=lfg")).text.includes("Отклик отправлен"), "a sent answer replaces the form");
+const hostView = (await players[1].get("/ru/finder#mine")).text;
+const lfgApp = uuidAfter(hostView, "application");
+assert.ok(lfgApp && hostView.includes("e2e: me too"), "the host sees the answer");
+assert.equal((await players[1].post("finder.decide", { application: lfgApp, accept: "1", back: "/ru/finder" })).ok, "finder_accepted");
+log("team finder: LFT post public, LFG answer sent once and accepted by the host");
 
 const passes = await playOut(players.slice(0, 4));
 const tPage = (await guest.get(`/ru/tournaments/${tSlug}`)).text;
