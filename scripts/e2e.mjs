@@ -391,6 +391,41 @@ assert.ok(ffaPage.includes("FFA (лобби)") && ffaPage.includes("Заверш
 assert.ok(/class="place">1</.test(ffaPage), "FFA places published");
 log("FFA: one lobby of five, code visible to entrants only, two games recorded by the referee, places from the lobby table");
 
+// ---------- Series by level, admission, venues and waves, ratings, history ----------
+const sr = await org.post("tournament.create", {
+  org: orgId, name: `E2E Series Cup ${RUN}`, game: "cs2", format: "single_elimination", participantType: "solo", teamSize: "5", maxParticipants: "8",
+  startsAt: tomorrow, tz: "Asia/Dubai", description: "e2e", rules: "bo3 final",
+  seriesFields: "1", seriesBestOf: "1", seriesFinal: "3", admissionFields: "1", admissionMatches: "1", matchMinutes: "45",
+});
+assert.equal(sr.ok, "tournament_created", sr.location);
+const srSlug = sr.path.split("/").pop();
+const srId = uuidAfter((await org.get(sr.path)).text, "tournament");
+for (const to of ["PUBLISHED", "REGISTRATION_OPEN"]) assert.equal((await org.post("tournament.transition", { tournament: srId, to })).ok, "status_changed");
+const newcomer = await signup("newbie");
+assert.equal((await newcomer.post("tournament.register", { tournament: srId })).e, "admission_matches", "a newcomer without confirmed matches is not admitted");
+assert.ok((await newcomer.get(`/ru/tournaments/${srSlug}`)).text.includes("Допуск"), "admission criteria shown with the registration");
+for (const p of players.slice(0, 4)) assert.equal((await p.post("tournament.register", { tournament: srId })).ok, "registered");
+for (const name of ["Stage A", "Stage B"]) assert.equal((await org.post("tournament.venue_add", { tournament: srId, name, kind: "stage" })).ok, "venue_added");
+for (const to of ["REGISTRATION_CLOSED", "IN_PROGRESS"]) assert.equal((await org.post("tournament.transition", { tournament: srId, to })).ok, "status_changed");
+const waveAt = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 16);
+assert.equal((await org.post("tournament.waves", { tournament: srId, round: "1:W:1", at: waveAt, tz: "Asia/Dubai" })).ok, "waves_scheduled");
+const srManage = (await org.get(sr.path)).text;
+assert.ok(srManage.includes("Площадки и расписание") && srManage.includes("Stage B"), "venues and the schedule on the management page");
+const semi = /\/ru\/matches\/([0-9a-f-]{36})/.exec(srManage)?.[1];
+assert.ok((await guest.get(`/ru/matches/${semi}`)).text.includes("Площадка"), "the match shows its venue");
+assert.equal((await org.post("match.format", { match: semi, series: "3", back: `/ru/matches/${semi}` })).ok, "match_format_saved");
+assert.equal((await org.post("match.official", { match: semi, scoreA: "16", scoreB: "10", back: `/ru/matches/${semi}` })).e, "invalid_series_score", "a Bo3 needs a series score");
+const srPasses = await playOut(players.slice(0, 4));
+const srPage = (await guest.get(`/ru/tournaments/${srSlug}`)).text;
+assert.ok(srPage.includes("Завершён") && srPage.includes("Формат серий и очки") && srPage.includes("MV-SERIES-1") && srPage.includes("Bo3"), "series rules published and applied");
+assert.equal((await players[0].post("tournament.rate", { tournament: srId, rating: "5", comment: "E2E smooth event" })).ok, "feedback_saved");
+assert.equal((await newcomer.post("tournament.rate", { tournament: srId, rating: "1" })).e, "feedback_closed", "only roster players rate");
+assert.ok((await guest.get(`/ru/tournaments/${srSlug}`)).text.includes("Оценка участников"), "the rating is public as an average");
+const srAfter = (await org.get(sr.path)).text;
+assert.ok(srAfter.includes("E2E smooth event") && srAfter.includes("История турнира"), "comments and history for the organiser");
+assert.ok(!(await guest.get(`/ru/tournaments/${srSlug}`)).text.includes("E2E smooth event"), "comments are not public");
+log(`series by level (Bo3 final, a referee's Bo3 override), admission by matches, venues in waves, ratings and history in ${srPasses} passes`);
+
 const profile = (await guest.get(`/ru/players/${players[0].username}`)).text;
 assert.ok(profile.includes("Игровой паспорт") && profile.includes("Репутация"), "profile shows passport and reputation");
 
