@@ -10,6 +10,7 @@ import { applicationsToDecide, FINDER_KINDS, ledTeams, listPosts, memberTeamIds,
 import { ActionForm, Badge, DbDown, Empty, Field, Flash, type SearchParams } from "@/components/ui";
 import { LocalTime } from "@/components/time";
 import { PostCard } from "@/components/finder-post";
+import { FeatureNotice } from "@/components/feature-notice";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
   const { lang } = await params;
@@ -51,6 +52,7 @@ export default async function Finder({ params, searchParams }: { params: Promise
       <h1>{x.title}</h1>
       <p className="lead">{x.lead}</p>
       <Flash lang={lang} params={sp} />
+      <FeatureNotice db={db} lang={lang} feature="finder" />
       <nav className="tabs finder-tabs" aria-label={x.title}>
         {FINDER_KINDS.map((k) => (
           <Link key={k} href={tab(k)} className={`tab${k === kind ? " is-active" : ""}`} aria-current={k === kind ? "page" : undefined}>

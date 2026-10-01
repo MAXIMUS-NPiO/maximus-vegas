@@ -440,3 +440,38 @@ test("venue passes: a burst of scans of one QR admits exactly once", { skip: !ur
   assert.equal((await verifyAuditChain(db)).valid, true);
   await db.close();
 });
+
+test("messages: marketing messages sent at the same moment never pass the frequency cap; a draft sends once", { skip: !url }, async () => {
+  const { createMessage, sendMessage, MARKETING_CAP } = await import("../src/server/messages.ts");
+  const db: Database = await openDatabase({ url });
+  const run = Date.now().toString(36);
+  const mk = async (name: string): Promise<SessionUser> => {
+    const s = await signUp(db, { email: `${name}${run}@example.com`, username: `${name}${run}`.slice(0, 24), displayName: name, password: "correct horse battery", adult: "on", terms: "on", marketing: "on" });
+    return (await sessionUser(db, s.token))!;
+  };
+  // The segment is this run's accounts only: earlier runs leave the country.
+  await db.query("update users set country_code = null where country_code = 'IS'");
+  const marketer = { ...(await mk("mm")), roles: ["marketing" as const], mfaAt: new Date() };
+  const people = await Promise.all(Array.from({ length: 5 }, (_, i) => mk(`mr${i}`)));
+  await db.query("update users set country_code = 'IS' where id = any($1::uuid[])", [people.map((p) => p.id)]);
+  const drafts = await Promise.all(
+    Array.from({ length: 4 }, (_, i) => createMessage(db, marketer, { kind: "marketing", title: `Анонс ${i} ${run}`, body: "Текст", audience: "all", country: "IS" })),
+  );
+  // Four drafts sent at once, each twice (a double click).
+  const results = await Promise.allSettled(drafts.flatMap((d) => [sendMessage(db, marketer, d.id), sendMessage(db, marketer, d.id)]));
+  assert.equal(results.filter((r) => r.status === "fulfilled").length, 4, "each draft is sent once");
+  const stats = results.filter((r) => r.status === "fulfilled").map((r) => (r as PromiseFulfilledResult<{ sent?: number; skipped_cap?: number }>).value);
+  assert.equal(stats.reduce((n, s) => n + (s.sent ?? 0), 0), 5 * MARKETING_CAP);
+  assert.equal(stats.reduce((n, s) => n + (s.skipped_cap ?? 0), 0), 5 * (4 - MARKETING_CAP));
+  const perPerson = await db.query<{ n: number }>(
+    `select count(*)::int as n from message_recipients r join staff_messages m on m.id = r.message_id
+      where r.user_id = any($1::uuid[]) and r.status = 'sent' and m.kind = 'marketing' group by r.user_id`,
+    [people.map((p) => p.id)],
+  );
+  assert.deepEqual(
+    perPerson.map((r) => r.n),
+    Array(5).fill(MARKETING_CAP),
+  );
+  assert.equal((await verifyAuditChain(db)).valid, true);
+  await db.close();
+});

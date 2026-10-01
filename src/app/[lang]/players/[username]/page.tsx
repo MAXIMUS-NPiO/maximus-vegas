@@ -12,6 +12,7 @@ import { seasonHistory } from "@/server/circuits.ts";
 import { ratingHistory, ratingsFor } from "@/server/rating.ts";
 import { playerHistory } from "@/server/transfers.ts";
 import { clanOf } from "@/server/clans.ts";
+import { recordStaffView } from "@/server/admin.ts";
 import { transferText } from "@/lib/transfer-text.ts";
 import { RatingBlock } from "@/components/rating-block";
 import { Badge, DbDown, Empty } from "@/components/ui";
@@ -48,6 +49,8 @@ export default async function Player({ params }: { params: Promise<{ lang: strin
     );
   const wins = p.history.filter((h) => h.won).length;
   const ru = lang === "ru";
+  // A private profile opened by staff is marked and recorded before it is shown (MV-STAFF-1).
+  if (p.staffView && user) await recordStaffView(db, user, p.user.id, "profile");
   const [xp, rep, member, seasons, ratings, ratingEvents] = await Promise.all([
     totalXp(db, p.user.id),
     reputation(db, p.user.id),
@@ -62,6 +65,13 @@ export default async function Player({ params }: { params: Promise<{ lang: strin
   const color = avatarColor(p.user.avatar_color);
   return (
     <div className="container page">
+      {p.staffView ? (
+        <p className="notice notice-warn small">
+          {ru
+            ? "Закрытый профиль: вы видите его как сотрудник портала. Просмотр записан в журнал."
+            : "Private profile: you see it as portal staff. This view is recorded in the log."}
+        </p>
+      ) : null}
       <header className="profile-head">
         <span className="avatar avatar-xl" aria-hidden="true" style={color ? { background: color } : undefined}>
           {p.user.display_name.slice(0, 1).toUpperCase()}

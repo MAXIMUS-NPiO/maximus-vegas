@@ -132,6 +132,12 @@ const okRu: Record<string, string> = {
   finder_already_applied: "Ваш отклик уже ждёт ответа.",
   finder_accepted: "Отклик принят.",
   finder_declined: "Отклик отклонён.",
+  message_saved: "Сообщение сохранено.",
+  message_deleted: "Сообщение удалено.",
+  message_sent: "Сообщение отправлено: статусы доставки — в списке отправленных.",
+  flag_saved: "Переключатель сохранён и записан в журнал.",
+  maintenance_on: "Режим обслуживания включён: пользователи видят баннер и не могут выполнять действия.",
+  maintenance_off: "Режим обслуживания выключен.",
 };
 
 const okEn: Record<string, string> = {
@@ -266,6 +272,12 @@ const okEn: Record<string, string> = {
   finder_already_applied: "Your application is already waiting for an answer.",
   finder_accepted: "Application accepted.",
   finder_declined: "Application declined.",
+  message_saved: "Message saved.",
+  message_deleted: "Message deleted.",
+  message_sent: "Message sent: delivery statuses are in the sent list.",
+  flag_saved: "Switch saved and recorded in the log.",
+  maintenance_on: "Maintenance is on: users see a banner and cannot take actions.",
+  maintenance_off: "Maintenance is off.",
 };
 
 const errorsRu: Record<string, string> = {
@@ -430,6 +442,11 @@ const errorsRu: Record<string, string> = {
   pass_not_yet: "Не пропущен: пропуск ещё не действует.",
   pass_revoked: "Не пропущен: пропуск отозван.",
   pass_withdrawn: "Не пропущен: заявка участника отозвана.",
+  feature_disabled: "Эта функция временно выключена командой портала. Начатое можно завершить.",
+  maintenance: "Идут технические работы: действия временно недоступны. Попробуйте позже.",
+  message_state: "Отправленное сообщение не меняется и не отправляется повторно; сделайте копию.",
+  message_kind: "Ваша роль не может писать сообщения этого типа.",
+  message_empty: "В сегменте нет ни одного аккаунта: сообщение не отправлено.",
 };
 
 const errorsEn: Record<string, string> = {
@@ -594,6 +611,11 @@ const errorsEn: Record<string, string> = {
   pass_not_yet: "Not admitted: the pass is not valid yet.",
   pass_revoked: "Not admitted: the pass was revoked.",
   pass_withdrawn: "Not admitted: the participant's entry was withdrawn.",
+  feature_disabled: "The portal team has switched this feature off for now. What is under way can still be finished.",
+  maintenance: "Maintenance in progress: actions are unavailable for now. Please try later.",
+  message_state: "A sent message cannot be changed or sent again; make a copy.",
+  message_kind: "Your role cannot write messages of this type.",
+  message_empty: "The segment has no accounts: the message was not sent.",
 };
 
 const kindsRu: Record<string, string> = {
@@ -700,6 +722,7 @@ const kindsRu: Record<string, string> = {
   venue_rejected: "Площадка «{venue}» не подтверждена — смотрите ответ команды портала",
   venue_suspended: "Площадка «{venue}» приостановлена — смотрите ответ команды портала",
   pass_issued: "Вам выдан пропуск на площадку «{venue}»",
+  staff_message: "Сообщение команды портала: {title}",
 };
 
 const kindsEn: Record<string, string> = {
@@ -806,6 +829,7 @@ const kindsEn: Record<string, string> = {
   venue_rejected: "Venue “{venue}” was not confirmed — see the portal team's answer",
   venue_suspended: "Venue “{venue}” is suspended — see the portal team's answer",
   pass_issued: "You have a pass to venue “{venue}”",
+  staff_message: "Message from the portal team: {title}",
 };
 
 export const extRu = {

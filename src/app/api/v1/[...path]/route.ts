@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/server/db.ts";
 import { authenticateKey, RATE_PER_MINUTE } from "@/server/partner.ts";
 import { apiMatches, apiOrganization, apiStandings, apiTournament, apiTournaments } from "@/server/partner-api.ts";
+import { featureEnabled } from "@/server/system.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +28,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ path
   } catch {
     return error(503, "unavailable", "The data service is unavailable.");
   }
+  if (!(await featureEnabled(db, "integrations"))) return error(503, "feature_disabled", "The API is paused by the portal team; retry later.", { "Retry-After": "300" });
   const auth = await authenticateKey(db, request.headers.get("authorization"));
   if (!auth.ok)
     return auth.status === 429

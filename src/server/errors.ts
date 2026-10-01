@@ -227,6 +227,12 @@ export const ERROR_CODES = [
   "pass_not_yet",
   "pass_revoked",
   "pass_withdrawn",
+  // Staff messages and system controls
+  "feature_disabled",
+  "maintenance",
+  "message_state",
+  "message_kind",
+  "message_empty",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 

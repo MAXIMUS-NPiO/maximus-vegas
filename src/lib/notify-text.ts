@@ -9,6 +9,7 @@ export function notificationText(lang: Locale, kind: string, data: Record<string
 }
 
 export function notificationLink(lang: Locale, data: Record<string, string>) {
+  if (data.messageId) return `/${lang}/messages/${data.messageId}`;
   if (data.matchId) return `/${lang}/matches/${data.matchId}`;
   if (data.lobbyId) return `/${lang}/lobbies/${data.lobbyId}`;
   if (data.slug) return `/${lang}/tournaments/${data.slug}`;

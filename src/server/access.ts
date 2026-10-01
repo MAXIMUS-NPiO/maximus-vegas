@@ -1,10 +1,20 @@
 import type { Queryable } from "./db.ts";
 import type { SessionUser } from "./auth.ts";
 import { fail } from "./errors.ts";
+import { hasSection, hasStaffRole, rolesOf, type Section } from "./staff-roles.ts";
 
 export const isAdmin = (user: SessionUser | null) => Boolean(user?.roles.includes("admin"));
-export const isStaff = (user: SessionUser | null) =>
-  Boolean(user?.roles.some((r) => r === "admin" || r === "support"));
+/** Any platform staff role (MV-STAFF-1): opens the control centre behind a second factor. */
+export const isStaff = (user: SessionUser | null) => Boolean(user && hasStaffRole(user.roles));
+/** Holds this control-centre section (the administrator holds all). */
+export const canStaff = (user: SessionUser | null, section: Section) => Boolean(user && hasSection(user.roles, section));
+export function requireSection(user: SessionUser | null, section: Section) {
+  if (!canStaff(user, section)) fail("forbidden");
+}
+/** Staff who work in a section, for notifications. */
+export async function staffWith(q: Queryable, section: Section): Promise<string[]> {
+  return (await q.query<{ user_id: string }>("select distinct user_id from user_roles where role = any($1::text[])", [rolesOf(section)])).map((r) => r.user_id);
+}
 
 export function requireUser(user: SessionUser | null): SessionUser {
   if (!user) fail("unauthorized");

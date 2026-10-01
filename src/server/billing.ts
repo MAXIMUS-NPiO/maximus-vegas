@@ -16,7 +16,7 @@ import { randomUUID } from "node:crypto";
 import type { Database, Queryable } from "./db.ts";
 import type { SessionUser } from "./auth.ts";
 import { audit } from "./audit.ts";
-import { isAdmin, isStaff, notify } from "./access.ts";
+import { isAdmin, notify, requireSection } from "./access.ts";
 import { fail, isUniqueViolation } from "./errors.ts";
 import { enqueueMail, link, mailConfigured } from "./mail.ts";
 import { requireStepUp } from "./mfa.ts";
@@ -117,7 +117,7 @@ const lines = (value: unknown) =>
 export type OfferInput = Record<string, unknown>;
 
 export async function createOfferVersion(db: Database, user: SessionUser, input: OfferInput) {
-  if (!isAdmin(user)) fail("forbidden");
+  requireSection(user, "offers");
   requireStepUp(user);
   const code = v.oneLine(input.code, 40).toLowerCase();
   if (!/^[a-z0-9-]{3,40}$/.test(code)) fail("invalid_input");
@@ -183,7 +183,7 @@ export async function approveOffer(db: Database, user: SessionUser, offerId: str
 }
 
 export async function retireOffer(db: Database, user: SessionUser, offerId: string) {
-  if (!isAdmin(user)) fail("forbidden");
+  requireSection(user, "offers");
   requireStepUp(user);
   await db.tx(async (q) => {
     const rows = await q.query("update offers set status = 'retired' where id = $1 and status <> 'retired' returning id", [offerId]);
@@ -280,7 +280,7 @@ const TRANSITIONS: Record<string, string[]> = {
 
 /** Staff admission decision, recorded with who decided, when and why. */
 export async function decideApplication(db: Database, user: SessionUser, applicationId: string, statusInput: unknown, noteInput: unknown, lang: "ru" | "en") {
-  if (!isStaff(user)) fail("forbidden");
+  requireSection(user, "memberships");
   const status = String(statusInput);
   const note = v.clean(noteInput, 1000);
   if (status === "approved" || status === "declined") {
@@ -321,7 +321,7 @@ export async function withdrawApplication(db: Database, user: SessionUser, appli
 // ---------- Invoices ----------
 
 export async function issueInvoice(db: Database, user: SessionUser, applicationId: string, lang: "ru" | "en") {
-  if (!isAdmin(user)) fail("forbidden");
+  requireSection(user, "payments");
   requireStepUp(user);
   return db.tx((q) => issueInvoiceTx(q, applicationId, user.id, lang));
 }
@@ -379,7 +379,7 @@ async function issueInvoiceTx(q: Queryable, applicationId: string, issuedBy: str
 }
 
 export async function voidInvoice(db: Database, user: SessionUser, invoiceId: string, reasonInput: unknown) {
-  if (!isAdmin(user)) fail("forbidden");
+  requireSection(user, "payments");
   requireStepUp(user);
   const reason = v.oneLine(reasonInput, 300);
   if (reason.length < 3) fail("invalid_input");
@@ -821,7 +821,7 @@ export async function sweepPayments(db: Database) {
 }
 
 export async function refundInvoice(db: Database, user: SessionUser, invoiceId: string, amountInput: unknown) {
-  if (!isAdmin(user)) fail("forbidden");
+  requireSection(user, "payments");
   requireStepUp(user);
   if (process.env.PAYMENTS_ALLOW_REFUNDS !== "1") fail("refunds_disabled");
   const provider = paymentProvider();
@@ -843,7 +843,7 @@ export async function refundInvoice(db: Database, user: SessionUser, invoiceId: 
 // ---------- Membership administration ----------
 
 export async function setMembershipState(db: Database, user: SessionUser, membershipId: string, input: { status?: unknown; endsAt?: unknown; reason: unknown }) {
-  if (!isAdmin(user)) fail("forbidden");
+  requireSection(user, "memberships");
   requireStepUp(user);
   const reason = v.oneLine(input.reason, 300);
   if (reason.length < 3) fail("invalid_input");

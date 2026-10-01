@@ -1571,4 +1571,57 @@ export const migrations: Migration[] = [
       `create index venue_checkins_venue on venue_checkins(venue_id, at desc)`,
     ],
   },
+  {
+    id: 21,
+    name: "staff_roles_messages_flags",
+    statements: [
+      // Platform staff roles by duty (MV-STAFF-1). The older narrower check is replaced by definition.
+      `do $$ declare r record; begin
+         for r in select conname from pg_constraint
+                   where conrelid = 'user_roles'::regclass and contype = 'c' and pg_get_constraintdef(oid) like '%role%' loop
+           execute format('alter table user_roles drop constraint %I', r.conname);
+         end loop;
+       end $$`,
+      `alter table user_roles add constraint user_roles_role_check
+         check (role in ('admin','support','moderation','referee','finance','compliance','analytics','marketing','infrastructure'))`,
+      // Feature switches and maintenance: a missing row means the default (features on, maintenance off).
+      `create table feature_flags (
+        key text primary key check (key ~ '^[a-z_]{3,40}$'),
+        enabled boolean not null,
+        note text not null default '' check (char_length(note) <= 300),
+        updated_by uuid references users(id),
+        updated_at timestamptz not null default now()
+      )`,
+      // The last run of each scheduled job, for the status panel.
+      `create table system_runs (
+        name text primary key,
+        last_at timestamptz not null,
+        result jsonb not null default '{}'
+      )`,
+      // Staff messages: operational or marketing, to a segment, delivered in the portal. A template is a
+      // reusable text that is never sent itself; a draft is copied from it.
+      `create table staff_messages (
+        id uuid primary key default gen_random_uuid(),
+        kind text not null check (kind in ('operational','marketing')),
+        title text not null check (char_length(title) between 3 and 120),
+        body text not null check (char_length(body) between 1 and 2000),
+        segment jsonb not null default '{}',
+        status text not null default 'draft' check (status in ('draft','template','sent')),
+        stats jsonb not null default '{}',
+        created_by uuid not null references users(id),
+        created_at timestamptz not null default now(),
+        sent_by uuid references users(id),
+        sent_at timestamptz
+      )`,
+      `create table message_recipients (
+        message_id uuid not null references staff_messages(id) on delete cascade,
+        user_id uuid not null references users(id) on delete cascade,
+        status text not null check (status in ('sent','skipped_consent','skipped_cap')),
+        created_at timestamptz not null default now(),
+        opened_at timestamptz,
+        primary key (message_id, user_id)
+      )`,
+      `create index message_recipients_user on message_recipients(user_id, created_at desc) where status = 'sent'`,
+    ],
+  },
 ];

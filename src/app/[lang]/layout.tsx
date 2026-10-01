@@ -9,6 +9,7 @@ import { Footer } from "@/components/footer";
 import { viewer } from "@/server/viewer.ts";
 import { unreadCount } from "@/server/queries.ts";
 import { isStaff } from "@/server/access.ts";
+import { maintenanceState } from "@/server/system.ts";
 import "./styles.css";
 import "./arena.css";
 
@@ -54,6 +55,7 @@ export default async function Layout({ children, params }: { children: React.Rea
   const d = dict(lang);
   const { db, user } = await viewer();
   const unread = db && user ? await unreadCount(db, user.id).catch(() => 0) : 0;
+  const maintenance = db ? await maintenanceState(db).catch(() => null) : null;
   return (
     <html lang={lang} className={manrope.variable}>
       <body>
@@ -68,6 +70,14 @@ export default async function Layout({ children, params }: { children: React.Rea
           common={d.common}
           user={user ? { username: user.username, displayName: user.displayName, admin: isStaff(user), unread } : null}
         />
+        {maintenance?.on ? (
+          <div className="maintenance-banner" role="status">
+            <div className="container">
+              <strong>{lang === "ru" ? "Технические работы." : "Maintenance."}</strong>{" "}
+              {maintenance.note || (lang === "ru" ? "Действия временно недоступны; просмотр работает." : "Actions are unavailable for now; browsing works.")}
+            </div>
+          </div>
+        ) : null}
         <main id="main">{children}</main>
         <Footer lang={lang} />
       </body>

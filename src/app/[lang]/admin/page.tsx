@@ -29,6 +29,11 @@ import type { SessionUser } from "@/server/auth.ts";
 import { ActionForm, Badge, DbDown, Empty, Field, Flash, one, type SearchParams } from "@/components/ui";
 import { LocalTime } from "@/components/time";
 import { ConductTab } from "@/components/conduct-admin";
+import { MessagesTab } from "@/components/messages-admin";
+import { SystemTab } from "@/components/system-admin";
+import { sectionsFor, STAFF_ROLES } from "@/server/staff-roles.ts";
+import { roleNames } from "@/lib/staff-text.ts";
+import { recordStaffSearch } from "@/server/admin.ts";
 import { VenuesTab } from "@/components/venues-admin";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
@@ -49,8 +54,10 @@ const TABS = [
   "offers",
   "payments",
   "outbox",
+  "messages",
   "tournaments",
   "sponsors",
+  "system",
   "security",
   "audit",
 ] as const;
@@ -68,6 +75,8 @@ const TAB_LABELS: Record<Tab, { ru: string; en: string }> = {
   offers: { ru: "Предложения", en: "Offers" },
   payments: { ru: "Оплаты", en: "Payments" },
   outbox: { ru: "Письма", en: "Email" },
+  messages: { ru: "Сообщения", en: "Messages" },
+  system: { ru: "Система", en: "System" },
   tournaments: { ru: "Турниры", en: "Tournaments" },
   sponsors: { ru: "Спонсоры", en: "Sponsors" },
   security: { ru: "Безопасность", en: "Security" },
@@ -116,7 +125,10 @@ export default async function Admin({ params, searchParams }: { params: Promise<
         </Link>
       </div>
     );
-  const tab: Tab = (TABS as readonly string[]).includes(one(sp.tab)) ? (one(sp.tab) as Tab) : "overview";
+  // Each staff role opens only its sections (MV-STAFF-1); the server checks the section of every action again.
+  const allowed = new Set<string>(sectionsFor(user.roles));
+  const requested = one(sp.tab);
+  const tab: Tab = (TABS as readonly string[]).includes(requested) && allowed.has(requested) ? (requested as Tab) : "overview";
   const back = `/${lang}/admin?tab=${tab}`;
 
   // Control-centre gate: an enrolled second factor, verified in this session within the window.
@@ -137,6 +149,7 @@ export default async function Admin({ params, searchParams }: { params: Promise<
         <dl className="stat-grid">
           {Object.entries(counts).map(([k, v]) => {
             const label = COUNT_LABELS[k];
+            if (label?.tab && !allowed.has(label.tab)) return null;
             return (
               <div key={k}>
                 <dt>{label ? (ru ? label.ru : label.en) : a.counts[k] ?? k}</dt>
@@ -146,20 +159,24 @@ export default async function Admin({ params, searchParams }: { params: Promise<
           })}
         </dl>
         <div className="grid grid-2 section-tight">
-          <div className="card stack-sm">
-            <p className="field-label">Email</p>
-            <p>{mail ? <Badge status="ok">{T("Подключён", "Connected")}</Badge> : <Badge status="warn">{T("Не подключён", "Not connected")}</Badge>}</p>
-            <Link href={`/${lang}/admin?tab=outbox`} className="text-link small">
-              {T("Очередь писем", "Email queue")}
-            </Link>
-          </div>
-          <div className="card stack-sm">
-            <p className="field-label">{T("Приём оплат", "Payment collection")}</p>
-            <p>{readiness.ready ? <Badge status="ok">{T("Готов", "Ready")}</Badge> : <Badge status="warn">{T("Выключен", "Off")}</Badge>}</p>
-            <Link href={`/${lang}/admin?tab=payments`} className="text-link small">
-              {T("Причины и настройки", "Reasons and settings")}
-            </Link>
-          </div>
+          {allowed.has("outbox") ? (
+            <div className="card stack-sm">
+              <p className="field-label">Email</p>
+              <p>{mail ? <Badge status="ok">{T("Подключён", "Connected")}</Badge> : <Badge status="warn">{T("Не подключён", "Not connected")}</Badge>}</p>
+              <Link href={`/${lang}/admin?tab=outbox`} className="text-link small">
+                {T("Очередь писем", "Email queue")}
+              </Link>
+            </div>
+          ) : null}
+          {allowed.has("payments") ? (
+            <div className="card stack-sm">
+              <p className="field-label">{T("Приём оплат", "Payment collection")}</p>
+              <p>{readiness.ready ? <Badge status="ok">{T("Готов", "Ready")}</Badge> : <Badge status="warn">{T("Выключен", "Off")}</Badge>}</p>
+              <Link href={`/${lang}/admin?tab=payments`} className="text-link small">
+                {T("Причины и настройки", "Reasons and settings")}
+              </Link>
+            </div>
+          ) : null}
         </div>
       </>
     );
@@ -273,6 +290,10 @@ export default async function Admin({ params, searchParams }: { params: Promise<
     body = await TournamentsTab(ctx);
   } else if (tab === "sponsors") {
     body = await SponsorsTab(ctx);
+  } else if (tab === "messages") {
+    body = <MessagesTab db={db} user={user} lang={lang} back={back} />;
+  } else if (tab === "system") {
+    body = <SystemTab db={db} user={user} lang={lang} back={back} />;
   } else if (tab === "security") {
     body = await SecurityTab(ctx);
   } else if (tab === "audit") {
@@ -316,7 +337,7 @@ export default async function Admin({ params, searchParams }: { params: Promise<
       </div>
       <Flash lang={lang} params={sp} />
       <nav className="chips" aria-label={a.title}>
-        {TABS.map((k) => (
+        {TABS.filter((k) => allowed.has(k)).map((k) => (
           <Link key={k} href={`/${lang}/admin?tab=${k}`} className={k === tab ? "chip is-active" : "chip"} aria-current={k === tab ? "page" : undefined}>
             {ru ? TAB_LABELS[k].ru : TAB_LABELS[k].en}
           </Link>
@@ -347,6 +368,8 @@ async function UsersTab({ db, user, lang, back, admin, sp }: Ctx) {
   const d = dict(lang);
   const a = d.admin;
   const q = one(sp.q).slice(0, 60);
+  // A search over names and emails is recorded (the query, not the results): MV-STAFF-1.
+  if (q) await recordStaffSearch(db, user, q);
   const users = await adminUsers(db, q);
   const backQ = back + (q ? `&q=${encodeURIComponent(q)}` : "");
   return (
@@ -378,17 +401,17 @@ async function UsersTab({ db, user, lang, back, admin, sp }: Ctx) {
                 <td className="small">{u.email}</td>
                 <td>
                   <div className="row">
-                    {(["admin", "referee", "support"] as const).map((role) => {
+                    {STAFF_ROLES.map((role) => {
                       const has = u.roles.includes(role);
                       return admin ? (
                         <ActionForm key={role} action="admin.role" lang={lang} back={backQ} hidden={{ user: u.id, role, grant: has ? "0" : "1" }}>
                           <button className={has ? "btn btn-primary btn-xs" : "btn btn-ghost btn-xs"} title={has ? a.revokeRole : a.grant}>
-                            {role}
+                            {roleNames[lang][role]}
                           </button>
                         </ActionForm>
                       ) : has ? (
                         <span key={role} className="badge badge-info">
-                          {role}
+                          {roleNames[lang][role]}
                         </span>
                       ) : null;
                     })}

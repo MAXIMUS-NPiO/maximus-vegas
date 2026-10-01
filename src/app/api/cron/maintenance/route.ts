@@ -6,6 +6,7 @@ import { expireStale } from "@/server/challenges.ts";
 import { pulseAllQueues } from "@/server/quickmatch.ts";
 import { settleWars } from "@/server/clans.ts";
 import { pruneApiUsage, pumpWebhooks } from "@/server/partner.ts";
+import { recordRun } from "@/server/system.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,5 +30,6 @@ export async function GET(request: Request) {
   await settleWars(db);
   const webhooks = await pumpWebhooks(db);
   await pruneApiUsage(db);
+  await recordRun(db, "maintenance", { mail, webhooks });
   return Response.json({ ok: true, mail, webhooks }, { headers: { "Cache-Control": "no-store" } });
 }

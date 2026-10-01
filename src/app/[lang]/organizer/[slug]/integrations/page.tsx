@@ -13,6 +13,7 @@ import { listApiKeys, listWebhooks, recentDeliveries, WEBHOOK_EVENTS } from "@/s
 import { sealScheme } from "@/server/secret-box.ts";
 import { ActionForm, Badge, Check, DbDown, Empty, Field, Flash, type SearchParams } from "@/components/ui";
 import { LocalTime } from "@/components/time";
+import { FeatureNotice } from "@/components/feature-notice";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string; slug: string }> }): Promise<Metadata> {
   const { lang, slug } = await params;
@@ -74,6 +75,7 @@ export default async function Integrations({ params, searchParams }: { params: P
         </Link>
       </p>
       <Flash lang={lang} params={sp} />
+      <FeatureNotice db={db} lang={lang} feature="integrations" />
       {secret ? (
         <section className="notice stack-sm one-time-secret" aria-live="polite">
           <strong>{x.oneTime}</strong>

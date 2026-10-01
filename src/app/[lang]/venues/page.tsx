@@ -9,6 +9,7 @@ import { viewer } from "@/server/viewer.ts";
 import { publicVenues, venueCities } from "@/server/venues.ts";
 import { DbDown, Empty, Flash, one, PageHead, type SearchParams } from "@/components/ui";
 import { ApplicationForm } from "@/components/application-form";
+import { FeatureNotice } from "@/components/feature-notice";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
   const { lang } = await params;
@@ -29,6 +30,7 @@ export default async function Venues({ params, searchParams }: { params: Promise
     <div className="container page">
       <PageHead title={x.title} lead={x.lead} />
       <Flash lang={lang} params={sp} />
+      <FeatureNotice db={db} lang={lang} feature="venues" />
       {dbError ? (
         <DbDown lang={lang} />
       ) : (

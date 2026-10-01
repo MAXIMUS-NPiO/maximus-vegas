@@ -6,6 +6,8 @@ import { DomainError, fail, isUniqueViolation } from "./errors.ts";
 import * as v from "./validate.ts";
 import { clanExport, eraseClanData, ownedClansWithMembers } from "./clans.ts";
 import { passExport, revokePassesOf } from "./venues.ts";
+import type { StaffRole } from "./staff-roles.ts";
+import { eraseMessageData, messageExport } from "./messages.ts";
 
 const scrypt = promisify(scryptCb) as (
   password: string,
@@ -18,7 +20,7 @@ const PARAMS = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
 export const SESSION_DAYS = 30;
 export const SESSION_COOKIE = "mv_session";
 
-export type Role = "admin" | "referee" | "support";
+export type Role = StaffRole;
 export type SessionUser = {
   id: string;
   email: string;
@@ -367,6 +369,7 @@ export async function exportAccount(db: Database, user: SessionUser) {
     ),
     ...(await clanExport(db, user.id)),
     venuePasses: await passExport(db, user.id),
+    portalMessages: await messageExport(db, user.id),
     scoutFilters: await q("select name, query, created_at from scout_filters where user_id = $1 order by created_at"),
     watchlist: await q("select u.username as player, w.note, w.created_at from scout_watch w join users u on u.id = w.player_id where w.user_id = $1 order by w.created_at"),
     reportsFiled: await q(
@@ -478,6 +481,8 @@ export async function deleteAccount(db: Database, user: SessionUser, confirmPass
     await eraseClanData(q, user.id);
     // Venue passes of the account stop working.
     await revokePassesOf(q, user.id);
+    // Delivery records of portal-team messages go; each message keeps only its totals.
+    await eraseMessageData(q, user.id);
     // Scouting: the account's filters and watchlist go, and it leaves every other watchlist.
     await q.query("delete from scout_filters where user_id = $1", [user.id]);
     await q.query("delete from scout_watch where user_id = $1 or player_id = $1", [user.id]);

@@ -17,7 +17,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type { Database, Queryable } from "./db.ts";
 import type { SessionUser } from "./auth.ts";
 import { audit } from "./audit.ts";
-import { canManageOrg, isStaff, notify } from "./access.ts";
+import { canManageOrg, canStaff, notify, requireSection, staffWith } from "./access.ts";
 import { fail } from "./errors.ts";
 import { seal, unseal } from "./secret-box.ts";
 import { uniqueSlug } from "./teams.ts";
@@ -82,8 +82,7 @@ async function managedVenue(q: Queryable, user: SessionUser, venueId: unknown): 
   return venue;
 }
 
-const staffIds = async (q: Queryable) =>
-  (await q.query<{ user_id: string }>("select distinct user_id from user_roles where role in ('admin','support')")).map((r) => r.user_id);
+const staffIds = (q: Queryable) => staffWith(q, "venues");
 const orgManagers = async (q: Queryable, orgId: string) =>
   (await q.query<{ user_id: string }>("select user_id from org_members where org_id = $1 and role in ('owner','admin')", [orgId])).map((r) => r.user_id);
 
@@ -139,7 +138,7 @@ export async function submitVenue(db: Database, user: SessionUser, venueId: unkn
 
 /** Portal staff confirm or reject a submitted venue, or suspend a confirmed one (with a reason). */
 export async function reviewVenue(db: Database, staff: SessionUser, venueId: unknown, decision: unknown, noteInput: unknown) {
-  if (!isStaff(staff)) fail("forbidden");
+  requireSection(staff, "venues");
   const note = v.clean(noteInput, 500);
   await db.tx(async (q) => {
     const venue = await lockVenue(q, venueId);
@@ -182,7 +181,7 @@ export async function venueCities(q: Queryable): Promise<string[]> {
 export async function venueView(q: Queryable, slug: string, user: SessionUser | null): Promise<{ venue: Venue; manager: boolean } | null> {
   const [venue] = await q.query<Venue>("select * from venues where slug = $1", [slug]);
   if (!venue) return null;
-  const manager = Boolean(user && ((await canManageOrg(q, venue.org_id, user)) || isStaff(user)));
+  const manager = Boolean(user && ((await canManageOrg(q, venue.org_id, user)) || canStaff(user, "venues")));
   if (venue.status !== "confirmed" && !manager) return null;
   return { venue, manager };
 }
@@ -366,7 +365,7 @@ export async function passByToken(q: Queryable, token: unknown): Promise<PassVie
 /** May this user admit people at the venue: a member of its space, or portal staff. */
 export async function isVenueStaff(q: Queryable, orgId: string, user: SessionUser | null) {
   if (!user) return false;
-  if (isStaff(user)) return true;
+  if (canStaff(user, "venues")) return true;
   const [m] = await q.query("select 1 from org_members where org_id = $1 and user_id = $2", [orgId, user.id]);
   return Boolean(m);
 }

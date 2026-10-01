@@ -8,6 +8,7 @@ import { viewer } from "@/server/viewer.ts";
 import { challengesFor } from "@/server/challenges.ts";
 import { ActionForm, DbDown, Field, Flash, one, PageHead, SignInPrompt, type SearchParams } from "@/components/ui";
 import { ChallengeList } from "@/components/challenges";
+import { FeatureNotice } from "@/components/feature-notice";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
   const { lang } = await params;
@@ -40,6 +41,7 @@ export default async function Challenges({ params, searchParams }: { params: Pro
         </Link>
       </PageHead>
       <Flash lang={lang} params={sp} />
+      <FeatureNotice db={db} lang={lang} feature="challenges" />
       {dbError || !db ? (
         <DbDown lang={lang} />
       ) : !user ? (
