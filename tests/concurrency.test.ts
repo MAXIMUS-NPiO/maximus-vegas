@@ -6,6 +6,7 @@ import { createOrg } from "../src/server/teams.ts";
 import { createTournament, register, transition } from "../src/server/tournaments.ts";
 import { confirmResult, submitResult } from "../src/server/matches.ts";
 import { verifyAuditChain } from "../src/server/audit.ts";
+import { recordGame } from "../src/server/lobbies.ts";
 
 // Runs against a real multi-connection PostgreSQL: PG_TEST_URL=postgres://… npm test
 const url = process.env.PG_TEST_URL;
@@ -297,6 +298,50 @@ test("groups: the last group results decided together create the playoff exactly
       [t.id],
     );
     assert.deepEqual(state, { stage: 2, entries: 8, playoff: 14, started: 1 }, "one playoff of eight, double elimination without a reset yet");
+    assert.equal((await verifyAuditChain(db)).valid, true);
+  } finally {
+    await db.close();
+  }
+});
+
+// ---- Release 5: the end of an FFA round under real concurrency ----
+test("ffa: the last lobby games recorded together create the next round exactly once", { skip: !url }, async () => {
+  const db: Database = await openDatabase({ url });
+  const run = Date.now().toString(36);
+  const mk = async (name: string): Promise<SessionUser> => {
+    const s = await signUp(db, { email: `${name}${run}@example.com`, username: `${name}${run}`.slice(0, 24), displayName: name, password: "correct horse battery", adult: "on", terms: "on" });
+    return (await sessionUser(db, s.token))!;
+  };
+  try {
+    const org = await mk("ffo");
+    const space = await createOrg(db, org, { name: `FFA ${run}`, description: "" });
+    const t = await createTournament(db, org, space.id, {
+      name: `ffa ${run}`, game: "pubg", format: "ffa", participantType: "solo", teamSize: 1, maxParticipants: 32,
+      checkInRequired: "", region: "", startsAt: "2030-01-01T12:00", timeZone: "UTC", description: "", rules: "",
+      settings: { lobbySize: "6", ffaGames: "1", ffaAdvance: "2" },
+    });
+    await transition(db, org, t.id, "PUBLISHED");
+    await transition(db, org, t.id, "REGISTRATION_OPEN");
+    for (let i = 0; i < 18; i++) await register(db, await mk(`ff${i}`), t.id);
+    await transition(db, org, t.id, "REGISTRATION_CLOSED");
+    await transition(db, org, t.id, "IN_PROGRESS");
+    const games = await db.query<{ id: string; lobby_id: string }>("select id, lobby_id from ffa_games where tournament_id = $1 order by id", [t.id]);
+    assert.equal(games.length, 3, "three lobbies of six, one game each");
+    const lines = async (g: { lobby_id: string }) =>
+      (await db.query<{ registration_id: string }>("select registration_id from ffa_entries where lobby_id = $1 order by seed", [g.lobby_id])).map((r, i) => ({
+        reg: r.registration_id,
+        placement: String(i + 1),
+        kills: "1",
+      }));
+    const prepared = await Promise.all(games.map(async (g) => ({ id: g.id, lines: await lines(g) })));
+    const all = await Promise.allSettled(Array.from({ length: 6 }, () => prepared.map((g) => recordGame(db, org, g.id, { lines: g.lines }))).flat());
+    assert.equal(all.filter((r) => r.status === "fulfilled").length, 3, "one result per game");
+    const [state] = await db.query<{ lobbies: number; created: number }>(
+      `select (select count(*)::int from ffa_lobbies where tournament_id = $1 and round = 2) as lobbies,
+              (select count(*)::int from audit_log where entity_id = $1::text and action = 'tournament.ffa_round_created') as created`,
+      [t.id],
+    );
+    assert.deepEqual(state, { lobbies: 1, created: 2 }, "round 2 created once: six qualifiers in one final lobby");
     assert.equal((await verifyAuditChain(db)).valid, true);
   } finally {
     await db.close();

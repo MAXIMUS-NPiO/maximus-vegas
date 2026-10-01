@@ -324,6 +324,73 @@ const gtPage = (await guest.get(`/ru/tournaments/${gtSlug}`)).text;
 assert.ok(gtPage.includes("Лесенка") && gtPage.includes("Завершён") && gtPage.includes("Ступень 2"), "gauntlet completed");
 log(`gauntlet for 4 entrants played in ${gtPasses} passes`);
 
+// ---------- Registration review, questions, templates, FFA lobbies ----------
+const ap = await org.post("tournament.create", {
+  org: orgId, name: `E2E Approval ${RUN}`, game: "cs2", format: "single_elimination", participantType: "solo", teamSize: "5", maxParticipants: "8",
+  startsAt: tomorrow, tz: "Asia/Dubai", description: "e2e", rules: "bo1", registrationFields: "1", approvalRequired: "on",
+  field1Label: "Discord", field1Type: "text", field1Required: "on", noShowMinutes: "10",
+});
+assert.equal(ap.ok, "tournament_created", ap.location);
+const apSlug = ap.path.split("/").pop();
+const apId = uuidAfter((await org.get(ap.path)).text, "tournament");
+for (const to of ["PUBLISHED", "REGISTRATION_OPEN"]) assert.equal((await org.post("tournament.transition", { tournament: apId, to })).ok, "status_changed");
+assert.ok((await players[0].get(`/ru/tournaments/${apSlug}`)).text.includes("Discord"), "the question is shown in the form");
+assert.equal((await players[0].post("tournament.register", { tournament: apId })).e, "invalid_answers", "a required answer is enforced");
+assert.equal((await players[0].post("tournament.register", { tournament: apId, answer_f1: "e2e#1" })).ok, "registration_pending");
+assert.equal((await players[1].post("tournament.register", { tournament: apId, answer_f1: "e2e#2" })).ok, "registration_pending");
+const apManage = (await org.get(ap.path)).text;
+assert.ok(apManage.includes("e2e#1") && apManage.includes("Заявок ждут решения: 2"), "answers and pending applications for the organiser");
+assert.ok(!(await guest.get(`/ru/tournaments/${apSlug}`)).text.includes("e2e#1"), "answers are not public");
+const regIds = [...apManage.matchAll(/name="registration" value="([0-9a-f-]{36})"/g)].map((m) => m[1]);
+assert.equal((await org.post("tournament.approve", { tournament: apId, registration: regIds[0] })).ok, "registration_approved");
+assert.equal((await org.post("tournament.reject", { tournament: apId, registration: [...new Set(regIds)].find((id) => id !== regIds[0]), reason: "Duplicate account" })).ok, "registration_rejected");
+const rejectedView = (await players[0].get(`/ru/tournaments/${apSlug}`)).text + (await players[1].get(`/ru/tournaments/${apSlug}`)).text;
+assert.ok(rejectedView.includes("Duplicate account"), "the applicant sees the reason");
+const tpl = await org.post("template.save", { tournament: apId, name: `E2E Template ${RUN}`, category: "Weekly" });
+assert.equal(tpl.ok, "template_saved", tpl.location);
+const spacePage = (await org.get(space.path)).text;
+assert.ok(spacePage.includes(`E2E Template ${RUN}`) && spacePage.includes("Weekly"), "template listed with its category");
+const templateId = /name="template" value="([0-9a-f-]{36})"/.exec(spacePage)?.[1];
+const fromTpl = await org.post("template.create", { template: templateId, name: `E2E From Template ${RUN}`, startsAt: "", tz: "Asia/Dubai" });
+assert.equal(fromTpl.ok, "tournament_created", fromTpl.location);
+assert.ok((await org.get(fromTpl.path)).text.includes("Discord"), "the template carries the registration question");
+log("registration review with a required question, approval and rejection with a reason, template saved and used");
+
+const ffaT = await org.post("tournament.create", {
+  org: orgId, name: `E2E FFA ${RUN}`, game: "pubg", format: "ffa", participantType: "solo", teamSize: "5", maxParticipants: "16",
+  startsAt: tomorrow, tz: "Asia/Dubai", description: "e2e", rules: "squads off", formatSettings: "1", lobbySize: "8", ffaGames: "2", ffaAdvance: "4", ffaPoints: "10, 6, 5, 4, 3", killPoints: "1",
+});
+assert.equal(ffaT.ok, "tournament_created", ffaT.location);
+const ffaSlug = ffaT.path.split("/").pop();
+const ffaId = uuidAfter((await org.get(ffaT.path)).text, "tournament");
+for (const to of ["PUBLISHED", "REGISTRATION_OPEN"]) assert.equal((await org.post("tournament.transition", { tournament: ffaId, to })).ok, "status_changed");
+for (const p of players) assert.equal((await p.post("tournament.register", { tournament: ffaId })).ok, "registered");
+assert.ok((await guest.get(`/ru/tournaments/${ffaSlug}`)).text.includes("Финальное лобби"), "lobby preview");
+for (const to of ["REGISTRATION_CLOSED", "IN_PROGRESS"]) assert.equal((await org.post("tournament.transition", { tournament: ffaId, to })).ok, "status_changed");
+const lobbyId = /\/ru\/lobbies\/([0-9a-f-]{36})/.exec((await guest.get(`/ru/tournaments/${ffaSlug}`)).text)?.[1];
+assert.ok(lobbyId, "lobby linked from the tournament");
+assert.ok((await players[0].get("/ru/hub")).text.includes(`/ru/lobbies/${lobbyId}`), "the lobby is in the player's hub");
+assert.equal((await org.post("lobby.details", { lobby: lobbyId, roomCode: "E2E-CODE", scheduledAt: "", tz: "Asia/Dubai" })).ok, "saved");
+assert.ok((await players[0].get(`/ru/lobbies/${lobbyId}`)).text.includes("E2E-CODE"), "entrants see the lobby code");
+assert.ok(!(await guest.get(`/ru/lobbies/${lobbyId}`)).text.includes("E2E-CODE"), "the code is hidden from others");
+for (let game = 0; game < 2; game++) {
+  const lobbyPage = (await org.get(`/ru/lobbies/${lobbyId}`)).text;
+  // The first game still waiting for a result (a recorded game's form also carries "correction").
+  const gameId = [...lobbyPage.matchAll(/name="game" value="([0-9a-f-]{36})"(\/?>\s*<input type="hidden" name="correction")?/g)].find((m) => !m[2])?.[1];
+  const regs = [...new Set([...lobbyPage.matchAll(/name="place_([0-9a-f-]{36})"/g)].map((m) => m[1]))];
+  assert.equal(regs.length, 5);
+  const fields = { game: gameId };
+  regs.forEach((reg, i) => {
+    fields[`place_${reg}`] = String(((i + game) % 5) + 1);
+    fields[`kills_${reg}`] = String(i);
+  });
+  assert.equal((await org.post("lobby.result", fields)).ok, "lobby_result_saved");
+}
+const ffaPage = (await guest.get(`/ru/tournaments/${ffaSlug}`)).text;
+assert.ok(ffaPage.includes("FFA (лобби)") && ffaPage.includes("Завершён") && ffaPage.includes("MV-FFA-1"), "FFA completed with its rules");
+assert.ok(/class="place">1</.test(ffaPage), "FFA places published");
+log("FFA: one lobby of five, code visible to entrants only, two games recorded by the referee, places from the lobby table");
+
 const profile = (await guest.get(`/ru/players/${players[0].username}`)).text;
 assert.ok(profile.includes("Игровой паспорт") && profile.includes("Репутация"), "profile shows passport and reputation");
 
