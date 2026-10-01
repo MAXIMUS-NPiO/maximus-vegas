@@ -19,6 +19,10 @@ import { matchStep, openMatchFor, refereeCalls } from "@/server/gameday.ts";
 import { gameDayText, stepText, actionText } from "@/lib/gameday-text.ts";
 import { CallBlock, OpenCalls } from "@/components/referee-call";
 import { liveopsText } from "@/lib/liveops-text.ts";
+import { previewRepair, type Plan, type Step } from "@/server/repair.ts";
+import { DomainError } from "@/server/errors.ts";
+import { bracket } from "@/server/queries.ts";
+import { labelContext } from "@/components/tournament";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string; id: string }> }): Promise<Metadata> {
   const { lang, id } = await params;
@@ -111,6 +115,42 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
       })
     : null;
   const lo = liveopsText[lang];
+  // Correction of a decided elimination match goes through a preview of its consequences (bracket repair).
+  const elimination = ["W", "L", "GF"].includes(m.bracket ?? "");
+  const first = (x: string | string[] | undefined) => (Array.isArray(x) ? x[0] : x) ?? "";
+  let repairView: { plan: Plan | null; error: string | null; scoreA: string; scoreB: string; text: (s: Step) => string } | null = null;
+  if (referee && elimination && m.status === "completed" && first(sp.repair) === "1") {
+    const scoreA = first(sp.scoreA);
+    const scoreB = first(sp.scoreB);
+    let plan: Plan | null = null;
+    let error: string | null = null;
+    try {
+      plan = await previewRepair(db, m.id, { scoreA, scoreB });
+    } catch (e) {
+      error = e instanceof DomainError ? e.code : "server_error";
+    }
+    const rows = plan?.steps.length ? await bracket(db, m.tournament_id) : [];
+    const ctx = labelContext(rows, m.t_format, tSettings.playoff?.format);
+    const names = new Map<string, string>();
+    for (const r of rows) {
+      if (r.a_reg && r.a_name) names.set(r.a_reg, r.a_name);
+      if (r.b_reg && r.b_name) names.set(r.b_reg, r.b_name);
+    }
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    const nm = (reg: string | null) => (reg ? names.get(reg) ?? "—" : lo.noEntrant);
+    const where = (id: string) => {
+      const r = byId.get(id);
+      return r ? `${matchLabel(r, ctx, lang)} (${r.a_name ?? d.common.tbd} — ${r.b_name ?? d.common.tbd})` : id;
+    };
+    const fillText = (t: string, vars: Record<string, string>) => t.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? "");
+    const text = (s: Step) => {
+      if (s.kind === "remove_reset") return s.annulled ? `${lo.stepRemoveReset} (${s.annulled.scoreA ?? "–"} : ${s.annulled.scoreB ?? "–"})` : lo.stepRemoveReset;
+      const vars = { match: where(s.matchId), from: nm(s.from), to: nm(s.to), score: s.kind === "replay" ? `${s.annulled.scoreA ?? "–"} : ${s.annulled.scoreB ?? "–"}` : "" };
+      if (s.kind === "replay") return fillText(s.from && s.to ? lo.stepReplayWith : lo.stepReplay, vars);
+      return fillText(!s.to ? lo.stepClear : !s.from ? lo.stepFill : lo.stepReplace, vars);
+    };
+    repairView = { plan, error, scoreA, scoreB, text };
+  }
   const calls = viewerSide || referee ? await refereeCalls(db, m.id) : [];
   const g = gameDayText[lang];
   const confirmed = results.find((r) => r.status === "confirmed");
@@ -480,6 +520,54 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
                 ? "Плей-офф уже начался: результат основного этапа зафиксирован и не исправляется."
                 : "The playoff has started: this main-stage result is final and cannot be corrected."}
             </p>
+          ) : m.status === "completed" && m.outcome !== "bye" && both && elimination ? (
+            <details className="disclosure" id="repair" open={Boolean(repairView)}>
+              <summary>{lo.repairTitle}</summary>
+              <p className="small muted">{lo.repairLead}</p>
+              <form method="get" action={`/${lang}/matches/${m.id}#repair`} className="stack">
+                <input type="hidden" name="repair" value="1" />
+                <div className="score-inputs">
+                  <Field label={`${d.match.scoreFor}: ${a?.name}`}>
+                    <input name="scoreA" type="number" min={0} max={999} required defaultValue={repairView?.scoreA || (m.score_a ?? undefined)} />
+                  </Field>
+                  <Field label={`${d.match.scoreFor}: ${b?.name}`}>
+                    <input name="scoreB" type="number" min={0} max={999} required defaultValue={repairView?.scoreB || (m.score_b ?? undefined)} />
+                  </Field>
+                </div>
+                {seriesNote ? <p className="small muted">{seriesNote}</p> : null}
+                <button className="btn btn-ghost btn-sm">{lo.preview}</button>
+              </form>
+              {repairView?.error ? <p className="notice notice-bad">{d.errors[repairView.error] ?? repairView.error}</p> : null}
+              {repairView?.plan ? (
+                <div className="stack-sm">
+                  <p className="field-label">{lo.consequences}</p>
+                  {repairView.plan.steps.length ? (
+                    <ul className="plain-list small">
+                      {repairView.plan.steps.map((s, i) => (
+                        <li key={`${s.kind}-${s.matchId}-${i}`}>{repairView!.text(s)}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {!repairView.plan.steps.some((s) => s.kind !== "replace") ? <p className="small muted">{lo.noConsequences}</p> : null}
+                  {repairView.plan.reopens ? <p className="notice notice-warn">{lo.reopens}</p> : null}
+                  <ActionForm
+                    action="match.repair"
+                    lang={lang}
+                    back={back}
+                    hidden={{ ...hidden, scoreA: repairView.scoreA, scoreB: repairView.scoreB, plan: repairView.plan.hash }}
+                    className="stack"
+                  >
+                    <Field label={d.match.correctReason}>
+                      <textarea name="note" required minLength={5} rows={2} maxLength={1000} />
+                    </Field>
+                    <Field label={d.match.evidence}>
+                      <input name="evidence" type="url" maxLength={500} placeholder="https://" />
+                    </Field>
+                    <button className="btn btn-danger btn-sm">{lo.apply}</button>
+                  </ActionForm>
+                </div>
+              ) : null}
+            </details>
           ) : m.status === "completed" && m.outcome !== "bye" && both ? (
             <details className="disclosure">
               <summary>{d.match.correctTitle}</summary>

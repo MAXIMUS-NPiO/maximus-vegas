@@ -241,6 +241,20 @@ assert.ok(/class="place">1</.test(tPage), "standings rendered");
 assert.ok((await org.get(manage)).text.includes("Не прошёл check-in"), "missed check-in recorded");
 log(`single elimination played to the final in ${passes} passes; standings published`);
 
+// ---------- Bracket repair ----------
+const repairSemi = /\/ru\/matches\/([0-9a-f-]{36})/.exec(tPage.slice(tPage.indexOf('id="bracket"')))?.[1];
+assert.ok(repairSemi, "first semi-final found in the bracket");
+const preview = (await org.get(`/ru/matches/${repairSemi}?repair=1&scoreA=0&scoreB=2`)).text;
+const planHash = /name="plan" value="([0-9a-f]{16})"/.exec(preview)?.[1];
+assert.ok(preview.includes("Последствия исправления") && planHash, "the referee sees the consequences before anything changes");
+assert.ok(preview.includes("Турнир вернётся в статус"), "a replayed final is announced");
+assert.equal((await org.post("match.repair", { match: repairSemi, scoreA: "0", scoreB: "2", note: "e2e: wrong side entered", plan: "0000000000000000", back: `/ru/matches/${repairSemi}` })).e, "repair_plan_changed");
+assert.equal((await org.post("match.repair", { match: repairSemi, scoreA: "0", scoreB: "2", note: "e2e: wrong side entered", plan: planHash, back: `/ru/matches/${repairSemi}` })).ok, "bracket_repaired");
+assert.ok((await guest.get(`/ru/tournaments/${tSlug}`)).text.includes("Идёт"), "the event is in progress again");
+await playOut(players.slice(0, 4));
+assert.ok((await guest.get(`/ru/tournaments/${tSlug}`)).text.includes("Завершён"), "the replayed final completes the event again");
+log("bracket repair: consequences previewed, a stale plan refused, the final replayed and the event completed again");
+
 // ---------- Double elimination ----------
 const de = await org.post("tournament.create", {
   org: orgId, name: `E2E Double ${RUN}`, game: "cs2", format: "double_elimination", participantType: "solo", teamSize: "5", maxParticipants: "8",
