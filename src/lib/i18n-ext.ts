@@ -49,6 +49,7 @@ const okRu: Record<string, string> = {
   incident_resolved: "Инцидент закрыт, автор получил ответ.",
   match_paused: "Матч на паузе: результаты, подтверждения и отметки ждут продолжения.",
   match_resumed: "Матч продолжен.",
+  bracket_repaired: "Результат исправлен, сетка восстановлена: затронутые матчи переиграются, участники уведомлены.",
 };
 
 const okEn: Record<string, string> = {
@@ -100,6 +101,7 @@ const okEn: Record<string, string> = {
   incident_resolved: "Incident closed; the reporter has the reply.",
   match_paused: "Match paused: results, confirmations and check-ins wait until it resumes.",
   match_resumed: "Match resumed.",
+  bracket_repaired: "Result corrected and the bracket repaired: affected matches will be replayed; participants are notified.",
 };
 
 const errorsRu: Record<string, string> = {
@@ -189,6 +191,7 @@ const errorsRu: Record<string, string> = {
   match_closed: "Матч завершён. Чтобы оспорить решённый результат, используйте оспаривание на странице матча.",
   match_paused: "Матч на паузе у судьи: дождитесь продолжения.",
   override_reason_required: "Решение расходится с отправленным счётом или закрывает спор: укажите обоснование (от 5 символов).",
+  repair_plan_changed: "Сетка изменилась после предпросмотра: посмотрите последствия ещё раз.",
 };
 
 const errorsEn: Record<string, string> = {
@@ -278,6 +281,7 @@ const errorsEn: Record<string, string> = {
   match_closed: "The match is over. To challenge a decided result, use the dispute on the match page.",
   match_paused: "The referee has paused this match: wait until it resumes.",
   override_reason_required: "This decision differs from the reported score or settles a dispute: give a reason (5 characters or more).",
+  repair_plan_changed: "The bracket changed after the preview: review the consequences again.",
 };
 
 const kindsRu: Record<string, string> = {
@@ -331,6 +335,7 @@ const kindsRu: Record<string, string> = {
   incident_resolved: "Турнир «{tournament}»: ваш инцидент закрыт",
   match_paused: "Турнир «{tournament}»: судья поставил ваш матч на паузу",
   match_resumed: "Турнир «{tournament}»: ваш матч продолжен",
+  bracket_repaired: "Турнир «{tournament}»: судья исправил результат и восстановил сетку — проверьте свои матчи",
 };
 
 const kindsEn: Record<string, string> = {
@@ -384,6 +389,7 @@ const kindsEn: Record<string, string> = {
   incident_resolved: "“{tournament}”: your incident was closed",
   match_paused: "“{tournament}”: the referee paused your match",
   match_resumed: "“{tournament}”: your match resumed",
+  bracket_repaired: "“{tournament}”: a referee corrected a result and repaired the bracket — check your matches",
 };
 
 export const extRu = {

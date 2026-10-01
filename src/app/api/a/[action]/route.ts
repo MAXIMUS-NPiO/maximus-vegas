@@ -20,6 +20,7 @@ import * as lobbies from "@/server/lobbies.ts";
 import * as feedback from "@/server/feedback.ts";
 import * as gameday from "@/server/gameday.ts";
 import * as liveops from "@/server/liveops.ts";
+import * as repair from "@/server/repair.ts";
 import { storeUpload } from "@/server/media.ts";
 import { drainOutbox, mailConfigured } from "@/server/mail.ts";
 import { fail } from "@/server/errors.ts";
@@ -515,6 +516,17 @@ const handlers: Record<string, Handler> = {
   "incident.resolve": async (c) => {
     const r = await liveops.resolveIncident(c.db, u(c), idOf(c.form.incident), c.form.note);
     return { ok: r.closed ? "incident_resolved" : "saved" };
+  },
+  "match.repair": async (c) => {
+    const id = idOf(c.form.match);
+    const plan = await repair.repairBracket(c.db, u(c), id, {
+      scoreA: c.form.scoreA,
+      scoreB: c.form.scoreB,
+      note: c.form.note,
+      plan: c.form.plan,
+      evidenceUrl: c.form.evidence,
+    });
+    return { to: matchPath(c, id), ok: plan.steps.some((s) => s.kind !== "replace") ? "bracket_repaired" : "result_corrected" };
   },
   "match.call_close": async (c) => {
     const r = await gameday.closeRefereeCall(c.db, u(c), idOf(c.form.call), c.form.note);

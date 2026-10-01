@@ -9,7 +9,7 @@ import { isRoundFormat, settingsOf } from "./format-settings.ts";
 import { depthKey, parseMatchOverride, seriesCustomised, seriesOf, seriesRulesOf, seriesScoreValid } from "./series.ts";
 import * as v from "./validate.ts";
 
-type Locked = MatchRow & {
+export type Locked = MatchRow & {
   t_status: string;
   org_id: string;
   t_name: string;
@@ -77,7 +77,8 @@ export async function seriesLengthOf(q: Queryable, m: Locked): Promise<number> {
   return seriesOf(rules, m, { main: m.t_format, playoff }, new Map([[depthKey(m.stage, m.bracket), row?.top || m.round]])).bestOf;
 }
 
-async function scores(q: Queryable, input: { scoreA: unknown; scoreB: unknown }, m: Locked) {
+/** Validated scores and the winner they give under the match's series length and draw rules. */
+export async function scores(q: Queryable, input: { scoreA: unknown; scoreB: unknown }, m: Locked) {
   const scoreA = v.intIn(input.scoreA, 0, 999);
   const scoreB = v.intIn(input.scoreB, 0, 999);
   // A best-of-N series ends when one side has won (N + 1) / 2 games.

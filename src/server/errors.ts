@@ -145,6 +145,7 @@ export const ERROR_CODES = [
   "match_closed",
   "match_paused",
   "override_reason_required",
+  "repair_plan_changed",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
