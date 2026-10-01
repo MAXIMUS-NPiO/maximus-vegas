@@ -220,6 +220,20 @@ assert.ok(phoneList.includes('class="bracket-narrow"') && phoneList.includes("М
 assert.ok(!(await guest.get(`/ru/tournaments/${tSlug}`)).text.includes("Мой матч"), "no personal chip for a guest");
 log("bracket on phones: round list with chips; the player's match is linked, a guest sees none");
 
+// ---------- Live operations ----------
+assert.equal((await org.post("match.pause", { match: gdMatch, reason: "e2e: server restart", back: `/ru/matches/${gdMatch}` })).ok, "match_paused");
+assert.ok((await players[0].get(`/ru/matches/${gdMatch}`)).text.includes("e2e: server restart"), "both sides see why the match is paused");
+assert.equal((await players[0].post("match.submit", { match: gdMatch, scoreA: "1", scoreB: "0", back: `/ru/matches/${gdMatch}` })).e, "match_paused");
+assert.equal((await org.post("match.resume", { match: gdMatch, back: `/ru/matches/${gdMatch}` })).ok, "match_resumed");
+assert.equal((await players[0].post("incident.open", { tournament: tId, kind: "technical", message: "e2e: not staff" })).e, "forbidden");
+assert.equal((await org.post("incident.open", { tournament: tId, kind: "technical", priority: "high", match: gdMatch, message: "e2e: station 4 has no network", back: manage })).ok, "incident_opened");
+const queueView = (await org.get(manage)).text;
+assert.ok(queueView.includes("e2e: station 4 has no network") && queueView.includes('id="incidents"'), "the organiser page shows the incident queue");
+const incidentId = uuidAfter(queueView, "incident");
+assert.ok(incidentId);
+assert.equal((await org.post("incident.resolve", { incident: incidentId, note: "e2e: cable replaced", back: manage })).ok, "incident_resolved");
+log("live operations: match paused and resumed with results held, staff incident logged and closed from the queue, players cannot log one");
+
 const passes = await playOut(players.slice(0, 4));
 const tPage = (await guest.get(`/ru/tournaments/${tSlug}`)).text;
 assert.ok(tPage.includes("Завершён"), "tournament completed");

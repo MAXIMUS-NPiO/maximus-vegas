@@ -43,3 +43,10 @@ Status: INTERNAL EVIDENCE RECORDED IN REPOSITORY; registry number: NOT PROVIDED.
 Основание: спецификация от 27 September 2026, раздел 25 («для сложной сетки нужен удобный мобильный список раундов и матчей»); задача C-02 доски.
 Компоненты: `src/lib/bracket-rounds.ts` — сводка раундов (играемый раунд, сыгранные и всего, раунды и матч зрителя); список раундов `RoundList` и карточка матча `MatchCard` в `src/components/tournament.tsx`; стили списка в `styles.css`.
 Проверка: модульные тесты сводки, сквозной сценарий, измерение высоты и горизонтального переполнения на 390 px для пяти форматов, снимки 390 и 1440 px.
+
+## Дополнение: живое управление, 1 October 2026
+
+Status: INTERNAL EVIDENCE RECORDED IN REPOSITORY; registry number: NOT PROVIDED.
+Основание: спецификация от 27 September 2026, раздел 9 (очередь инцидентов, ответственные, приоритеты, эскалации, pause/resume, документированный override); задача C-03 доски, часть 1.
+Компоненты: `src/server/liveops.ts` — очередь инцидентов, назначение, приоритет, эскалация, закрытие, пауза и продолжение матча; правило обоснования решения против отправленного счёта в `src/server/matches.ts`; `src/components/incident-queue.tsx`; `src/lib/liveops-text.ts`; миграция 11 `live_operations`.
+Проверка: интеграционные тесты на PGlite, тесты PostgreSQL 16, сквозной сценарий, откат на код до миграции 11.

@@ -18,6 +18,7 @@ import { seriesText } from "@/components/tournament";
 import { matchStep, openMatchFor, refereeCalls } from "@/server/gameday.ts";
 import { gameDayText, stepText, actionText } from "@/lib/gameday-text.ts";
 import { CallBlock, OpenCalls } from "@/components/referee-call";
+import { liveopsText } from "@/lib/liveops-text.ts";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string; id: string }> }): Promise<Metadata> {
   const { lang, id } = await params;
@@ -105,9 +106,11 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
         pendingSide: (pending?.side as "a" | "b" | null | undefined) ?? null,
         noShowAt,
         hasNext: Boolean(nextOpen),
+        paused: Boolean(m.paused_at),
         now: new Date(),
       })
     : null;
+  const lo = liveopsText[lang];
   const calls = viewerSide || referee ? await refereeCalls(db, m.id) : [];
   const g = gameDayText[lang];
   const confirmed = results.find((r) => r.status === "confirmed");
@@ -159,6 +162,14 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
         <Badge status={m.status}>{d.statuses.match[m.status]}</Badge>
       </div>
       <Flash lang={lang} params={sp} />
+      {m.paused_at && open ? (
+        <div className="notice notice-warn" role="status">
+          <strong>{m.pause_reason ? `${lo.pausedBanner}: ${m.pause_reason}` : lo.pausedBanner}</strong>
+          <span className="small">
+            <LocalTime iso={m.paused_at} lang={lang} />
+          </span>
+        </div>
+      ) : null}
 
       <div className="versus">
         {sideCard(a, "a")}
@@ -175,6 +186,7 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
                   {stepText(step.key, lang, {
                     series: series.bestOf > 1 ? seriesText(series.bestOf, lang) : undefined,
                     score: pending ? `${a?.name ?? "A"} ${pending.score_a} : ${pending.score_b} ${b?.name ?? "B"}` : undefined,
+                    reason: m.pause_reason || undefined,
                   })}
                 </strong>
               </p>
@@ -239,7 +251,7 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
             <span>
               {b?.name}: {m.b_checked_in_at ? <Badge status="ok">{ru ? "на месте" : "here"}</Badge> : <Badge status="muted">{ru ? "нет отметки" : "not yet"}</Badge>}
             </span>
-            {mySide && !(mySide === "a" ? m.a_checked_in_at : m.b_checked_in_at) ? (
+            {mySide && !m.paused_at && !(mySide === "a" ? m.a_checked_in_at : m.b_checked_in_at) ? (
               <ActionForm action="match.checkin" lang={lang} back={back} hidden={hidden}>
                 <button className="btn btn-primary btn-sm">{ru ? "Отметиться" : "Check in"}</button>
               </ActionForm>
@@ -270,7 +282,7 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
         </p>
       ) : null}
 
-      {live && mySide && both ? (
+      {live && mySide && both && !m.paused_at ? (
         <section className="card action-card" id="report">
           {m.status === "result_submitted" && pending && pending.side !== mySide ? (
             <>
@@ -353,7 +365,7 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
                   </Field>
                 </div>
                 {seriesNote ? <p className="small muted">{seriesNote}</p> : drawNote ? <p className="small muted">{drawNote}</p> : null}
-                <Field label={d.match.resolution}>
+                <Field label={d.match.resolution} hint={lo.overrideNote}>
                   <textarea name="resolution" rows={2} maxLength={1000} />
                 </Field>
                 <Field label={d.match.evidence}>
@@ -361,6 +373,20 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
                 </Field>
                 <button className="btn btn-primary">{d.match.decide}</button>
               </ActionForm>
+              <div className="stack-sm">
+                <p className="field-label">{lo.pauseTitle}</p>
+                {m.paused_at ? (
+                  <ActionForm action="match.resume" lang={lang} back={back} hidden={hidden}>
+                    <button className="btn btn-primary btn-sm">{lo.resume}</button>
+                  </ActionForm>
+                ) : (
+                  <ActionForm action="match.pause" lang={lang} back={back} hidden={hidden} className="inline-form">
+                    <input name="reason" required minLength={3} maxLength={300} placeholder={lo.pauseReason} aria-label={lo.pauseReason} />
+                    <button className="btn btn-ghost btn-sm">{lo.pause}</button>
+                  </ActionForm>
+                )}
+                <p className="small muted">{lo.pauseNote}</p>
+              </div>
               {noShowAt && noShowAt.getTime() > Date.now() ? (
                 <p className="small muted">
                   {ru ? "Неявку по правилам турнира можно отметить с " : "Under the tournament rules a no-show can be recorded from "}

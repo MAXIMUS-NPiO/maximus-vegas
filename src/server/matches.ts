@@ -108,6 +108,7 @@ export type ResultInput = { scoreA: unknown; scoreB: unknown; evidenceUrl: unkno
 export async function submitResult(db: Database, user: SessionUser, matchId: string, input: ResultInput) {
   await db.tx(async (q) => {
     const m = await lockMatchWithTournament(q, matchId);
+    if (m.paused_at) fail("match_paused");
     live(m);
     if (!["ready", "in_progress", "result_submitted"].includes(m.status)) fail(m.status === "completed" ? "already_completed" : "match_not_ready");
     const side = await sideOf(q, m, user.id);
@@ -155,6 +156,7 @@ export async function submitResult(db: Database, user: SessionUser, matchId: str
 export async function confirmResult(db: Database, user: SessionUser, matchId: string) {
   await db.tx(async (q) => {
     const m = await lockMatchWithTournament(q, matchId);
+    if (m.paused_at) fail("match_paused");
     live(m);
     if (m.status === "completed") fail("already_completed");
     const side = await sideOf(q, m, user.id);
@@ -207,6 +209,13 @@ export async function officialResult(
     const evidence = v.optionalUrl(input.evidenceUrl);
     const note = v.clean(input.note, 1000);
     const resolution = v.clean(input.resolution, 1000);
+    // A decision that goes against a side's reported score, or settles a disputed match, is an override: it needs a reason.
+    const [reported] = await q.query<{ score_a: number | null; score_b: number | null }>(
+      "select score_a, score_b from match_results where match_id = $1 and status = 'pending' order by version desc limit 1",
+      [m.id],
+    );
+    const override = m.status === "disputed" || Boolean(reported && (reported.score_a !== scoreA || reported.score_b !== scoreB));
+    if (override && resolution.length < 5) fail("override_reason_required");
     await q.query("update match_results set status = 'superseded' where match_id = $1 and status = 'pending'", [m.id]);
     const version = await nextVersion(q, m.id);
     await q.query(
@@ -216,9 +225,17 @@ export async function officialResult(
     );
     if (resolution)
       await q.query("update disputes set resolution = $2 where match_id = $1 and status = 'open' and kind = 'pre_result'", [m.id, resolution]);
+    // The decision ends any hold on the match.
+    if (m.paused_at) await q.query("update matches set paused_at = null, pause_reason = '' where id = $1", [m.id]);
     await completeMatch(q, m, { winner, scoreA, scoreB, outcome: "played" }, user.id);
     await notify(q, [...(await regMembers(q, m.a_reg)), ...(await regMembers(q, m.b_reg))], "result_confirmed", { matchId: m.id, tournament: m.t_name });
-    await audit(q, { actorId: user.id, action: "match.official_result", entity: "match", entityId: m.id, data: { version, scoreA, scoreB } });
+    await audit(q, {
+      actorId: user.id,
+      action: "match.official_result",
+      entity: "match",
+      entityId: m.id,
+      data: override ? { version, scoreA, scoreB, override: true, reason: resolution } : { version, scoreA, scoreB },
+    });
   });
 }
 
@@ -232,6 +249,7 @@ export async function markNoShow(db: Database, user: SessionUser, matchId: strin
   const absent = absentInput === "a" || absentInput === "b" ? absentInput : fail("invalid_input");
   await db.tx(async (q) => {
     const m = await lockMatchWithTournament(q, matchId);
+    if (m.paused_at) fail("match_paused");
     if (!(await refereeOf(q, m, user))) fail("forbidden");
     live(m);
     if (m.status === "completed") fail("already_completed");

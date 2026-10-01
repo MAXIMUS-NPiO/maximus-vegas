@@ -113,7 +113,7 @@ test("referee calls: one open call per side, staff reply once, access and closed
   const first = await callReferee(db, a1, ms[0].id, "Opponent's client crashed at round 9");
   assert.equal(first.created, true);
   const again = await callReferee(db, a1, ms[0].id, "Still waiting");
-  assert.deepEqual(again, { id: first.id, created: false }, "a repeated call returns the open one");
+  assert.deepEqual(again, { id: first.id, created: false, escalated: false }, "a repeated call returns the open one");
   assert.equal((await notes(owner.id, "referee_call")).length, 1, "staff are notified once per open call");
   const other = await callReferee(db, b1, ms[0].id, "Server lag");
   assert.equal(other.created, true, "each side has its own call");

@@ -143,6 +143,8 @@ export const ERROR_CODES = [
   "no_venues",
   "feedback_closed",
   "match_closed",
+  "match_paused",
+  "override_reason_required",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 

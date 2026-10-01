@@ -43,6 +43,12 @@ const okRu: Record<string, string> = {
   referee_called: "Судья вызван. Ответ придёт уведомлением и появится на экране игрового дня.",
   referee_call_exists: "Вызов уже отправлен и ждёт ответа судьи.",
   referee_call_closed: "Вызов закрыт, участники получили ответ.",
+  referee_call_escalated: "Ответа долго нет — вызов передан владельцам и администраторам пространства.",
+  incident_opened: "Инцидент записан и назначен вам.",
+  incident_escalated: "Инцидент передан владельцам и администраторам пространства.",
+  incident_resolved: "Инцидент закрыт, автор получил ответ.",
+  match_paused: "Матч на паузе: результаты, подтверждения и отметки ждут продолжения.",
+  match_resumed: "Матч продолжен.",
 };
 
 const okEn: Record<string, string> = {
@@ -88,6 +94,12 @@ const okEn: Record<string, string> = {
   referee_called: "The referee has been called. The reply arrives as a notification and on the Game Day screen.",
   referee_call_exists: "Your call has already been sent and is waiting for the referee.",
   referee_call_closed: "Call closed; the participants have the reply.",
+  referee_call_escalated: "No answer for a while — the call went to the space's owners and administrators.",
+  incident_opened: "Incident logged and assigned to you.",
+  incident_escalated: "Incident passed to the space's owners and administrators.",
+  incident_resolved: "Incident closed; the reporter has the reply.",
+  match_paused: "Match paused: results, confirmations and check-ins wait until it resumes.",
+  match_resumed: "Match resumed.",
 };
 
 const errorsRu: Record<string, string> = {
@@ -175,6 +187,8 @@ const errorsRu: Record<string, string> = {
   no_venues: "Сначала добавьте площадки турнира.",
   feedback_closed: "Оценить турнир могут игроки его составов в течение 30 дней после завершения.",
   match_closed: "Матч завершён. Чтобы оспорить решённый результат, используйте оспаривание на странице матча.",
+  match_paused: "Матч на паузе у судьи: дождитесь продолжения.",
+  override_reason_required: "Решение расходится с отправленным счётом или закрывает спор: укажите обоснование (от 5 символов).",
 };
 
 const errorsEn: Record<string, string> = {
@@ -262,6 +276,8 @@ const errorsEn: Record<string, string> = {
   no_venues: "Add the tournament's venues first.",
   feedback_closed: "Players on the tournament's rosters can rate it within 30 days of its end.",
   match_closed: "The match is over. To challenge a decided result, use the dispute on the match page.",
+  match_paused: "The referee has paused this match: wait until it resumes.",
+  override_reason_required: "This decision differs from the reported score or settles a dispute: give a reason (5 characters or more).",
 };
 
 const kindsRu: Record<string, string> = {
@@ -310,6 +326,11 @@ const kindsRu: Record<string, string> = {
   match_venue: "Турнир «{tournament}»: ваш матч пройдёт на площадке «{venue}»",
   referee_call: "Турнир «{tournament}»: {side} зовёт судью к матчу",
   referee_call_closed: "Турнир «{tournament}»: судья ответил на ваш вызов",
+  incident_escalated: "Турнир «{tournament}»: инцидент эскалирован — нужно решение",
+  incident_assigned: "Турнир «{tournament}»: вам назначен инцидент",
+  incident_resolved: "Турнир «{tournament}»: ваш инцидент закрыт",
+  match_paused: "Турнир «{tournament}»: судья поставил ваш матч на паузу",
+  match_resumed: "Турнир «{tournament}»: ваш матч продолжен",
 };
 
 const kindsEn: Record<string, string> = {
@@ -358,6 +379,11 @@ const kindsEn: Record<string, string> = {
   match_venue: "“{tournament}”: your match is at venue “{venue}”",
   referee_call: "“{tournament}”: {side} is calling the referee to a match",
   referee_call_closed: "“{tournament}”: the referee answered your call",
+  incident_escalated: "“{tournament}”: an incident was escalated — a decision is needed",
+  incident_assigned: "“{tournament}”: an incident was assigned to you",
+  incident_resolved: "“{tournament}”: your incident was closed",
+  match_paused: "“{tournament}”: the referee paused your match",
+  match_resumed: "“{tournament}”: your match resumed",
 };
 
 export const extRu = {

@@ -141,6 +141,9 @@ export type MatchRow = {
   loser_next_slot: "a" | "b" | null;
   a_void: boolean;
   b_void: boolean;
+  /** Set while a referee holds the match (C-03); results, confirmations, check-ins and no-shows wait. */
+  paused_at?: Date | null;
+  pause_reason?: string;
 };
 
 export async function lockTournament(q: Queryable, id: string): Promise<TournamentRow> {
@@ -1276,6 +1279,7 @@ export async function matchCheckIn(db: Database, user: SessionUser, matchId: str
     const [t] = await q.query<{ status: string }>("select status from tournaments where id = $1", [m.tournament_id]);
     if (t?.status !== "IN_PROGRESS") fail("tournament_not_live");
     if (!m.a_reg || !m.b_reg || !["ready", "in_progress"].includes(m.status)) fail("match_not_ready");
+    if (m.paused_at) fail("match_paused");
     const side = (await regLeaders(q, m.a_reg)).includes(user.id) ? "a" : (await regLeaders(q, m.b_reg)).includes(user.id) ? "b" : null;
     if (!side) fail("not_participant");
     await q.query(`update matches set ${side}_checked_in_at = coalesce(${side}_checked_in_at, now()), updated_at = now() where id = $1`, [m.id]);

@@ -2380,3 +2380,29 @@ button:disabled {
     display: block;
   }
 }
+
+/* Incident queue */
+.incident-list > li.incident {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  border-left: 3px solid var(--line-2);
+}
+.incident-list > li.incident-urgent {
+  border-left-color: var(--bad);
+}
+.incident-list > li.incident-high {
+  border-left-color: var(--warn);
+}
+.incident-head {
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+}
+.incident-overdue {
+  color: var(--warn);
+  font-weight: 700;
+}
+.incident p {
+  margin: 0;
+}

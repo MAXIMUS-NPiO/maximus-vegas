@@ -214,6 +214,8 @@ export async function getMatch(db: Queryable, id: string) {
       a_checked_in_at: Date | null;
       b_checked_in_at: Date | null;
       loser_next_match_id: string | null;
+      paused_at: Date | null;
+      pause_reason: string;
     }
   >(
     `select m.*, t.slug as t_slug, t.name as t_name, t.status as t_status, t.game as t_game, t.org_id, t.format as t_format, t.format_settings as t_settings,

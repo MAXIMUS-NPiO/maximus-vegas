@@ -121,6 +121,7 @@ function EntryCard({ e, detail, lang, username }: { e: GameDayEntry; detail: Awa
             series: detail && detail.bestOf > 1 ? seriesText(detail.bestOf, lang) : undefined,
             score,
             place: e.registration.placement,
+            reason: m?.pause_reason || undefined,
           })}
         </p>
         {e.step.deadline ? (
