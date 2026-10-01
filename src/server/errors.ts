@@ -174,6 +174,9 @@ export const ERROR_CODES = [
   "appeal_closed",
   "appeal_exists",
   "appeal_needs_other_reviewer",
+  // Scouting
+  "filter_limit",
+  "watch_limit",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 

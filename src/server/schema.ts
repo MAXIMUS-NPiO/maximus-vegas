@@ -1234,4 +1234,28 @@ export const migrations: Migration[] = [
       `create index sanction_appeals_open on sanction_appeals(created_at) where status = 'open'`,
     ],
   },
+  {
+    id: 16,
+    name: "scouting",
+    statements: [
+      // Scouting over public profiles: a player's saved search filters and watchlist (both private to them).
+      `create table scout_filters (
+        id uuid primary key default gen_random_uuid(),
+        user_id uuid not null references users(id) on delete cascade,
+        name text not null check (char_length(name) between 2 and 60),
+        query jsonb not null,
+        created_at timestamptz not null default now()
+      )`,
+      `create unique index scout_filters_name on scout_filters(user_id, lower(name))`,
+      `create table scout_watch (
+        user_id uuid not null references users(id) on delete cascade,
+        player_id uuid not null references users(id) on delete cascade,
+        note text not null default '' check (char_length(note) <= 200),
+        created_at timestamptz not null default now(),
+        primary key (user_id, player_id),
+        check (user_id <> player_id)
+      )`,
+      `create index scout_watch_player on scout_watch(player_id)`,
+    ],
+  },
 ];

@@ -257,6 +257,14 @@ assert.ok(lfgApp && hostView.includes("e2e: me too"), "the host sees the answer"
 assert.equal((await players[1].post("finder.decide", { application: lfgApp, accept: "1", back: "/ru/finder" })).ok, "finder_accepted");
 log("team finder: LFT post public, LFG answer sent once and accepted by the host");
 
+// ---------- Scouting ----------
+assert.equal((await players[0].post("scout.watch", { username: players[1].username, back: "/ru/scouting" })).ok, "watch_added");
+assert.equal((await players[0].post("scout.save", { name: `e2e ${RUN}`, game: "cs2", lft: "1", back: "/ru/scouting?game=cs2&lft=1" })).ok, "filter_saved");
+const scoutPage = (await players[0].get("/ru/scouting?game=cs2&lft=1")).text;
+assert.ok(scoutPage.includes(`e2e ${RUN}`) && scoutPage.includes(players[1].username), "saved filter and watchlist survive a reload");
+assert.ok((await guest.get("/ru/scouting")).text.includes("signin"), "scouting is for signed-in players");
+log("scouting: watchlist and saved filter survive a reload");
+
 const passes = await playOut(players.slice(0, 4));
 const tPage = (await guest.get(`/ru/tournaments/${tSlug}`)).text;
 assert.ok(tPage.includes("Завершён"), "tournament completed");
