@@ -10,6 +10,7 @@ import { viewer } from "@/server/viewer.ts";
 import { ACTIVE_DAYS, isEmptyQuery, myFilters, parseScoutQuery, SCOUT_LIMIT, scoutParams, scoutPlayers, watchlist } from "@/server/scouting.ts";
 import { ActionForm, Badge, DbDown, Empty, Field, Flash, PageHead, SignInPrompt, type SearchParams } from "@/components/ui";
 import { LocalTime } from "@/components/time";
+import { FeatureNotice } from "@/components/feature-notice";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
   const { lang } = await params;
@@ -47,6 +48,7 @@ export default async function Scouting({ params, searchParams }: { params: Promi
     <div className="container page">
       <PageHead title={x.title} lead={x.lead} />
       <Flash lang={lang} params={sp} />
+      <FeatureNotice db={db} lang={lang} feature="scouting" />
       <form method="get" action={`/${lang}/scouting`} className="card form-card scout-filters">
         <div className="form-grid">
           <Field label={x.game}>

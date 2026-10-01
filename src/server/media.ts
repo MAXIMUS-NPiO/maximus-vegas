@@ -6,6 +6,7 @@
 import { createHash } from "node:crypto";
 import type { Queryable } from "./db.ts";
 import { fail } from "./errors.ts";
+import { hasSection } from "./staff-roles.ts";
 
 export type MediaKind = "team_logo" | "team_banner" | "tournament_banner" | "evidence" | "sponsor_logo";
 
@@ -60,7 +61,7 @@ export const mediaUrl = (id: string | null | undefined) => (id ? `/api/media/${i
 /** Whether `viewerId` may see an evidence image: a participant of the disputed match or its staff. */
 export async function canSeeEvidence(q: Queryable, mediaId: string, viewer: { id: string; roles: string[] } | null): Promise<boolean> {
   if (!viewer) return false;
-  if (viewer.roles.includes("admin") || viewer.roles.includes("referee") || viewer.roles.includes("support")) return true;
+  if (hasSection(viewer.roles, "disputes")) return true;
   const [row] = await q.query(
     `select 1 from disputes d join matches m on m.id = d.match_id join tournaments t on t.id = m.tournament_id
       where d.evidence_media_id = $1 and (

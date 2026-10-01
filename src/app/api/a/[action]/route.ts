@@ -30,10 +30,13 @@ import * as transfers from "@/server/transfers.ts";
 import * as clans from "@/server/clans.ts";
 import * as partner from "@/server/partner.ts";
 import * as venues from "@/server/venues.ts";
+import * as messages from "@/server/messages.ts";
+import * as system from "@/server/system.ts";
 import { storeUpload } from "@/server/media.ts";
 import { drainOutbox, mailConfigured } from "@/server/mail.ts";
 import { fail } from "@/server/errors.ts";
-import { requireUser, isStaff } from "@/server/access.ts";
+import { requireSection, requireUser, isStaff } from "@/server/access.ts";
+import type { Section } from "@/server/staff-roles.ts";
 import {
   clearDraftCookie,
   clearSessionCookie,
@@ -58,10 +61,14 @@ const u = (c: Ctx) => requireUser(c.user);
 const matchPath = (c: Ctx, id: string) => `/${c.lang}/matches/${id}`;
 /** Actions sent from the Game Day screen return there; from anywhere else they open the match. */
 const matchOrGameDay = (c: Ctx, id: string) => (c.back.startsWith(`/${c.lang}/gameday`) ? c.back : matchPath(c, id));
-/** Control-centre actions: platform staff with a second factor verified in this session. */
-const staff = async (c: Ctx) => {
+/**
+ * Control-centre actions: platform staff with a second factor verified in this session, holding the
+ * action's section (MV-STAFF-1). Server functions check their section again.
+ */
+const staff = async (c: Ctx, section?: Section) => {
   const user = u(c);
-  if (!isStaff(user) && !user.roles.includes("referee")) fail("forbidden");
+  if (!isStaff(user)) fail("forbidden");
+  if (section) requireSection(user, section);
   await mfa.requireStaffMfa(c.db, user);
   return user;
 };
@@ -417,7 +424,7 @@ const handlers: Record<string, Handler> = {
     return { ok: "saved" };
   },
   "sponsor.attach": async (c) => {
-    const user = await staff(c);
+    const user = await staff(c, "sponsors");
     await sponsors.attachSponsor(c.db, user, idOf(c.form.tournament), idOf(c.form.sponsor), c.form.attach === "1");
     return { ok: "saved" };
   },
@@ -687,7 +694,7 @@ const handlers: Record<string, Handler> = {
     return { ok: "dispute_opened" };
   },
   "challenge.resolve": async (c) => {
-    const user = await staff(c);
+    const user = await staff(c, "challenges");
     await challenges.resolveChallenge(c.db, user, idOf(c.form.challenge), c.form.winner, c.form.note);
     return { ok: "saved" };
   },
@@ -768,7 +775,7 @@ const handlers: Record<string, Handler> = {
     return { ok: "transfer_disputed" };
   },
   "transfer.decide": async (c) => {
-    const user = await staff(c);
+    const user = await staff(c, "conduct");
     mfa.requireStepUp(user);
     const reverse = c.form.reverse === "1";
     await transfers.decideTransferDispute(c.db, user, c.form.dispute, reverse, c.form.decision);
@@ -789,7 +796,7 @@ const handlers: Record<string, Handler> = {
     return { ok: "venue_submitted" };
   },
   "venue.review": async (c) => {
-    const user = await staff(c);
+    const user = await staff(c, "venues");
     mfa.requireStepUp(user);
     await venues.reviewVenue(c.db, user, c.form.venue, c.form.decision, c.form.note);
     return { to: `/${c.lang}/admin?tab=venues`, ok: "venue_reviewed" };
@@ -920,7 +927,7 @@ const handlers: Record<string, Handler> = {
     return { ok: "war_disputed" };
   },
   "war.decide": async (c) => {
-    const user = await staff(c);
+    const user = await staff(c, "conduct");
     mfa.requireStepUp(user);
     await clans.decideWar(c.db, user, c.form.war, c.form.outcome, c.form.decision);
     return { to: conductAdmin(c), ok: "war_decided" };
@@ -936,15 +943,15 @@ const handlers: Record<string, Handler> = {
     return { to: `/${c.lang}/conduct`, ok: "appeal_filed" };
   },
   "conduct.take": async (c) => {
-    await conduct.takeReport(c.db, await staff(c), c.form.report);
+    await conduct.takeReport(c.db, await staff(c, "conduct"), c.form.report);
     return { to: conductAdmin(c), ok: "saved" };
   },
   "conduct.dismiss": async (c) => {
-    await conduct.dismissReport(c.db, await staff(c), c.form.report, c.form.reason);
+    await conduct.dismissReport(c.db, await staff(c, "conduct"), c.form.report, c.form.reason);
     return { to: conductAdmin(c), ok: "report_dismissed" };
   },
   "conduct.sanction": async (c) => {
-    const user = await staff(c);
+    const user = await staff(c, "conduct");
     mfa.requireStepUp(user);
     await conduct.issueSanction(c.db, user, {
       username: c.form.username,
@@ -961,19 +968,19 @@ const handlers: Record<string, Handler> = {
     return { to: conductAdmin(c), ok: "sanction_issued" };
   },
   "conduct.revoke": async (c) => {
-    const user = await staff(c);
+    const user = await staff(c, "conduct");
     mfa.requireStepUp(user);
     await conduct.revokeSanction(c.db, user, c.form.sanction, c.form.reason);
     return { to: conductAdmin(c), ok: "sanction_revoked" };
   },
   "conduct.decide": async (c) => {
-    const user = await staff(c);
+    const user = await staff(c, "conduct");
     mfa.requireStepUp(user);
     await conduct.decideAppeal(c.db, user, c.form.appeal, c.form.grant === "1", c.form.decision);
     return { to: conductAdmin(c), ok: "appeal_decided" };
   },
   "conduct.rule": async (c) => {
-    const user = await staff(c);
+    const user = await staff(c, "conduct");
     mfa.requireStepUp(user);
     const r = await conduct.publishRule(c.db, user, {
       code: c.form.code,
@@ -1001,47 +1008,47 @@ const handlers: Record<string, Handler> = {
     return { to: url, external: true };
   },
   "billing.decide": async (c) => {
-    const user = await staff(c);
+    const user = await staff(c, "memberships");
     await billing.decideApplication(c.db, user, idOf(c.form.application), c.form.status, c.form.note, c.lang);
     return { ok: "saved" };
   },
   "billing.invoice": async (c) => {
-    const user = await staff(c);
+    const user = await staff(c, "payments");
     await billing.issueInvoice(c.db, user, idOf(c.form.application), c.lang);
     return { ok: "invoice_issued" };
   },
   "billing.void": async (c) => {
-    const user = await staff(c);
+    const user = await staff(c, "payments");
     await billing.voidInvoice(c.db, user, idOf(c.form.invoice), c.form.reason);
     return { ok: "saved" };
   },
   "billing.refund": async (c) => {
-    const user = await staff(c);
+    const user = await staff(c, "payments");
     await billing.refundInvoice(c.db, user, idOf(c.form.invoice), c.form.amount);
     return { ok: "refund_requested" };
   },
   "billing.reconcile": async (c) => {
-    await staff(c);
+    await staff(c, "payments");
     await billing.reconcileAttempt(c.db, idOf(c.form.attempt), "admin");
     return { ok: "saved" };
   },
   "offer.create": async (c) => {
-    const user = await staff(c);
+    const user = await staff(c, "offers");
     await billing.createOfferVersion(c.db, user, c.form);
     return { ok: "saved" };
   },
   "offer.approve": async (c) => {
-    const user = await staff(c);
+    const user = await staff(c, "offers");
     await billing.approveOffer(c.db, user, idOf(c.form.offer), c.form.approvalRef);
     return { ok: "saved" };
   },
   "offer.retire": async (c) => {
-    const user = await staff(c);
+    const user = await staff(c, "offers");
     await billing.retireOffer(c.db, user, idOf(c.form.offer));
     return { ok: "saved" };
   },
   "membership.set": async (c) => {
-    const user = await staff(c);
+    const user = await staff(c, "memberships");
     await billing.setMembershipState(c.db, user, idOf(c.form.membership), { status: c.form.status, endsAt: c.form.endsAt, reason: c.form.reason });
     return { ok: "saved" };
   },
@@ -1077,22 +1084,59 @@ const handlers: Record<string, Handler> = {
     return { ok: "saved" };
   },
   "admin.application": async (c) => {
-    const user = await staff(c);
+    const user = await staff(c, "applications");
     await admin.setApplicationStatus(c.db, user, idOf(c.form.application), c.form.status);
     return { ok: "saved" };
   },
   "sponsor.create": async (c) => {
-    const user = await staff(c);
+    const user = await staff(c, "sponsors");
     await sponsors.createSponsor(c.db, user, { name: c.form.name, tier: c.form.tier, website: c.form.website, logo: c.files.logo });
     return { ok: "saved" };
   },
   "sponsor.toggle": async (c) => {
-    const user = await staff(c);
+    const user = await staff(c, "sponsors");
     await sponsors.setSponsorActive(c.db, user, idOf(c.form.sponsor), c.form.active === "1");
     return { ok: "saved" };
   },
+  // ---------- Portal-team messages and system controls (MV-STAFF-1) ----------
+  "message.create": async (c) => {
+    const user = await staff(c, "messages");
+    await messages.createMessage(c.db, user, c.form);
+    return { ok: "message_saved" };
+  },
+  "message.update": async (c) => {
+    const user = await staff(c, "messages");
+    await messages.updateMessage(c.db, user, idOf(c.form.message), c.form);
+    return { ok: "message_saved" };
+  },
+  "message.copy": async (c) => {
+    const user = await staff(c, "messages");
+    await messages.copyMessage(c.db, user, idOf(c.form.message), c.form.as);
+    return { ok: "message_saved" };
+  },
+  "message.delete": async (c) => {
+    const user = await staff(c, "messages");
+    await messages.deleteMessage(c.db, user, idOf(c.form.message));
+    return { ok: "message_deleted" };
+  },
+  "message.send": async (c) => {
+    const user = await staff(c, "messages");
+    await messages.sendMessage(c.db, user, idOf(c.form.message));
+    return { ok: "message_sent" };
+  },
+  "system.flag": async (c) => {
+    const user = await staff(c, "system");
+    await system.setFlag(c.db, user, c.form.key, c.form.on === "1", c.form.note);
+    return { ok: "flag_saved" };
+  },
+  "system.maintenance": async (c) => {
+    const user = await staff(c, "system");
+    const on = c.form.on === "1";
+    await system.setFlag(c.db, user, "maintenance", on, c.form.note);
+    return { ok: on ? "maintenance_on" : "maintenance_off" };
+  },
   "outbox.drain": async (c) => {
-    await staff(c);
+    await staff(c, "outbox");
     const r = await drainOutbox(c.db, 25);
     return { ok: r.configured ? "outbox_drained" : "email_not_configured" };
   },
@@ -1217,6 +1261,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
   try {
     // A suspension sanction keeps the account signed in to read and appeal; every other action stops here.
     if (c.user?.restricted && !RESTRICTED_OK.has(action)) fail("account_restricted");
+    // Maintenance and feature switches (MV-STAFF-1): refused before anything changes; staff keep working.
+    await system.gate(c.db, action, c.user);
     const result = await handler(c);
     const r = typeof result === "string" ? { to: result } : result ?? {};
     if (r.external) return redirect(r.to!, r.cookie);

@@ -5,7 +5,7 @@
 import type { Database, Queryable } from "./db.ts";
 import type { SessionUser } from "./auth.ts";
 import { audit } from "./audit.ts";
-import { isAdmin } from "./access.ts";
+import { requireSection } from "./access.ts";
 import { fail } from "./errors.ts";
 import { storeUpload } from "./media.ts";
 import * as v from "./validate.ts";
@@ -13,7 +13,7 @@ import * as v from "./validate.ts";
 export const SPONSOR_TIERS = ["title", "gold", "silver", "partner"] as const;
 
 export async function createSponsor(db: Database, user: SessionUser, input: { name: unknown; tier: unknown; website: unknown; logo?: File | null }) {
-  if (!isAdmin(user)) fail("forbidden");
+  requireSection(user, "sponsors");
   const name = v.displayName(input.name, 80);
   const tier = (SPONSOR_TIERS as readonly string[]).includes(String(input.tier)) ? String(input.tier) : fail("invalid_input");
   const website = v.optionalUrl(input.website);
@@ -29,7 +29,7 @@ export async function createSponsor(db: Database, user: SessionUser, input: { na
 }
 
 export async function setSponsorActive(db: Database, user: SessionUser, id: string, active: boolean) {
-  if (!isAdmin(user)) fail("forbidden");
+  requireSection(user, "sponsors");
   await db.tx(async (q) => {
     const rows = await q.query("update sponsors set active = $2 where id = $1 returning id", [id, active]);
     if (!rows.length) fail("not_found");
@@ -38,7 +38,7 @@ export async function setSponsorActive(db: Database, user: SessionUser, id: stri
 }
 
 export async function attachSponsor(db: Database, user: SessionUser, tournamentId: string, sponsorId: string, attach: boolean) {
-  if (!isAdmin(user)) fail("forbidden");
+  requireSection(user, "sponsors");
   await db.tx(async (q) => {
     const [t] = await q.query("select 1 from tournaments where id = $1", [tournamentId]);
     const [s] = await q.query("select 1 from sponsors where id = $1", [sponsorId]);

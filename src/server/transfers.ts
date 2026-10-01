@@ -13,7 +13,7 @@
 import type { Database, Queryable } from "./db.ts";
 import type { SessionUser } from "./auth.ts";
 import { audit } from "./audit.ts";
-import { isStaff, notify } from "./access.ts";
+import { notify, requireSection, staffWith } from "./access.ts";
 import { fail } from "./errors.ts";
 import * as v from "./validate.ts";
 
@@ -188,8 +188,7 @@ export async function disputeTransfer(db: Database, user: SessionUser, transferI
     const [open] = await q.query("select 1 from transfer_disputes where transfer_id = $1 and status = 'open'", [t.id]);
     if (open) fail("transfer_dispute_exists");
     const [row] = await q.query<{ id: string }>("insert into transfer_disputes (transfer_id, opened_by, reason) values ($1, $2, $3) returning id", [t.id, user.id, reason]);
-    const staff = await q.query<{ user_id: string }>("select distinct user_id from user_roles where role in ('admin','support')");
-    await notify(q, staff.map((s) => s.user_id), "transfer_disputed", { conductAdmin: "1" });
+    await notify(q, await staffWith(q, "conduct"), "transfer_disputed", { conductAdmin: "1" });
     await audit(q, { actorId: user.id, action: "transfer.disputed", entity: "team", entityId: t.to_team, data: { transfer: t.id, dispute: row.id } });
     return { id: row.id };
   });
@@ -197,7 +196,7 @@ export async function disputeTransfer(db: Database, user: SessionUser, transferI
 
 /** Staff uphold the transfer or reverse it: the player returns to the releasing team when nothing blocks it. */
 export async function decideTransferDispute(db: Database, staff: SessionUser, disputeId: unknown, reverse: boolean, decisionInput: unknown): Promise<{ changed: boolean }> {
-  if (!isStaff(staff)) fail("forbidden");
+  requireSection(staff, "conduct");
   if (!isId(disputeId)) fail("not_found");
   const decision = v.clean(decisionInput, 2000);
   if (decision.length < 20) fail("invalid_input");

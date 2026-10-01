@@ -9,7 +9,7 @@
 import type { Database, Queryable } from "./db.ts";
 import type { SessionUser } from "./auth.ts";
 import { audit } from "./audit.ts";
-import { isStaff, notify } from "./access.ts";
+import { notify, requireSection, staffWith } from "./access.ts";
 import { fail, isUniqueViolation } from "./errors.ts";
 import { isGame } from "../lib/games.ts";
 import { grantXp, XP } from "./progression.ts";
@@ -170,15 +170,14 @@ export async function disputeChallenge(db: Database, user: SessionUser, id: stri
     if (c.status !== "reported") fail("challenge_closed");
     if (c.reported_by === user.id) fail("own_result");
     await q.query("update challenges set status = 'disputed', resolution = $2 where id = $1", [c.id, reason]);
-    const staff = await q.query<{ user_id: string }>("select user_id from user_roles where role in ('admin','support','referee')");
-    await notify(q, staff.map((s) => s.user_id), "challenge_disputed", { challengeId: c.id });
+    await notify(q, await staffWith(q, "challenges"), "challenge_disputed", { challengeId: c.id });
     await audit(q, { actorId: user.id, action: "challenge.disputed", entity: "challenge", entityId: c.id });
   });
 }
 
 /** Platform staff decide a disputed challenge: pick the winner, or void it. */
 export async function resolveChallenge(db: Database, user: SessionUser, id: string, winnerInput: unknown, noteInput: unknown) {
-  if (!isStaff(user) && !user.roles.includes("referee")) fail("forbidden");
+  requireSection(user, "challenges");
   const note = v.clean(noteInput, 600);
   if (note.length < 5) fail("invalid_input");
   await db.tx(async (q) => {

@@ -18,7 +18,7 @@ import { createHash } from "node:crypto";
 import type { Database, Queryable } from "./db.ts";
 import type { SessionUser } from "./auth.ts";
 import { audit, canonical } from "./audit.ts";
-import { isStaff, notify } from "./access.ts";
+import { notify, requireSection, staffWith } from "./access.ts";
 import { fail } from "./errors.ts";
 import { removeFromQueue } from "./quickmatch.ts";
 import * as v from "./validate.ts";
@@ -93,7 +93,7 @@ const optionalInt = (x: unknown): number | null => {
 };
 
 async function staffIds(q: Queryable): Promise<string[]> {
-  return (await q.query<{ user_id: string }>("select distinct user_id from user_roles where role in ('admin','support')")).map((r) => r.user_id);
+  return staffWith(q, "conduct");
 }
 
 export type RuleRow = { code: string; version: number; title_ru: string; title_en: string; body_ru: string; body_en: string; source_ru: string; source_en: string; created_at: Date };
@@ -144,7 +144,7 @@ export async function fileReport(
 
 /** Staff take a report into review (assigned to themselves). */
 export async function takeReport(db: Database, staff: SessionUser, reportId: unknown): Promise<{ changed: boolean }> {
-  if (!isStaff(staff)) fail("forbidden");
+  requireSection(staff, "conduct");
   if (!isId(reportId)) fail("not_found");
   return db.tx(async (q) => {
     const [r] = await q.query<{ status: string; assigned_to: string | null }>("select status, assigned_to from conduct_reports where id = $1 for update", [reportId]);
@@ -158,7 +158,7 @@ export async function takeReport(db: Database, staff: SessionUser, reportId: unk
 
 /** Staff close a report without a sanction; a protective hold opened for it is lifted. */
 export async function dismissReport(db: Database, staff: SessionUser, reportId: unknown, reasonInput: unknown): Promise<{ changed: boolean }> {
-  if (!isStaff(staff)) fail("forbidden");
+  requireSection(staff, "conduct");
   if (!isId(reportId)) fail("not_found");
   const reason = v.clean(reasonInput, 1000);
   if (reason.length < 10) fail("invalid_input");
@@ -200,7 +200,7 @@ export type IssueInput = {
 
 /** Staff issue a sanction under MV-CONDUCT-1; a final decision on a report closes it and lifts its protective hold. */
 export async function issueSanction(db: Database, staff: SessionUser, input: IssueInput): Promise<{ id: string }> {
-  if (!isStaff(staff)) fail("forbidden");
+  requireSection(staff, "conduct");
   const username = v.username(input.username);
   const kind = (SANCTION_KINDS as readonly string[]).includes(String(input.kind)) ? (input.kind as SanctionKind) : fail("invalid_input");
   const confidence = (CONFIDENCE as readonly string[]).includes(String(input.confidence)) ? (input.confidence as Confidence) : fail("invalid_input");
@@ -259,7 +259,7 @@ export async function issueSanction(db: Database, staff: SessionUser, input: Iss
 
 /** Staff revoke a sanction they find wrong (a correction); the reason is kept with it. */
 export async function revokeSanction(db: Database, staff: SessionUser, sanctionId: unknown, reasonInput: unknown): Promise<{ changed: boolean }> {
-  if (!isStaff(staff)) fail("forbidden");
+  requireSection(staff, "conduct");
   if (!isId(sanctionId)) fail("not_found");
   const reason = v.clean(reasonInput, 1000);
   if (reason.length < 10) fail("invalid_input");
@@ -303,7 +303,7 @@ export async function fileAppeal(db: Database, user: SessionUser, sanctionId: un
 
 /** A staff member other than the issuer upholds the sanction or grants the appeal (the sanction is revoked). */
 export async function decideAppeal(db: Database, staff: SessionUser, appealId: unknown, grant: boolean, decisionInput: unknown): Promise<{ changed: boolean }> {
-  if (!isStaff(staff)) fail("forbidden");
+  requireSection(staff, "conduct");
   if (!isId(appealId)) fail("not_found");
   const decision = v.clean(decisionInput, 2000);
   if (decision.length < 20) fail("invalid_input");

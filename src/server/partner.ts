@@ -25,6 +25,7 @@ import { seal, unseal } from "./secret-box.ts";
 import { siteOrigin } from "../lib/site.ts";
 import { signedHeaders } from "../lib/webhook-signature.ts";
 import * as v from "./validate.ts";
+import { featureEnabled } from "./system.ts";
 
 export const KEY_LIMIT = 10;
 export const ENDPOINT_LIMIT = 5;
@@ -530,9 +531,11 @@ async function deliverOne(db: Database, d: Due, send: typeof fetch, result: { de
 
 /** Collects new events and sends what is due; run after actions and by the daily maintenance. */
 export async function pumpWebhooks(db: Database) {
+  // Integrations switched off (MV-STAFF-1): events stay behind the cursor and go out after switching back on.
+  if (!(await featureEnabled(db, "integrations"))) return { created: 0, delivered: 0, retrying: 0, failed: 0, paused: true };
   const created = await collectEvents(db);
   const sent = await deliverWebhooks(db);
-  return { created, ...sent };
+  return { created, ...sent, paused: false };
 }
 
 /** Old rate-limit windows are kept for a day. */

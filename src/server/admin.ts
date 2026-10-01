@@ -1,7 +1,8 @@
 import type { Database } from "./db.ts";
 import type { SessionUser } from "./auth.ts";
 import { audit } from "./audit.ts";
-import { isAdmin, isStaff } from "./access.ts";
+import { isAdmin, requireSection } from "./access.ts";
+import { isStaffRole } from "./staff-roles.ts";
 import { fail } from "./errors.ts";
 import { sha256 } from "./auth.ts";
 import * as v from "./validate.ts";
@@ -79,7 +80,7 @@ async function forward(payload: Record<string, string>) {
 }
 
 export async function setApplicationStatus(db: Database, user: SessionUser, id: string, status: unknown) {
-  if (!isStaff(user)) fail("forbidden");
+  requireSection(user, "applications");
   const next = ["new", "in_review", "closed"].includes(String(status)) ? String(status) : fail("invalid_input");
   await db.tx(async (q) => {
     const rows = await q.query("update applications set status = $2, updated_at = now() where id = $1 returning id", [id, next]);
@@ -90,7 +91,7 @@ export async function setApplicationStatus(db: Database, user: SessionUser, id: 
 
 export async function setRole(db: Database, user: SessionUser, targetId: string, roleInput: unknown, grant: boolean) {
   if (!isAdmin(user)) fail("forbidden");
-  const role = ["admin", "referee", "support"].includes(String(roleInput)) ? String(roleInput) : fail("invalid_input");
+  const role = isStaffRole(roleInput) ? String(roleInput) : fail("invalid_input");
   await db.tx(async (q) => {
     if (!grant && role === "admin") {
       if (targetId === user.id) fail("cannot_modify_self");
@@ -120,4 +121,14 @@ export async function setUserStatus(db: Database, user: SessionUser, targetId: s
 
 export async function markNotificationsRead(db: Database, user: SessionUser) {
   await db.query("update notifications set read_at = now() where user_id = $1 and read_at is null", [user.id]);
+}
+
+/** A staff member opened another person's private data: recorded in the hash-chained log (MV-STAFF-1). */
+export async function recordStaffView(db: Database, staff: SessionUser, userId: string, what: string) {
+  await db.tx((q) => audit(q, { actorId: staff.id, action: "staff.viewed", entity: "user", entityId: userId, data: { what } }));
+}
+
+/** A staff search over accounts (names and emails): the query is recorded, never the results. */
+export async function recordStaffSearch(db: Database, staff: SessionUser, query: string) {
+  await db.tx((q) => audit(q, { actorId: staff.id, action: "staff.searched", entity: "user", entityId: staff.id, data: { q: query } }));
 }

@@ -23,6 +23,7 @@ import { expireStale } from "./challenges.ts";
 import { assertNotRestricted } from "./restrictions.ts";
 import * as v from "./validate.ts";
 import { dodgeMinutes, MAX_PARTY, pairUnits, RATING_START, READY_SECONDS, ratingWindow, type PairReasons, type QueueUnit } from "./matchmaking-rules.ts";
+import { featureEnabled } from "./system.ts";
 
 export const QUEUE_MINUTES = 30;
 const QUICK_MATCH_HOURS = 24;
@@ -391,11 +392,13 @@ export async function pulseQueue(db: Database, game: string): Promise<{ settled:
     [game],
   );
   if (!work?.due && (work?.waiting ?? 0) < 2) return { settled: 0, opened: 0 };
+  // Switched off (MV-STAFF-1): expired checks still settle, but no new pairings open.
+  const pairing = await featureEnabled(db, "quick_match");
   return db.tx(async (q) => {
     await lockGame(q, game);
     await expireStale(q);
     const settled = await settleExpired(q, game);
-    const opened = (await matchQueue(q, game)).length;
+    const opened = pairing ? (await matchQueue(q, game)).length : 0;
     return { settled, opened };
   });
 }

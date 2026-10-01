@@ -15,7 +15,7 @@
 import type { Database, Queryable } from "./db.ts";
 import type { SessionUser } from "./auth.ts";
 import { audit } from "./audit.ts";
-import { isStaff, notify } from "./access.ts";
+import { notify, requireSection, staffWith } from "./access.ts";
 import { fail, isUniqueViolation } from "./errors.ts";
 import { restrictedPlayers } from "./restrictions.ts";
 import { uniqueSlug } from "./teams.ts";
@@ -472,8 +472,7 @@ export async function disputeWar(db: Database, user: SessionUser, warId: unknown
     const mineId = side === "challenger" ? war.challenger_id : war.opponent_id;
     if (war.reported_clan === mineId) fail("war_own_report");
     await q.query("update clan_wars set status = 'disputed', dispute_reason = $2, disputed_by = $3 where id = $1", [war.id, reason, user.id]);
-    const staff = await q.query<{ user_id: string }>("select distinct user_id from user_roles where role in ('admin','support')");
-    await notify(q, staff.map((s) => s.user_id), "clan_war_disputed", { conductAdmin: "1" });
+    await notify(q, await staffWith(q, "conduct"), "clan_war_disputed", { conductAdmin: "1" });
     const reporter = clans.get(war.reported_clan!)!;
     await notify(q, await leaderIds(q, reporter.id), "clan_war_contested", { clan: clans.get(mineId)!.name, clanSlug: reporter.slug });
     await audit(q, { actorId: user.id, action: "war.disputed", entity: "clan_war", entityId: war.id });
@@ -482,7 +481,7 @@ export async function disputeWar(db: Database, user: SessionUser, warId: unknown
 
 /** Portal staff settle a disputed war: a winner, or void (no result, no rating). */
 export async function decideWar(db: Database, staff: SessionUser, warId: unknown, outcomeInput: unknown, decisionInput: unknown): Promise<{ changed: boolean }> {
-  if (!isStaff(staff)) fail("forbidden");
+  requireSection(staff, "conduct");
   const outcome = outcomeInput === "challenger" || outcomeInput === "opponent" || outcomeInput === "void" ? outcomeInput : fail("invalid_input");
   const decision = v.clean(decisionInput, 2000);
   if (decision.length < 20) fail("invalid_input");

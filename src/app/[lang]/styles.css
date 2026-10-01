@@ -2694,3 +2694,18 @@ button:disabled {
 .pass-qr {
   width: 260px;
 }
+
+/* Maintenance mode: shown on every page while it is on. */
+.maintenance-banner {
+  background: var(--warn-soft);
+  border-bottom: 1px solid rgba(217, 164, 65, 0.4);
+  padding: 10px 0;
+  font-size: 14px;
+}
+/* Control centre: a queue's oldest waiting item under its label; long message titles wrap. */
+.queue-age {
+  display: block;
+}
+.msg-title {
+  overflow-wrap: anywhere;
+}

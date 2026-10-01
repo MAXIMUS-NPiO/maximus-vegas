@@ -8,6 +8,7 @@ import { viewer } from "@/server/viewer.ts";
 import { clanOf, listClans, myClanInvites } from "@/server/clans.ts";
 import { ActionForm, Badge, DbDown, Empty, Field, Flash, one, PageHead, SignInPrompt, type SearchParams } from "@/components/ui";
 import { LocalTime } from "@/components/time";
+import { FeatureNotice } from "@/components/feature-notice";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
   const { lang } = await params;
@@ -39,6 +40,7 @@ export default async function Clans({ params, searchParams }: { params: Promise<
         </Link>
       </PageHead>
       <Flash lang={lang} params={sp} />
+      <FeatureNotice db={db} lang={lang} feature="clans" />
       {mine ? (
         <p className="notice">
           {x.yourClan}:{" "}

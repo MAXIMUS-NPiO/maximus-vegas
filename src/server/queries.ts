@@ -1,7 +1,7 @@
 import type { RegField } from "./registration.ts";
 import type { Database, Queryable } from "./db.ts";
 import type { SessionUser } from "./auth.ts";
-import { isAdmin } from "./access.ts";
+import { canStaff } from "./access.ts";
 
 const PUBLIC_STATUSES = ["PUBLISHED", "REGISTRATION_OPEN", "REGISTRATION_CLOSED", "IN_PROGRESS", "PAUSED", "COMPLETED"];
 
@@ -348,7 +348,9 @@ export async function playerProfile(db: Queryable, username: string, viewer: Ses
   }>("select id, username, display_name, country, bio, profile_public, created_at, status, avatar_color from users where username = $1", [username.toLowerCase()]);
   if (!u || u.status === "deleted" || u.status === "pending") return null;
   const self = viewer?.id === u.id;
-  if (!u.profile_public && !self && !isAdmin(viewer)) return { user: u, hidden: true as const };
+  // Staff with the users section may open a private profile; the page marks it and records the view.
+  const staffView = !u.profile_public && !self && canStaff(viewer, "users");
+  if (!u.profile_public && !self && !staffView) return { user: u, hidden: true as const };
   const teams = await db.query<{ slug: string; name: string; game: string }>(
     "select t.slug, t.name, t.game from team_members m join teams t on t.id = m.team_id where m.user_id = $1 order by t.name",
     [u.id],
@@ -384,7 +386,7 @@ export async function playerProfile(db: Queryable, username: string, viewer: Ses
       order by m.completed_at desc limit 50`,
     [u.id],
   );
-  return { user: u, hidden: false as const, teams, accounts, tournaments, history, self };
+  return { user: u, hidden: false as const, teams, accounts, tournaments, history, self, staffView };
 }
 
 export async function listPlayers(db: Queryable, search: string) {
@@ -559,7 +561,8 @@ export async function adminOverview(db: Queryable) {
 }
 
 export async function adminUsers(db: Queryable, search: string) {
-  const q = `%${search.toLowerCase().replace(/[%_]/g, "")}%`;
+  // Wildcards typed by staff are matched literally (usernames contain "_").
+  const q = `%${search.toLowerCase().replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
   return db.query<{ id: string; username: string; email: string; display_name: string; status: string; roles: string[]; created_at: Date }>(
     `select u.id, u.username, u.email, u.display_name, u.status, u.created_at,
             array(select role from user_roles r where r.user_id = u.id order by role) as roles

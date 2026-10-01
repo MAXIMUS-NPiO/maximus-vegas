@@ -14,6 +14,7 @@ import { ActionForm, Badge, DbDown, Field, Flash, PageHead, SignInPrompt, type S
 import { ChallengeList } from "@/components/challenges";
 import { LocalTime } from "@/components/time";
 import { AutoRefresh, SecondsLeft } from "@/components/auto-refresh";
+import { FeatureNotice } from "@/components/feature-notice";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
   const { lang } = await params;
@@ -44,6 +45,7 @@ export default async function QuickMatch({ params, searchParams }: { params: Pro
         </Link>
       </PageHead>
       <Flash lang={lang} params={sp} />
+      <FeatureNotice db={db} lang={lang} feature="quick_match" />
       {dbError || !db ? (
         <DbDown lang={lang} />
       ) : !user ? (

@@ -2,7 +2,8 @@
 // End-to-end check over real HTTP against a running build:
 // public pages → sign-up → onboarding → team → single- and double-elimination, round-robin and Swiss tournaments →
 // a circuit season (points, qualification, close) → results →
-// challenges and quick match → objectives → membership application → staff second factor (with OWNER_CODE).
+// challenges and quick match → objectives → membership application → staff second factor, roles, messages,
+// switches and maintenance (with OWNER_CODE).
 // Usage: BASE=http://127.0.0.1:3100 [OWNER_CODE=…] node scripts/e2e.mjs   (creates uniquely named test records)
 // Never point it at production: it creates accounts and records.
 import assert from "node:assert/strict";
@@ -738,7 +739,7 @@ if (process.env.OWNER_CODE) {
   assert.ok(/[A-Z2-7]{5}-[A-Z2-7]{5}/.test(codes), "recovery codes shown once");
   await org.post("mfa.codes_saved", {});
   assert.ok(!/[A-Z2-7]{5}-[A-Z2-7]{5}<\/li>/.test((await org.get("/ru/admin/security")).text), "recovery codes are not shown again");
-  for (const tab of ["overview", "users", "conduct", "memberships", "offers", "payments", "outbox", "tournaments", "sponsors", "security", "audit"]) {
+  for (const tab of ["overview", "users", "disputes", "challenges", "conduct", "applications", "venues", "memberships", "offers", "payments", "outbox", "messages", "tournaments", "sponsors", "system", "security", "audit"]) {
     const r = await org.get(`/ru/admin?tab=${tab}`);
     assert.equal(r.status, 200, `admin tab ${tab}`);
   }
@@ -807,5 +808,69 @@ if (process.env.OWNER_CODE) {
   assert.equal((await org.post("pass.admit", { token: passToken, back: `/ru/pass/${passToken}` })).e, "pass_used", "a reused QR is refused");
   assert.ok((await org.get(venuesPath)).text.includes("уже использован"), "the refused scan is in the venue's log");
   log("venues: a draft is hidden, staff confirm it, the catalog lists it; a guest pass shows a QR, admits once; a reuse and an outsider are refused");
+
+  // ---------- Staff roles: a marketing role sees only its sections; messages respect consent and the frequency cap ----------
+  const usersTab = (await org.get(`/ru/admin?tab=users&q=${b.username}`)).text;
+  const bId = uuidAfter(usersTab.slice(usersTab.indexOf(b.username)), "user");
+  assert.ok(bId, "the player is found in the users tab");
+  assert.equal((await org.post("admin.role", { user: bId, role: "marketing", grant: "1", back: "/ru/admin?tab=users" })).ok, "saved");
+  assert.equal((await b.post("mfa.start", { back: "/ru/admin/security" })).path, "/ru/admin/security");
+  const bSecret = /<code class="mono secret">([A-Z2-7 ]+)<\/code>/.exec((await b.get("/ru/admin/security")).text)?.[1];
+  assert.ok(bSecret, "the new staff member enrols a second factor");
+  assert.equal((await b.post("mfa.confirm", { code: totp(bSecret), back: "/ru/admin/security" })).ok, "mfa_enrolled");
+  await b.post("mfa.codes_saved", {});
+  const bAdmin = (await b.get("/ru/admin")).text;
+  assert.ok(bAdmin.includes("tab=messages") && bAdmin.includes("tab=sponsors"), "marketing sees its sections");
+  for (const hidden of ["tab=payments", "tab=system", "tab=conduct", "tab=users", "tab=audit"]) assert.ok(!bAdmin.includes(hidden), `marketing does not see ${hidden}`);
+  assert.ok(!(await b.get("/ru/admin?tab=payments")).text.includes("Оплаты выключены"), "a foreign tab falls back to the overview");
+  assert.equal((await b.post("venue.review", { venue: venueId, decision: "suspend", note: "e2e: не должно пройти" })).e, "forbidden", "the server checks the section");
+  assert.equal((await b.post("system.flag", { key: "clans", on: "0" })).e, "forbidden");
+  assert.equal((await b.post("message.create", { kind: "operational", title: "Работы", body: "e2e", audience: "all", template: "0" })).e, "message_kind");
+  // Recipients: c3 agreed to news, the newcomer did not; both are in the segment's country.
+  assert.equal((await c3.post("account.marketing", { optIn: "1", back: "/ru/settings" })).ok, "saved");
+  assert.equal((await c3.post("account.profile", { displayName: `c3 ${RUN}`, country: "", bio: "", countryCode: "IS", back: "/ru/settings" })).ok, "saved");
+  assert.equal((await newcomer.post("account.country", { countryCode: "IS", back: "/ru/settings" })).ok, "saved");
+  const sentIds = [];
+  for (const n of [1, 2, 3]) {
+    const title = `E2E анонс ${n} ${RUN}`;
+    const made = await b.post("message.create", { kind: "marketing", title, body: `Текст анонса ${n}.`, audience: "all", country: "IS", template: "0", back: "/ru/admin?tab=messages" });
+    assert.equal(made.ok, "message_saved", made.location);
+    const tabHtml = (await b.get("/ru/admin?tab=messages")).text;
+    const id = uuidAfter(tabHtml.slice(tabHtml.indexOf(title)), "message");
+    assert.ok(id, `draft ${n} listed`);
+    assert.equal((await b.post("message.send", { message: id, back: "/ru/admin?tab=messages" })).ok, "message_sent");
+    sentIds.push(id);
+  }
+  assert.equal((await b.post("message.send", { message: sentIds[0], back: "/ru/admin?tab=messages" })).e, "message_state", "a message is sent once");
+  const inbox = (await c3.get("/ru/notifications")).text;
+  assert.ok(inbox.includes(`E2E анонс 1 ${RUN}`) && inbox.includes(`E2E анонс 2 ${RUN}`), "two marketing messages delivered");
+  assert.ok(!inbox.includes(`E2E анонс 3 ${RUN}`), "the third in a week is held by the frequency cap");
+  const opened = await c3.get(`/ru/messages/${sentIds[0]}`);
+  assert.ok(opened.status === 200 && opened.text.includes("Текст анонса 1.") && opened.text.includes("согласились получать новости"), "the message page with the consent note");
+  assert.equal((await newcomer.get(`/ru/messages/${sentIds[0]}`)).status, 404, "an account without consent did not receive it");
+  const statsTab = (await b.get("/ru/admin?tab=messages")).text;
+  assert.ok(statsTab.includes("лимит частоты") && statsTab.includes("без согласия") && statsTab.includes("открыли: 1"), "delivery statuses and openings are counted");
+  log("staff roles: a marketing role sees only its tabs and is refused elsewhere by the server; marketing messages reach consenting accounts, two a week at most, and openings are counted");
+
+  // ---------- Feature switch, maintenance and a staff view of a private profile ----------
+  assert.equal((await org.post("system.flag", { key: "challenges", on: "0", note: "e2e" })).ok, "flag_saved");
+  assert.equal((await c3.post("challenge.create", { opponent: a.username, game: "cs2", message: "" })).e, "feature_disabled");
+  // Pages read the switch through a one-second cache.
+  await new Promise((r) => setTimeout(r, 1200));
+  assert.ok((await c3.get("/ru/challenges")).text.includes("временно выключила"), "the page says the feature is off");
+  assert.equal((await org.post("system.flag", { key: "challenges", on: "1" })).ok, "flag_saved");
+  assert.equal((await org.post("system.maintenance", { on: "1", note: `E2E работы ${RUN}` })).ok, "maintenance_on");
+  await new Promise((r) => setTimeout(r, 1200));
+  assert.ok((await guest.get("/ru")).text.includes(`E2E работы ${RUN}`), "every page shows the maintenance banner");
+  assert.equal((await c3.post("account.marketing", { optIn: "0", back: "/ru/settings" })).e, "maintenance", "actions wait for the end of maintenance");
+  assert.equal((await org.post("system.maintenance", { on: "0" })).ok, "maintenance_off");
+  await new Promise((r) => setTimeout(r, 1200));
+  assert.ok(!(await guest.get("/ru")).text.includes(`E2E работы ${RUN}`));
+  const systemTab = (await org.get("/ru/admin?tab=system")).text;
+  assert.ok(systemTab.includes("Состояние системы") && systemTab.includes("Вызовы 1v1"), "the status panel and switches render");
+  assert.ok((await org.get(`/ru/players/${c3.username}`)).text.includes("вы видите его как сотрудник портала"), "a private profile opened by staff is marked");
+  assert.ok((await b.get(`/ru/players/${c3.username}`)).text.includes("Игрок скрыл профиль"), "the marketing role does not open private profiles");
+  assert.ok((await org.get("/ru/admin?tab=audit")).text.includes("staff.viewed"), "the view is in the log");
+  log("switches: an action of a switched-off feature is refused and the page says so; maintenance shows a banner and holds actions; a staff view of a private profile is marked and logged");
 }
 console.log(`\nE2E OK against ${BASE} (run ${RUN})`);
