@@ -117,6 +117,11 @@ export const ERROR_CODES = [
   "not_in_division",
   "not_qualified",
   "regeneration_blocked",
+  // Stages, groups and gauntlet
+  "invalid_stage_settings",
+  "gauntlet_limit",
+  "stage_locked",
+  "stage_too_few",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 

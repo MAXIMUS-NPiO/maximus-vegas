@@ -732,4 +732,42 @@ export const migrations: Migration[] = [
       `create index tournaments_circuit on tournaments(circuit_id) where circuit_id is not null`,
     ],
   },
+  {
+    id: 7,
+    name: "stages_groups_gauntlet",
+    statements: [
+      // Groups and gauntlet formats; a main stage (1) and a playoff (2). Checks are replaced by definition.
+      `do $$ declare r record; begin
+         for r in select conname from pg_constraint
+                   where conrelid = 'tournaments'::regclass and contype = 'c' and pg_get_constraintdef(oid) like '%format%' loop
+           execute format('alter table tournaments drop constraint %I', r.conname);
+         end loop;
+         for r in select conname from pg_constraint
+                   where conrelid = 'matches'::regclass and contype = 'c' and pg_get_constraintdef(oid) like '%bracket%' loop
+           execute format('alter table matches drop constraint %I', r.conname);
+         end loop;
+       end $$`,
+      `alter table tournaments add constraint tournaments_format_check check (format in ('single_elimination','double_elimination','leaderboard','round_robin','swiss','groups','gauntlet'))`,
+      `alter table matches add constraint matches_bracket_check check (bracket in ('W','L','GF','RR','SW','G'))`,
+      `alter table tournaments add column stage int not null default 1 check (stage between 1 and 2)`,
+      `alter table matches add column stage int not null default 1 check (stage between 1 and 2)`,
+      // The slot key (tournament, bracket, round, position) stays as it is, so release 3 code keeps working:
+      // group matches of one round take consecutive positions across groups; playoff brackets (W/L/GF/G)
+      // never share a bracket code with the main stage (RR/SW).
+      `alter table matches add column group_no int not null default 0 check (group_no between 0 and 32)`,
+      `alter table registrations add column group_no int check (group_no between 1 and 32)`,
+      // Who entered the playoff, with the seed and the main-stage result that earned it: kept for audit and places.
+      `create table stage_entries (
+        tournament_id uuid not null references tournaments(id) on delete cascade,
+        stage int not null check (stage = 2),
+        registration_id uuid not null references registrations(id) on delete cascade,
+        seed int not null check (seed >= 1),
+        group_no int,
+        source_rank int not null,
+        created_at timestamptz not null default now(),
+        primary key (tournament_id, stage, registration_id)
+      )`,
+      `create unique index stage_entries_seed on stage_entries(tournament_id, stage, seed)`,
+    ],
+  },
 ];

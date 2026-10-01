@@ -51,8 +51,8 @@ export async function rewriteWinner(q: Queryable, matchId: string, newWinner: st
       await setResult();
       if (!reset)
         await q.query(
-          `insert into matches (id, tournament_id, bracket, round, position, a_reg, b_reg, status) values ($1, $2, 'GF', 2, 0, $3, $4, 'ready')`,
-          [randomUUID(), m.tournament_id, m.a_reg, m.b_reg],
+          `insert into matches (id, tournament_id, bracket, round, position, a_reg, b_reg, status, stage) values ($1, $2, 'GF', 2, 0, $3, $4, 'ready', $5)`,
+          [randomUUID(), m.tournament_id, m.a_reg, m.b_reg, m.stage ?? 1],
         );
       await q.query("update registrations set placement = null where tournament_id = $1", [m.tournament_id]);
       const [t] = await q.query<{ name: string; slug: string }>(

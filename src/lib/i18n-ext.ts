@@ -116,6 +116,11 @@ const errorsRu: Record<string, string> = {
   not_in_division: "Турнир открыт только для участников своего дивизиона серии.",
   not_qualified: "Турнир открыт только для прошедших квалификацию в серии.",
   regeneration_blocked: "Пересоздать сетку можно только до первого результата: уже есть отправленный результат, спор или сыгранный матч.",
+  invalid_stage_settings:
+    "Проверьте этапы: групп 2–32, выходят из группы 1–16; плей-офф — олимпийская система, double elimination или лесенка на 2–64 участника; интервал между турами 0–720 часов. Для групп плей-офф обязателен.",
+  gauntlet_limit: "В лесенке не больше 16 участников.",
+  stage_locked: "Плей-офф уже начался: результаты основного этапа зафиксированы и не меняются.",
+  stage_too_few: "Недостаточно участников для групп: в каждой группе нужно не меньше двух участников и не меньше, чем выходит из группы.",
 };
 
 const errorsEn: Record<string, string> = {
@@ -178,6 +183,11 @@ const errorsEn: Record<string, string> = {
   not_in_division: "This tournament is open only to members of its circuit division.",
   not_qualified: "This tournament is open only to entrants qualified through the circuit.",
   regeneration_blocked: "The bracket can be regenerated only before the first result: a result, dispute or played match already exists.",
+  invalid_stage_settings:
+    "Check the stages: 2–32 groups, 1–16 advancing from each; a playoff of single elimination, double elimination or a gauntlet with 2–64 entrants; 0–720 hours between rounds. Groups require a playoff.",
+  gauntlet_limit: "A gauntlet allows at most 16 entrants.",
+  stage_locked: "The playoff has started: main-stage results are final and can no longer change.",
+  stage_too_few: "Not enough entrants for the groups: every group needs at least two entrants and at least as many as advance from it.",
 };
 
 const kindsRu: Record<string, string> = {
@@ -206,6 +216,8 @@ const kindsRu: Record<string, string> = {
   circuit_promoted: "Серия «{circuit}»: повышение в дивизион {division}",
   circuit_relegated: "Серия «{circuit}»: понижение в дивизион {division}",
   bracket_regenerated: "Турнир «{tournament}»: сетка пересоздана — проверьте свой матч",
+  playoff_qualified: "Турнир «{tournament}»: вы вышли в плей-офф",
+  stage_finished: "Турнир «{tournament}»: основной этап завершён, в плей-офф вы не вышли",
 };
 
 const kindsEn: Record<string, string> = {
@@ -234,6 +246,8 @@ const kindsEn: Record<string, string> = {
   circuit_promoted: "“{circuit}”: promoted to division {division}",
   circuit_relegated: "“{circuit}”: relegated to division {division}",
   bracket_regenerated: "“{tournament}”: the bracket was regenerated — check your match",
+  playoff_qualified: "“{tournament}”: you made the playoff",
+  stage_finished: "“{tournament}”: the main stage is over and you did not make the playoff",
 };
 
 export const extRu = {

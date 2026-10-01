@@ -67,8 +67,10 @@ export type TournamentDetail = TournamentCard & {
   completed_at: Date | null;
   waitlisted: number;
   checked_in: number;
-  format: "single_elimination" | "double_elimination" | "round_robin" | "swiss" | "leaderboard";
+  format: "single_elimination" | "double_elimination" | "round_robin" | "swiss" | "groups" | "gauntlet" | "leaderboard";
   format_settings: unknown;
+  /** 1 = main stage; 2 = playoff. */
+  stage: number;
   circuit_id: string | null;
   circuit_division: number | null;
   circuit_weight: number;
@@ -125,7 +127,11 @@ export async function participants(db: Queryable, tournamentId: string) {
 
 export type BracketMatch = {
   id: string;
-  bracket?: "W" | "L" | "GF" | "RR" | "SW";
+  bracket?: "W" | "L" | "GF" | "RR" | "SW" | "G";
+  /** 1 = main stage (or the only stage); 2 = the playoff after it. */
+  stage?: number;
+  /** Group number in a groups stage; 0 elsewhere. */
+  group_no?: number;
   a_void?: boolean;
   b_void?: boolean;
   round: number;
@@ -144,12 +150,13 @@ export type BracketMatch = {
 
 export async function bracket(db: Queryable, tournamentId: string) {
   return db.query<BracketMatch>(
-    `select m.id, m.bracket, m.a_void, m.b_void, m.round, m.position, m.status, m.outcome, m.a_reg, m.b_reg, m.winner_reg, m.score_a, m.score_b, m.scheduled_at,
+    `select m.id, m.bracket, m.stage, m.group_no, m.a_void, m.b_void, m.round, m.position, m.status, m.outcome, m.a_reg, m.b_reg, m.winner_reg,
+            m.score_a, m.score_b, m.scheduled_at,
             coalesce(ta.name, ua.display_name) as a_name, coalesce(tb.name, ub.display_name) as b_name
        from matches m
        left join registrations ra on ra.id = m.a_reg left join teams ta on ta.id = ra.team_id left join users ua on ua.id = ra.user_id
        left join registrations rb on rb.id = m.b_reg left join teams tb on tb.id = rb.team_id left join users ub on ub.id = rb.user_id
-      where m.tournament_id = $1 order by array_position(array['W','L','GF'], m.bracket), m.round, m.position`,
+      where m.tournament_id = $1 order by m.stage, m.group_no, array_position(array['W','L','GF','G'], m.bracket), m.round, m.position`,
     [tournamentId],
   );
 }
@@ -184,6 +191,7 @@ export async function getMatch(db: Queryable, id: string) {
       rounds: number;
       t_format: string;
       t_settings: unknown;
+      t_stage: number;
       w_rounds: number;
       l_rounds: number;
       a_checked_in_at: Date | null;
@@ -192,7 +200,8 @@ export async function getMatch(db: Queryable, id: string) {
     }
   >(
     `select m.*, t.slug as t_slug, t.name as t_name, t.status as t_status, t.game as t_game, t.org_id, t.format as t_format, t.format_settings as t_settings,
-            (select max(round) from matches x where x.tournament_id = m.tournament_id and x.bracket = m.bracket)::int as rounds,
+            t.stage as t_stage,
+            (select max(round) from matches x where x.tournament_id = m.tournament_id and x.bracket = m.bracket and x.stage = m.stage)::int as rounds,
             coalesce((select max(round) from matches x where x.tournament_id = m.tournament_id and x.bracket = 'W'), 0)::int as w_rounds,
             coalesce((select max(round) from matches x where x.tournament_id = m.tournament_id and x.bracket = 'L'), 0)::int as l_rounds
        from matches m join tournaments t on t.id = m.tournament_id where m.id = $1`,

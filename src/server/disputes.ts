@@ -13,8 +13,8 @@ import { audit } from "./audit.ts";
 import { notify } from "./access.ts";
 import { fail, isUniqueViolation } from "./errors.ts";
 import { rewriteWinner } from "./decisions.ts";
-import { lockMatchWithTournament, nextVersion, sideOf, staffFor } from "./matches.ts";
-import { canRefereeTournament, regLeaders, regMembers } from "./tournaments.ts";
+import { lockMatchWithTournament, nextVersion, requireStageOpen, sideOf, staffFor } from "./matches.ts";
+import { canRefereeTournament, isRoundBracket, regLeaders, regMembers } from "./tournaments.ts";
 import * as v from "./validate.ts";
 
 export const REPUTATION = { start: 100, upheldPenalty: 5 } as const;
@@ -40,6 +40,7 @@ export async function fileDispute(
     const m = await lockMatchWithTournament(q, matchId);
     if (!["IN_PROGRESS", "PAUSED", "COMPLETED"].includes(m.t_status)) fail("tournament_not_live");
     if (m.status !== "completed" || m.outcome === "bye" || !m.winner_reg || !m.a_reg || !m.b_reg) fail("not_editable");
+    requireStageOpen(m);
     const side = await sideOf(q, m, user.id);
     if (!side) fail("not_participant");
     let id: string;
@@ -75,6 +76,7 @@ export async function decideDispute(db: Database, user: SessionUser, disputeId: 
     const m = await lockMatchWithTournament(q, d.match_id);
     if (!(await canRefereeTournament(q, { id: m.tournament_id, org_id: m.org_id }, user))) fail("forbidden");
     if (decision === "overturned") {
+      requireStageOpen(m);
       const newWinner = m.winner_reg === m.a_reg ? m.b_reg! : m.a_reg!;
       await rewriteWinner(q, m.id, newWinner, { scoreA: null, scoreB: null, outcome: "decision" }, user.id);
       await q.query("update match_results set status = 'superseded' where match_id = $1 and status = 'confirmed'", [m.id]);
@@ -89,6 +91,11 @@ export async function decideDispute(db: Database, user: SessionUser, disputeId: 
       "update disputes set status = 'resolved', decision = $2, resolution = $3, resolved_by = $4, resolved_at = now() where id = $1",
       [d.id, decision, note, user.id],
     );
+    if (isRoundBracket(m.bracket)) {
+      // A playoff waits for the open disputes of its main stage: deciding the last one may start it.
+      const { afterRoundMatch } = await import("./rounds.ts");
+      await afterRoundMatch(q, m.tournament_id, user.id);
+    }
     await notify(q, [...(await regMembers(q, m.a_reg)), ...(await regMembers(q, m.b_reg))], decision === "overturned" ? "dispute_overturned" : "dispute_upheld", {
       matchId: m.id,
       tournament: m.t_name,

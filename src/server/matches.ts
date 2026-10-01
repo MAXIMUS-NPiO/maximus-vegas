@@ -8,7 +8,7 @@ import { rewriteWinner } from "./decisions.ts";
 import { settingsOf } from "./format-settings.ts";
 import * as v from "./validate.ts";
 
-type Locked = MatchRow & { t_status: string; org_id: string; t_name: string; t_slug: string; t_format: string; t_settings: unknown };
+type Locked = MatchRow & { t_status: string; org_id: string; t_name: string; t_slug: string; t_format: string; t_settings: unknown; t_stage: number };
 
 /**
  * Locks the tournament row, then the match. Every writer takes the tournament first (transitions,
@@ -21,13 +21,19 @@ export async function lockMatchWithTournament(q: Queryable, matchId: string): Pr
   if (!ref) fail("not_found");
   await q.query("select id from tournaments where id = $1 for update", [ref.tournament_id]);
   const [m] = await q.query<Locked>(
-    `select m.*, t.status as t_status, t.org_id, t.name as t_name, t.slug as t_slug, t.format as t_format, t.format_settings as t_settings
+    `select m.*, t.status as t_status, t.org_id, t.name as t_name, t.slug as t_slug, t.format as t_format, t.format_settings as t_settings,
+            t.stage as t_stage
        from matches m join tournaments t on t.id = m.tournament_id
       where m.id = $1 for update of m`,
     [matchId],
   );
   if (!m) fail("not_found");
   return m;
+}
+
+/** Once the playoff exists, the main stage that seeded it is final: its results no longer change. */
+export function requireStageOpen(m: Locked) {
+  if (m.stage === 1 && m.t_stage === 2) fail("stage_locked");
 }
 
 /** Draws are accepted only in round robin and Swiss, and only when the organiser allowed them. */
@@ -219,6 +225,7 @@ export async function correctResult(db: Database, user: SessionUser, matchId: st
     if (!(await refereeOf(q, m, user))) fail("forbidden");
     if (!["IN_PROGRESS", "PAUSED", "COMPLETED"].includes(m.t_status)) fail("tournament_not_live");
     if (m.status !== "completed" || m.outcome === "bye" || !m.a_reg || !m.b_reg) fail("not_editable");
+    requireStageOpen(m);
     const { scoreA, scoreB, winner } = scores(input, m);
     const note = v.clean(input.note, 1000);
     if (note.length < 5) fail("invalid_input");

@@ -34,7 +34,8 @@ export type PlannedDE<T> = Ref & {
   loserNext: SlotRef | null;
 };
 
-export const refKey = (r: Ref) => `${r.bracket}:${r.round}:${r.position}`;
+/** Key of a planned match; also used for gauntlet matches (bracket "G"). */
+export const refKey = (r: { bracket: string; round: number; position: number }) => `${r.bracket}:${r.round}:${r.position}`;
 
 /** Number of losers-bracket rounds for a winners bracket of `k` rounds. */
 export const losersRounds = (k: number) => (k >= 2 ? 2 * (k - 1) : 0);
