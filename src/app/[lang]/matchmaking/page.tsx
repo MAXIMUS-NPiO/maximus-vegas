@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { isLocale } from "@/lib/i18n.ts";
-import { GAMES } from "@/lib/games.ts";
+import { GAMES, isGame } from "@/lib/games.ts";
 import { pageMeta } from "@/lib/meta.ts";
 import { viewer } from "@/server/viewer.ts";
 import { challengesFor, queueState } from "@/server/challenges.ts";
@@ -27,7 +27,8 @@ export default async function QuickMatch({ params, searchParams }: { params: Pro
   const T = (a: string, b: string) => (ru ? a : b);
   const sp = await searchParams;
   const { db, user, dbError } = await viewer();
-  const back = `/${lang}/matchmaking`;
+  const requestedGame = typeof sp.game === "string" && isGame(sp.game) ? sp.game : undefined;
+  const back = `/${lang}/matchmaking${requestedGame ? `?game=${requestedGame}` : ""}`;
   return (
     <div className="container page">
       <PageHead
@@ -48,13 +49,13 @@ export default async function QuickMatch({ params, searchParams }: { params: Pro
       ) : !user ? (
         <SignInPrompt lang={lang} back={back} />
       ) : (
-        <QuickMatchBody lang={lang} userId={user.id} back={back} />
+        <QuickMatchBody lang={lang} userId={user.id} back={back} selectedGame={requestedGame} />
       )}
     </div>
   );
 }
 
-async function QuickMatchBody({ lang, userId, back }: { lang: "ru" | "en"; userId: string; back: string }) {
+async function QuickMatchBody({ lang, userId, back, selectedGame }: { lang: "ru" | "en"; userId: string; back: string; selectedGame?: string }) {
   const ru = lang === "ru";
   const T = (a: string, b: string) => (ru ? a : b);
   const { db } = await viewer();
@@ -75,7 +76,7 @@ async function QuickMatchBody({ lang, userId, back }: { lang: "ru" | "en"; userI
       ) : (
         <ActionForm action="quick.join" lang={lang} back={back} className="card form-card">
           <Field label={T("Игра", "Game")}>
-            <select name="game" required>
+            <select name="game" required defaultValue={selectedGame}>
               {GAMES.filter((g) => !g.legacy).map((g) => (
                 <option key={g.slug} value={g.slug}>
                   {g.name}

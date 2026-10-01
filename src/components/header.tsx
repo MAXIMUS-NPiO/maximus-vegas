@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { SoundToggle } from "./arena-sound";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Bell, Brand, Chevron, Search } from "./icons";
@@ -80,6 +81,7 @@ export function Header({ lang, nav, extra, common, user }: { lang: Locale; nav: 
           </div>
         </nav>
         <div className="header-actions">
+          <SoundToggle lang={lang} />
           <Link href={`/${lang}/search`} className="icon-btn hide-mobile" aria-label={common.search}>
             <Search />
           </Link>

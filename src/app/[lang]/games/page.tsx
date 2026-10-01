@@ -1,4 +1,6 @@
 import Link from "next/link";
+import Image from "next/image";
+import { gameArtwork } from "@/lib/game-artwork";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { dict, isLocale } from "@/lib/i18n.ts";
@@ -23,6 +25,7 @@ export default async function Games({ params }: { params: Promise<{ lang: string
       <div className="grid grid-3">
         {GAMES.map((g) => (
           <Link key={g.slug} href={`/${lang}/games/${g.slug}`} className="card card-link game-card">
+            {gameArtwork[g.slug] ? <Image className="game-catalog-art" src={gameArtwork[g.slug]} alt="" width={460} height={215} sizes="(max-width: 640px) 100vw, 33vw" /> : null}
             <div className="row-between">
               <h3>{g.name}</h3>
               {g.legacy ? <span className="badge badge-muted">{d.games.legacy}</span> : null}

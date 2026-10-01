@@ -1,4 +1,7 @@
 import Link from "next/link";
+import Image from "next/image";
+import { ArenaLobby } from "@/components/arena-lobby";
+import { gameArtwork } from "@/lib/game-artwork";
 import type { Metadata } from "next";
 import { dict, isLocale, type Locale } from "@/lib/i18n.ts";
 import { GAMES } from "@/lib/games.ts";
@@ -34,41 +37,8 @@ export default async function Home({ params, searchParams }: { params: Promise<{
   const directions = DIRECTIONS.filter((x) => ["academy", "cloud-gaming", "media", "venues", "coaches", "server-rentals"].includes(x.slug));
   return (
     <>
-      <section className="hero">
-        <div className="container hero-inner">
-          <Flash lang={lang} params={sp} />
-          <p className="eyebrow">{d.home.eyebrow}</p>
-          <h1 className="hero-title">
-            <span className="hero-brand-name">{d.home.title[0]}</span>
-            <span className="accent hero-tagline">{d.home.title[1]}</span>
-          </h1>
-          <p className="hero-lead">{d.home.lead}</p>
-          <div className="row">
-            <Link href={`/${lang}/tournaments`} className="btn btn-primary">
-              {d.home.ctaTournaments}
-              <Arrow />
-            </Link>
-            {user ? (
-              <Link href={`/${lang}/hub`} className="btn btn-ghost">
-                {d.home.ctaHub}
-              </Link>
-            ) : (
-              <Link href={`/${lang}/signup`} className="btn btn-ghost">
-                {d.home.ctaSignUp}
-              </Link>
-            )}
-          </div>
-          <ol className="loop" aria-label={d.home.loopTitle}>
-            {d.home.loop.map(([title, text], i) => (
-              <li key={title}>
-                <span className="loop-n">{String(i + 1).padStart(2, "0")}</span>
-                <strong>{title}</strong>
-                <span>{text}</span>
-              </li>
-            ))}
-          </ol>
-        </div>
-      </section>
+      <div className="container"><Flash lang={lang} params={sp} /></div>
+      <ArenaLobby lang={lang} name={user?.displayName} />
 
       <section className="section">
         <div className="container">
@@ -140,6 +110,7 @@ export default async function Home({ params, searchParams }: { params: Promise<{
           <div className="grid grid-4">
             {GAMES.filter((g) => featured.includes(g.slug)).map((g) => (
               <Link key={g.slug} href={`/${lang}/games/${g.slug}`} className="card card-link game-tile">
+                {gameArtwork[g.slug] ? <Image className="game-tile-art" src={gameArtwork[g.slug]} alt="" width={460} height={215} sizes="(max-width: 640px) 50vw, 25vw" /> : null}
                 <span className="game-tile-name">{g.name}</span>
                 <span className="muted small">{g.genre[lang]}</span>
               </Link>
