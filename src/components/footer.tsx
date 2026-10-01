@@ -28,7 +28,10 @@ export function Footer({ lang }: { lang: Locale }) {
         ))}
       </div>
       <div className="container footer-bottom">
-        <span>© 2026 {d.footer.company}</span>
+        {/* The notice names the author first: under the Berne Convention the name appearing on
+            the work in the usual manner is the presumed author and rights holder. The operating
+            company follows, so neither role is obscured. */}
+        <span>© 2026 Maximus Kiriyakulov · {d.footer.company}</span>
         <a href={`mailto:${email}`}>{email}</a>
       </div>
     </footer>
