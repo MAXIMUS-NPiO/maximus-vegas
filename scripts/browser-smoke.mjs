@@ -161,6 +161,11 @@ async function main(browser) {
   await b.go("/ru/finder#mine");
   await b.submit("finder.decide", {}, { form: b.formWith("finder.decide", "accept", "1") });
 
+  step("scouting");
+  await b.go(`/ru/scouting?text=${a.username}`);
+  await b.submit("scout.watch");
+  await b.submit("scout.save", { name: `Smoke ${RUN}` });
+
   step("quick match with a ready check");
   for (const x of [b, c]) {
     await x.go("/ru/matchmaking");

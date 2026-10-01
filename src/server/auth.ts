@@ -359,6 +359,8 @@ export async function exportAccount(db: Database, user: SessionUser) {
       "select kind, protective, rule_code, rule_version, confidence, evidence, decision, starts_at, ends_at, revoked_at, revoke_reason, created_at from sanctions where user_id = $1 order by created_at",
     ),
     appeals: await q("select a.statement, a.evidence_url, a.status, a.decision, a.created_at, a.decided_at from sanction_appeals a where a.user_id = $1 order by a.created_at"),
+    scoutFilters: await q("select name, query, created_at from scout_filters where user_id = $1 order by created_at"),
+    watchlist: await q("select u.username as player, w.note, w.created_at from scout_watch w join users u on u.id = w.player_id where w.user_id = $1 order by w.created_at"),
     reportsFiled: await q(
       "select u.username as player, c.rule_code, c.context_url, c.description, c.evidence_url, c.status, c.created_at, c.resolved_at from conduct_reports c join users u on u.id = c.subject_id where c.reporter_id = $1 order by c.created_at",
     ),
@@ -462,6 +464,9 @@ export async function deleteAccount(db: Database, user: SessionUser, confirmPass
     await q.query("delete from ratings where user_id = $1", [user.id]);
     await q.query("delete from quick_dodges where user_id = $1", [user.id]);
     await q.query("update ready_check_players set region = '' where user_id = $1", [user.id]);
+    // Scouting: the account's filters and watchlist go, and it leaves every other watchlist.
+    await q.query("delete from scout_filters where user_id = $1", [user.id]);
+    await q.query("delete from scout_watch where user_id = $1 or player_id = $1", [user.id]);
     // Reports still under review that no decision relies on are withdrawn with the account; decided ones stay as the record.
     await q.query(
       "delete from conduct_reports c where c.reporter_id = $1 and c.status in ('open','reviewing') and not exists (select 1 from sanctions s where s.report_id = c.id)",

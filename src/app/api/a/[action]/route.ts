@@ -25,6 +25,7 @@ import * as veto from "@/server/veto.ts";
 import * as finder from "@/server/finder.ts";
 import * as quick from "@/server/quickmatch.ts";
 import * as conduct from "@/server/conduct.ts";
+import * as scouting from "@/server/scouting.ts";
 import { storeUpload } from "@/server/media.ts";
 import { drainOutbox, mailConfigured } from "@/server/mail.ts";
 import { fail } from "@/server/errors.ts";
@@ -709,6 +710,24 @@ const handlers: Record<string, Handler> = {
   "party.remove": async (c) => {
     await quick.removeFromParty(c.db, u(c), c.form.member);
     return { to: `/${c.lang}/matchmaking`, ok: "party_removed" };
+  },
+
+  // ---------- Scouting ----------
+  "scout.save": async (c) => {
+    const r = await scouting.saveFilter(c.db, u(c), c.form.name, c.form);
+    return { ok: r.replaced ? "filter_replaced" : "filter_saved" };
+  },
+  "scout.delete": async (c) => {
+    await scouting.deleteFilter(c.db, u(c), c.form.filter);
+    return { ok: "filter_deleted" };
+  },
+  "scout.watch": async (c) => {
+    const r = await scouting.watchPlayer(c.db, u(c), c.form.username, c.form.note);
+    return { ok: r.created ? "watch_added" : "watch_updated" };
+  },
+  "scout.unwatch": async (c) => {
+    await scouting.unwatchPlayer(c.db, u(c), c.form.username);
+    return { ok: "watch_removed" };
   },
 
   // ---------- Fair play: reports, sanctions, appeals ----------

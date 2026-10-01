@@ -54,6 +54,12 @@ const okRu: Record<string, string> = {
   appeal_decided: "Решение по апелляции принято, игрок получил уведомление.",
   rule_published: "Правило опубликовано.",
   rule_versioned: "Новая редакция правила опубликована; прежняя сохранена в истории.",
+  filter_saved: "Фильтр сохранён.",
+  filter_replaced: "Фильтр с этим названием обновлён.",
+  filter_deleted: "Фильтр удалён.",
+  watch_added: "Игрок в списке наблюдения.",
+  watch_updated: "Игрок уже в списке; заметка обновлена.",
+  watch_removed: "Игрок убран из списка наблюдения.",
   application_saved: "Заявка сохранена. Номер показан ниже.",
   invoice_issued: "Счёт выставлен.",
   refund_requested: "Запрос на возврат отправлен провайдеру. Статус обновится после подтверждения.",
@@ -137,6 +143,12 @@ const okEn: Record<string, string> = {
   appeal_decided: "Appeal decided; the player has been notified.",
   rule_published: "Rule published.",
   rule_versioned: "New version of the rule published; the previous one stays in the history.",
+  filter_saved: "Filter saved.",
+  filter_replaced: "The filter with this name was updated.",
+  filter_deleted: "Filter deleted.",
+  watch_added: "Player added to your watchlist.",
+  watch_updated: "The player is already on your list; the note was updated.",
+  watch_removed: "Player removed from your watchlist.",
   application_saved: "Application saved. Its reference is shown below.",
   invoice_issued: "Invoice issued.",
   refund_requested: "Refund requested from the provider. The status updates once confirmed.",
@@ -280,6 +292,8 @@ const errorsRu: Record<string, string> = {
   appeal_closed: "Апелляция недоступна: прошло больше 14 дней или санкция уже отменена.",
   appeal_exists: "Апелляция по этой санкции уже подана.",
   appeal_needs_other_reviewer: "Апелляцию рассматривает сотрудник, который не выносил исходное решение.",
+  filter_limit: "Можно сохранить до 20 фильтров: удалите ненужный.",
+  watch_limit: "В списке наблюдения до 200 игроков: уберите кого-нибудь.",
 };
 
 const errorsEn: Record<string, string> = {
@@ -396,6 +410,8 @@ const errorsEn: Record<string, string> = {
   appeal_closed: "Appeal unavailable: more than 14 days have passed or the sanction is already revoked.",
   appeal_exists: "An appeal against this sanction has already been filed.",
   appeal_needs_other_reviewer: "An appeal is decided by a staff member who did not take the original decision.",
+  filter_limit: "You can save up to 20 filters: delete one you no longer need.",
+  watch_limit: "A watchlist holds up to 200 players: remove someone first.",
 };
 
 const kindsRu: Record<string, string> = {
