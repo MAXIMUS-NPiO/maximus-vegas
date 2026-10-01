@@ -1,0 +1,143 @@
+[
+  {
+    "slug": "cs2",
+    "source": "https://store.steampowered.com/app/730",
+    "image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/730/162664aa5da85f418105350c5d67ca565f6c3713/header.jpg?t=1789251637",
+    "bytes": 33545,
+    "sha256": "747527645619ecf6fbbec78aa543ab0c9a5be12f0bd7c17ccf559e1522678ded"
+  },
+  {
+    "slug": "dota2",
+    "source": "https://store.steampowered.com/app/570",
+    "image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/570/header.jpg?t=1769535998",
+    "bytes": 37878,
+    "sha256": "ade5aebca98e763ae1d930f1fcc55a5d89b48a90f738ffd67bf118fc50c8272a"
+  },
+  {
+    "slug": "apex",
+    "source": "https://store.steampowered.com/app/1172470",
+    "image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1172470/60fcaedb88ccf94df30281533d828b86c6ffb9b6/header_alt_assets_5.jpg?t=1790164440",
+    "bytes": 66930,
+    "sha256": "635b8db85d44006a9e24c7842b768818d33f81b9314aa084d53cd78a8581ea6a"
+  },
+  {
+    "slug": "pubg",
+    "source": "https://store.steampowered.com/app/578080",
+    "image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/578080/841ea38bc58cabb70aef65365cf50bc2d79329d9/header.jpg?t=1786493086",
+    "bytes": 37274,
+    "sha256": "acd549290767b2fc76a7efb7d7881e73530ab5432061b14e6d1095b5c5bd0892"
+  },
+  {
+    "slug": "trackmania",
+    "source": "https://store.steampowered.com/app/2225070",
+    "image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/2225070/7f7b095f71d8e3b54612927c0bb4b9f0713eac21/header.jpg?t=1778599926",
+    "bytes": 35835,
+    "sha256": "9a50b5f26078688e3134c94948e59afbac679777bbfbab0e0cb191e471cbfdc5"
+  },
+  {
+    "slug": "tf2",
+    "source": "https://store.steampowered.com/app/440",
+    "image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/440/header.jpg?t=1757348372",
+    "bytes": 55689,
+    "sha256": "8c083e63fc67fe905dfe5ad8840b877d10c6241a66fba49474246a815f550764"
+  },
+  {
+    "slug": "deadlock",
+    "source": "https://store.steampowered.com/app/1422450",
+    "image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1422450/aa249c5e8cc8f90941bd1dbdc311773cd1afe065/header.jpg?t=1790716179",
+    "bytes": 43871,
+    "sha256": "7dac270d8d8df770b94c0105edb4bacc039c7b3e4e1c03a471262ade3bfe64cb"
+  },
+  {
+    "slug": "cs16",
+    "source": "https://store.steampowered.com/app/10",
+    "image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/10/header.jpg?t=1745368572",
+    "bytes": 28138,
+    "sha256": "63b6f9b5a2171daff179a9a6d7751abc410c65813936144c851069b455394f49"
+  },
+  {
+    "slug": "css",
+    "source": "https://store.steampowered.com/app/240",
+    "image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/240/header.jpg?t=1745368575",
+    "bytes": 18125,
+    "sha256": "87bd474bd819346385f7f88201b82b10b42c9fe8922453fe7ec0216d2b30ab50"
+  },
+  {
+    "file": "public/experience/arena.webp",
+    "kind": "original AI-generated environment artwork",
+    "tool": "built-in image_gen",
+    "prompt": "Cinematic graphite esports arena, luminous circular stage on the right, cyan beams and amber rim light, dark architectural space on the left, atmospheric AAA environment, no text or branding.",
+    "sha256": "9d21f2a01b0efabda0c17e82791031eb71f7eacd3931730a4afee3e1889b1376",
+    "status": "original concept; not a real venue or publisher game scene"
+  },
+  {
+    "publisher_artwork": [
+      {
+        "game": "valorant",
+        "path": "/workspace/scratch/bae32086eeb2/game-art/valorant.jpg",
+        "source_url": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/news_live/1d1a219a5cb25d15b6e9fe2d4a4d2b83d41f0a8f-1920x1080.jpg?accountingTag=VAL",
+        "page_url": "https://playvalorant.com/en-us/",
+        "content_type": "image/jpeg",
+        "format": "JPEG",
+        "dimensions": [
+          1920,
+          1080
+        ],
+        "bytes": 193808
+      },
+      {
+        "game": "league-of-legends",
+        "path": "/workspace/scratch/bae32086eeb2/game-art/league-of-legends.jpg",
+        "source_url": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/news/565197caf987af4e4da307df6e2b235a28714736-837x469.jpg?accountingTag=LoL",
+        "page_url": "https://www.leagueoflegends.com/en-us/",
+        "content_type": "image/jpeg",
+        "format": "JPEG",
+        "dimensions": [
+          837,
+          469
+        ],
+        "bytes": 26732
+      },
+      {
+        "game": "rocket-league",
+        "path": "/workspace/scratch/bae32086eeb2/game-art/rocket-league.webp",
+        "source_url": "https://cms-assets.unrealengine.com/cmkr1i7c9047e07n0es5291ez/resize=fit:clip,height:720,width:1280/quality=value:50/output=format:webp/cmu75vfs4h5vt07mzjh4uflap",
+        "page_url": "https://www.rocketleague.com/?lang=en",
+        "content_type": "image/webp",
+        "format": "WEBP",
+        "dimensions": [
+          1280,
+          720
+        ],
+        "bytes": 258386
+      },
+      {
+        "game": "mobile-legends",
+        "path": "/workspace/scratch/bae32086eeb2/game-art/mobile-legends.jpg",
+        "source_url": "https://en.moonton.com/upload/image/20221017/f43b62642a04d6e4998511b39f341515.jpg",
+        "page_url": "https://en.moonton.com/games/index.html",
+        "content_type": "image/jpeg",
+        "format": "JPEG",
+        "dimensions": [
+          1920,
+          1080
+        ],
+        "bytes": 1639399
+      },
+      {
+        "game": "brawl-stars",
+        "path": "/workspace/scratch/bae32086eeb2/game-art/brawl-stars.jpg",
+        "source_url": "https://supercell.com/images/1a5b69311180a4a1c374e10556941f05/hero_bg_brawlstars.a385872a.jpg",
+        "page_url": "https://supercell.com/en/games/brawlstars/",
+        "content_type": "image/jpeg",
+        "format": "JPEG",
+        "dimensions": [
+          1681,
+          729
+        ],
+        "bytes": 246472
+      }
+    ],
+    "usage": "Identification of games in their catalogue; third-party rights retained. No affiliation or licence claim."
+  }
+]

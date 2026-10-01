@@ -3,12 +3,14 @@ import localFont from "next/font/local";
 import { notFound } from "next/navigation";
 import { dict, isLocale } from "@/lib/i18n.ts";
 import { siteOrigin } from "@/lib/site.ts";
+import { ArenaSound } from "@/components/arena-sound";
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
 import { viewer } from "@/server/viewer.ts";
 import { unreadCount } from "@/server/queries.ts";
 import { isStaff } from "@/server/access.ts";
 import "./styles.css";
+import "./arena.css";
 
 const manrope = localFont({
   src: [
@@ -58,6 +60,7 @@ export default async function Layout({ children, params }: { children: React.Rea
         <a className="skip-link" href="#main">
           {d.common.skip}
         </a>
+        <ArenaSound />
         <Header
           lang={lang}
           nav={d.nav}
