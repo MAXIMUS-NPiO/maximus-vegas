@@ -6,7 +6,8 @@ import type { BracketMatch } from "@/server/queries.ts";
 import { roundName } from "@/server/bracket.ts";
 import { deRoundName } from "@/server/double.ts";
 import type { StandingsRow } from "@/server/standings.ts";
-import type { FormatSettings } from "@/server/format-settings.ts";
+import type { FormatSettings, RoundFormat } from "@/server/format-settings.ts";
+import { groupName } from "@/server/stages.ts";
 import { Badge } from "./ui";
 import { LocalTime } from "./time";
 
@@ -19,6 +20,10 @@ export function formatLabel(format: string | undefined, lang: Locale) {
       return ru ? "Круговая система" : "Round robin";
     case "swiss":
       return ru ? "Швейцарская система" : "Swiss system";
+    case "groups":
+      return ru ? "Группы + плей-офф" : "Groups + playoff";
+    case "gauntlet":
+      return ru ? "Лесенка (gauntlet)" : "Gauntlet (stepladder)";
     case "leaderboard":
       return ru ? "Leaderboard (очки)" : "Leaderboard (points)";
     default:
@@ -28,6 +33,51 @@ export function formatLabel(format: string | undefined, lang: Locale) {
 
 /** Round robin and Swiss are played in rounds ("tours"), not bracket stages. */
 export const roundLabel = (round: number, lang: Locale) => (lang === "ru" ? `Тур ${round}` : `Round ${round}`);
+
+/** The bracket of a playoff, in a short form for lines such as "Playoff: single elimination, 8". */
+export function playoffFormatLabel(format: string | undefined, lang: Locale) {
+  const ru = lang === "ru";
+  if (format === "double_elimination") return ru ? "двойное выбывание" : "double elimination";
+  if (format === "gauntlet") return ru ? "лесенка" : "gauntlet";
+  return ru ? "олимпийская система" : "single elimination";
+}
+
+export const groupTitle = (group: number, lang: Locale) => `${lang === "ru" ? "Группа" : "Group"} ${groupName(group)}`;
+
+/** Gauntlet rounds are steps up the ladder; the last one is the final against the top seed. */
+export const gauntletRoundName = (round: number, rounds: number, lang: Locale) =>
+  round === rounds ? (lang === "ru" ? "Финал" : "Final") : lang === "ru" ? `Ступень ${round}` : `Step ${round}`;
+
+export type LabelContext = {
+  /** The tournament's format. */
+  format: string;
+  /** The playoff bracket after a main stage, if any. */
+  playoffFormat?: string | null;
+  wRounds: number;
+  lRounds: number;
+  gRounds: number;
+};
+
+/** Where a match sits, for every format: "Group B · Round 2", "Playoff · Semi-final", "Step 3", "Grand final". */
+export function matchLabel(m: { bracket?: string | null; round: number; stage?: number | null; group_no?: number | null }, ctx: LabelContext, lang: Locale): string {
+  const ru = lang === "ru";
+  if (m.bracket === "RR" || m.bracket === "SW") return m.group_no ? `${groupTitle(m.group_no, lang)} · ${roundLabel(m.round, lang)}` : roundLabel(m.round, lang);
+  const playoff = (m.stage ?? 1) === 2;
+  const bracketFormat = playoff ? (ctx.playoffFormat ?? "single_elimination") : ctx.format;
+  const name =
+    m.bracket === "G"
+      ? gauntletRoundName(m.round, ctx.gRounds, lang)
+      : bracketFormat === "double_elimination"
+        ? deRoundName((m.bracket ?? "W") as "W" | "L" | "GF", m.round, ctx.wRounds, ctx.lRounds, lang)
+        : roundName(m.round, ctx.wRounds, lang);
+  return playoff ? `${ru ? "Плей-офф" : "Playoff"} · ${name}` : name;
+}
+
+/** Round counts of the brackets in a list of matches, for matchLabel. */
+export function labelContext(matches: Array<{ bracket?: string | null; round: number }>, format: string, playoffFormat?: string | null): LabelContext {
+  const max = (b: string) => Math.max(0, ...matches.filter((m) => (m.bracket ?? "W") === b).map((m) => m.round));
+  return { format, playoffFormat, wRounds: max("W"), lRounds: max("L"), gRounds: max("G") };
+}
 
 export function TournamentCard({ lang, t }: { lang: Locale; t: Card & { format?: string } }) {
   const d = dict(lang);
@@ -147,8 +197,35 @@ export function BracketView({
   linkMatches?: boolean;
   format?: string;
 }) {
+  const ru = lang === "ru";
+  if (format === "groups") {
+    const groups = [...new Set(matches.map((m) => m.group_no ?? 0))].sort((a, b) => a - b);
+    return (
+      <div className="stack">
+        {groups.map((g) => (
+          <div key={g} className="bracket-group">
+            <h3 className="h4">{g ? groupTitle(g, lang) : ru ? "Матчи" : "Matches"}</h3>
+            <Rounds lang={lang} matches={matches.filter((m) => (m.group_no ?? 0) === g)} label={(r) => roundLabel(r, lang)} linkMatches={linkMatches} grid />
+          </div>
+        ))}
+      </div>
+    );
+  }
   if (format === "round_robin" || format === "swiss")
     return <Rounds lang={lang} matches={matches} label={(r) => roundLabel(r, lang)} linkMatches={linkMatches} grid />;
+  if (format === "gauntlet") {
+    const rounds = Math.max(0, ...matches.map((m) => m.round));
+    return (
+      <div className="stack-sm">
+        <p className="small muted">
+          {ru
+            ? "Лесенка: первыми играют два нижних посева, победитель каждой ступени встречается со следующим посевом, первый посев играет только финал."
+            : "Gauntlet: the two lowest seeds play first, each winner meets the next seed up, and the top seed plays only the final."}
+        </p>
+        <Rounds lang={lang} matches={matches} label={(r) => gauntletRoundName(r, rounds, lang)} linkMatches={linkMatches} grid />
+      </div>
+    );
+  }
   if (format !== "double_elimination") {
     const rounds = Math.max(0, ...matches.map((m) => m.round));
     return <Rounds lang={lang} matches={matches} label={(r) => roundName(r, rounds, lang)} linkMatches={linkMatches} />;
@@ -158,7 +235,6 @@ export function BracketView({
   const gf = matches.filter((m) => m.bracket === "GF");
   const wRounds = Math.max(0, ...w.map((m) => m.round));
   const lRounds = Math.max(0, ...matches.filter((m) => m.bracket === "L").map((m) => m.round));
-  const ru = lang === "ru";
   return (
     <div className="stack">
       <div className="bracket-group">
@@ -199,12 +275,15 @@ export function StandingsTable({
   rows,
   names,
   final,
+  advance = 0,
 }: {
   lang: Locale;
-  format: "round_robin" | "swiss";
+  format: RoundFormat;
   rows: StandingsRow[];
   names: Map<string, StandingName>;
   final: boolean;
+  /** Places that lead to the playoff (0 = none): marked in the table. */
+  advance?: number;
 }) {
   const ru = lang === "ru";
   const swiss = format === "swiss";
@@ -248,7 +327,10 @@ export function StandingsTable({
               const who = names.get(r.id);
               const label = who?.name ?? "—";
               return (
-                <tr key={r.id} className={r.disqualified ? "is-out" : r.rank === 1 && final ? "is-first" : undefined}>
+                <tr
+                  key={r.id}
+                  className={r.disqualified ? "is-out" : r.rank === 1 && final ? "is-first" : r.rank !== null && r.rank <= advance ? "is-advancing" : undefined}
+                >
                   <td>{r.rank ?? "—"}</td>
                   <td>
                     {who?.team_slug ? <Link href={`/${lang}/teams/${who.team_slug}`}>{label}</Link> : who?.username ? <Link href={`/${lang}/players/${who.username}`}>{label}</Link> : label}
@@ -280,6 +362,15 @@ export function StandingsTable({
         </table>
       </div>
       <p className="small muted">
+        {advance === 1
+          ? ru
+            ? "Первое место выходит в плей-офф. "
+            : "First place advances to the playoff. "
+          : advance > 1
+            ? ru
+              ? `Места 1–${advance} выходят в плей-офф. `
+              : `Places 1–${advance} advance to the playoff. `
+            : ""}
         {tieCols.map(([h, title]) => `${h}: ${title}`).join(" · ")}
       </p>
     </div>
@@ -287,7 +378,7 @@ export function StandingsTable({
 }
 
 /** The scoring rules of a round-robin or Swiss tournament, exactly as the table applies them. */
-export function RoundRules({ lang, format, settings, started }: { lang: Locale; format: "round_robin" | "swiss"; settings: FormatSettings; started: boolean }) {
+export function RoundRules({ lang, format, settings, started }: { lang: Locale; format: RoundFormat; settings: FormatSettings; started: boolean }) {
   const ru = lang === "ru";
   const p = settings.points;
   const items: Array<[string, string]> = [
@@ -319,6 +410,27 @@ export function RoundRules({ lang, format, settings, started }: { lang: Locale; 
             : "played results stand, the remaining matches go to the opponents",
     ]);
   }
+  if (format === "groups" && settings.groups)
+    items.push([
+      ru ? "Группы" : "Groups",
+      ru ? `${settings.groups.count}; из каждой выходят ${settings.groups.advance}` : `${settings.groups.count}; ${settings.groups.advance} advance from each`,
+    ]);
+  if (settings.playoff)
+    items.push([
+      ru ? "Плей-офф" : "Playoff",
+      `${playoffFormatLabel(settings.playoff.format, lang)} · ${settings.playoff.size} ${ru ? "участников" : "entrants"}`,
+    ]);
+  const hours = settings.roundHours ?? 0;
+  items.push([
+    ru ? "Расписание туров" : "Round schedule",
+    hours > 0
+      ? ru
+        ? `тур r — через (r − 1) × ${hours} ч после старта`
+        : `round r starts (r − 1) × ${hours} h after the start`
+      : ru
+        ? "тур 1 — в момент старта, время остальных назначает судья"
+        : "round 1 at the start; referees set the time of later rounds",
+  ]);
   const order =
     format === "swiss"
       ? ru
@@ -345,13 +457,39 @@ export function RoundRules({ lang, format, settings, started }: { lang: Locale; 
           ? ru
             ? "Пары каждого тура — по очкам: верхняя половина группы против нижней, без повторных встреч, пока это возможно; bye получает участник ниже всех среди тех, у кого меньше всего bye."
             : "Each round pairs by points: top half of a score group against the bottom half, without rematches whenever possible; the bye goes to the lowest-ranked entrant among those with the fewest byes."
-          : ru
-            ? "Каждый встречается с каждым; расписание туров строится по посеву."
-            : "Everyone meets everyone; the round schedule follows the seeds."}
+          : format === "groups"
+            ? ru
+              ? "В каждой группе каждый встречается с каждым; расписание туров строится по посеву."
+              : "In each group everyone meets everyone; the round schedule follows the seeds."
+            : ru
+              ? "Каждый встречается с каждым; расписание туров строится по посеву."
+              : "Everyone meets everyone; the round schedule follows the seeds."}
       </p>
+      {format === "groups" ? (
+        <p className="small muted">
+          {ru
+            ? "Группы составляются змейкой по посеву: первые посевы — по одному в каждую группу, следующие — в обратном порядке, так группы равны по силе. В группе — круговая система с этой таблицей."
+            : "Groups are dealt in a snake by seed: the top seeds one per group, the next ones in reverse order, so the groups are balanced. Each group is a round robin with this table."}
+        </p>
+      ) : null}
+      {settings.playoff ? (
+        <p className="small muted">
+          {format === "groups"
+            ? ru
+              ? "В плей-офф сначала посеяны победители групп, затем вторые места и так далее; внутри одного места группы сравниваются по очкам, разнице и забитому за матч. Встреча соперников из одной группы в первом раунде плей-офф по возможности исключается."
+              : "The playoff seeds group winners first, then runners-up and so on; entrants of the same group rank are compared by points, score difference and scored per game. Two entrants of the same group are kept apart in the first playoff round whenever possible."
+            : ru
+              ? `В плей-офф выходят ${settings.playoff.size} лучших по таблице основного этапа, посев — по месту в таблице.`
+              : `The top ${settings.playoff.size} of the main-stage table make the playoff, seeded by their place in the table.`}{" "}
+          {ru
+            ? "Плей-офф создаётся автоматически после последнего матча основного этапа и открытых споров по нему; после этого результаты основного этапа не меняются. Итоговые места: сначала плей-офф, затем остальные по основному этапу (после групп — общее место для одинаковых мест в группах)."
+            : "The playoff is created automatically after the last main-stage match and any open disputes about it; from then on main-stage results are final. Final places: the playoff first, then everyone else by the main stage (after groups, the same group place is a shared place)."}
+        </p>
+      ) : null}
       <p className="small muted">
         {ru ? "Версии алгоритмов" : "Algorithm versions"}: {settings.standings}
-        {settings.pairing ? ` · ${settings.pairing}` : ""}. {started ? (ru ? "Настройки зафиксированы при старте." : "Settings were frozen at the start.") : ru ? "Настройки фиксируются при старте." : "Settings are frozen at the start."}
+        {settings.pairing ? ` · ${settings.pairing}` : ""}
+        {settings.stages ? ` · ${settings.stages}` : ""}. {started ? (ru ? "Настройки зафиксированы при старте." : "Settings were frozen at the start.") : ru ? "Настройки фиксируются при старте." : "Settings are frozen at the start."}
       </p>
     </div>
   );

@@ -8,22 +8,56 @@ import { viewer } from "@/server/viewer.ts";
 import { bracket, getTournament, participants } from "@/server/queries.ts";
 import { canManageOrg } from "@/server/access.ts";
 import { allowedTransitions, canManageTournament, canRefereeTournament, isMatchFormat, type TournamentStatus } from "@/server/tournaments.ts";
-import { roundName } from "@/server/bracket.ts";
-import { deRoundName } from "@/server/double.ts";
 import { scoreLog } from "@/server/leaderboard.ts";
 import { isRoundFormat, settingsOf } from "@/server/format-settings.ts";
 import { effectiveSwissRounds } from "@/server/swiss.ts";
-import { roundStandings } from "@/server/rounds.ts";
+import { groupStandings, roundStandings } from "@/server/rounds.ts";
 import { listCircuits } from "@/server/circuits.ts";
 import { ActionForm, Badge, DbDown, Field, Flash, type SearchParams } from "@/components/ui";
 import { TournamentForm } from "@/components/tournament-form";
-import { BracketView, formatLabel, roundLabel, StandingsTable, type StandingName } from "@/components/tournament";
+import { BracketView, formatLabel, groupTitle, labelContext, matchLabel, playoffFormatLabel, StandingsTable, type StandingName } from "@/components/tournament";
 import { LocalDateTimeInput, TimeZoneField } from "@/components/time";
+
+/** Matches of a playoff bracket for n entrants (double elimination: without a possible reset). */
+const playoffMatchCount = (format: string, n: number) => (format === "double_elimination" ? 2 * n - 2 : n - 1);
 
 /** What the structure will look like for n entrants, before anything is generated. */
 function structurePreview(format: string, n: number, settings: ReturnType<typeof settingsOf>, ru: boolean): Array<[string, string]> {
   if (n < 2) return [[ru ? "Участников" : "Entrants", String(n)]];
+  const rows = structureMain(format, n, settings, ru);
+  const playoff = settings.playoff;
+  if (playoff && (format === "round_robin" || format === "swiss" || format === "groups")) {
+    const field = format === "groups" ? playoff.size : Math.min(playoff.size, n);
+    rows.push([ru ? "Плей-офф" : "Playoff", `${playoffFormatLabel(playoff.format, ru ? "ru" : "en")} · ${field}`]);
+    rows.push([ru ? "Матчей плей-офф" : "Playoff matches", String(playoffMatchCount(playoff.format, field)) + (playoff.format === "double_elimination" ? (ru ? " (+1 при перезапуске)" : " (+1 with a reset)") : "")]);
+  }
+  if ((format === "round_robin" || format === "swiss" || format === "groups") && (settings.roundHours ?? 0) > 0)
+    rows.push([ru ? "Интервал между турами" : "Time between rounds", `${settings.roundHours} ${ru ? "ч" : "h"}`]);
+  return rows;
+}
+
+function structureMain(format: string, n: number, settings: ReturnType<typeof settingsOf>, ru: boolean): Array<[string, string]> {
   const size = 2 ** Math.ceil(Math.log2(n));
+  if (format === "gauntlet")
+    return [
+      [ru ? "Ступеней (матчей)" : "Steps (matches)", String(n - 1)],
+      [ru ? "Первый посев" : "Top seed", ru ? "играет только финал" : "plays only the final"],
+      [ru ? "Нижние посевы" : "Bottom seeds", ru ? `${n}-й и ${n - 1}-й открывают лесенку` : `${n} and ${n - 1} open the ladder`],
+    ];
+  if (format === "groups" && settings.groups) {
+    const { count, advance } = settings.groups;
+    const small = Math.floor(n / count);
+    const big = Math.ceil(n / count);
+    const games = (k: number) => ((k * (k - 1)) / 2) * (settings.legs ?? 1);
+    const matches = (n % count) * games(big) + (count - (n % count)) * games(small);
+    return [
+      [ru ? "Групп" : "Groups", String(count)],
+      [ru ? "Участников в группе" : "Entrants per group", small === big ? String(small) : `${small}–${big}`],
+      [ru ? "Выходят из группы" : "Advance per group", String(advance)],
+      [ru ? "Матчей в группах" : "Group matches", String(matches)],
+      [ru ? "Достаточно для старта" : "Enough to start", n >= count * Math.max(2, advance) ? (ru ? "да" : "yes") : ru ? `нет — нужно ${count * Math.max(2, advance)}` : `no — ${count * Math.max(2, advance)} needed`],
+    ];
+  }
   if (format === "single_elimination" || format === "double_elimination") {
     const rows: Array<[string, string]> = [
       [ru ? "Размер сетки" : "Bracket size", String(size)],
@@ -116,26 +150,35 @@ export default async function ManageTournament({ params, searchParams }: { param
   const status = t.status as TournamentStatus;
   const editable = ["DRAFT", "PUBLISHED", "REGISTRATION_OPEN", "REGISTRATION_CLOSED"].includes(status);
   const preStart = ["PUBLISHED", "REGISTRATION_OPEN", "REGISTRATION_CLOSED"].includes(status);
-  const wRounds = Math.max(0, ...matches.filter((m) => (m.bracket ?? "W") === "W").map((m) => m.round));
-  const lRounds = Math.max(0, ...matches.filter((m) => m.bracket === "L").map((m) => m.round));
-  const label = (m: (typeof matches)[number]) =>
-    rounds
-      ? roundLabel(m.round, lang)
-      : t.format === "double_elimination"
-        ? deRoundName((m.bracket ?? "W") as "W" | "L" | "GF", m.round, wRounds, lRounds, lang)
-        : roundName(m.round, wRounds, lang);
-  const roundTable = rounds && matches.length ? await roundStandings(db, t) : [];
+  const playoff = rounds ? (settings.playoff ?? null) : null;
+  const labels = labelContext(matches, t.format, playoff?.format);
+  const label = (m: (typeof matches)[number]) => matchLabel(m, labels, lang);
+  const mainMatches = matches.filter((m) => (m.stage ?? 1) === 1);
+  const playoffMatches = matches.filter((m) => m.stage === 2);
+  const roundTable = (rounds === "round_robin" || rounds === "swiss") && matches.length ? await roundStandings(db, t) : [];
+  const groupTables = rounds === "groups" && matches.length ? await groupStandings(db, t) : [];
+  const finished = status === "COMPLETED" || status === "ARCHIVED";
   const names = new Map<string, StandingName>(list.map((p) => [p.id, { name: p.name, username: p.username, team_slug: p.team_slug }]));
   const running = ["IN_PROGRESS", "PAUSED"].includes(status) && isMatchFormat(t.format);
+  // During a playoff only the playoff can be rebuilt (the server applies the same rule).
+  const regenStage = t.stage === 2 ? 2 : null;
   const [regen] = running
     ? await db.query<{ blocking: number }>(
-        `select (select count(*)::int from match_results r join matches m on m.id = r.match_id where m.tournament_id = $1)
-              + (select count(*)::int from disputes x join matches m on m.id = x.match_id where m.tournament_id = $1)
-              + (select count(*)::int from matches where tournament_id = $1 and (status in ('in_progress','result_submitted','disputed')
+        `select (select count(*)::int from match_results r join matches m on m.id = r.match_id where m.tournament_id = $1 and ($2::int is null or m.stage = $2))
+              + (select count(*)::int from disputes x join matches m on m.id = x.match_id where m.tournament_id = $1 and ($2::int is null or m.stage = $2))
+              + (select count(*)::int from matches where tournament_id = $1 and ($2::int is null or stage = $2) and (status in ('in_progress','result_submitted','disputed')
                    or (status = 'completed' and coalesce(outcome, '') not in ('bye','disqualification')))) as blocking`,
-        [t.id],
+        [t.id, regenStage],
       )
     : [];
+  // The playoff waits for open disputes about main-stage matches.
+  const [waiting] =
+    running && playoff && t.stage === 1 && mainMatches.length && mainMatches.every((m) => ["completed", "cancelled"].includes(m.status))
+      ? await db.query<{ n: number }>(
+          "select count(*)::int as n from disputes d join matches m on m.id = d.match_id where m.tournament_id = $1 and m.stage = 1 and d.status = 'open'",
+          [t.id],
+        )
+      : [];
   const circuitOptions = manager ? await listCircuits(db, { orgId: t.org_id }) : [];
   const registeredCount = list.filter((p) => p.status === "registered").length;
   const openMatches = matches.filter((m) => ["ready", "in_progress", "result_submitted", "disputed"].includes(m.status));
@@ -175,11 +218,15 @@ export default async function ManageTournament({ params, searchParams }: { param
         <section className="card section-card">
           <h2 className="h3">{o.lifecycle}</h2>
           <p className="small muted">
-            {rounds
+            {playoff
               ? ru
-                ? "Разрешены только допустимые переходы. Завершение наступает автоматически после последнего тура."
-                : "Only valid transitions are offered. Completion happens automatically after the last round."
-              : o.lifecycleNote}
+                ? "Разрешены только допустимые переходы. Плей-офф создаётся автоматически после последнего матча основного этапа (и решения открытых споров по нему), турнир завершается финалом плей-офф."
+                : "Only valid transitions are offered. The playoff is created automatically after the last main-stage match (and any open disputes about it); the playoff final completes the tournament."
+              : rounds
+                ? ru
+                  ? "Разрешены только допустимые переходы. Завершение наступает автоматически после последнего тура."
+                  : "Only valid transitions are offered. Completion happens automatically after the last round."
+                : o.lifecycleNote}
             {leaderboard ? (ru ? " Leaderboard завершается вручную, когда все отмеченные результаты проверены." : " A leaderboard is completed manually once every flagged result is reviewed.") : ""}
           </p>
           <div className="row">
@@ -191,15 +238,46 @@ export default async function ManageTournament({ params, searchParams }: { param
               </ActionForm>
             ))}
           </div>
+          {(waiting?.n ?? 0) > 0 ? (
+            <p className="notice notice-warn">
+              {ru
+                ? `Основной этап сыгран. Плей-офф будет создан после решения открытых споров по его матчам: ${waiting!.n}.`
+                : `The main stage is complete. The playoff will be created once its open disputes are decided: ${waiting!.n}.`}
+            </p>
+          ) : null}
           {running ? (
             <div className="stack-sm">
               {(regen?.blocking ?? 0) === 0 ? (
                 <ActionForm action="tournament.regenerate" lang={lang} back={back} hidden={hidden} className="inline-form">
-                  <button className="btn btn-ghost btn-sm">{rounds === "swiss" ? (ru ? "Пересоздать первый тур" : "Regenerate round 1") : rounds ? (ru ? "Пересоздать расписание" : "Regenerate the schedule") : ru ? "Пересоздать сетку" : "Regenerate the bracket"}</button>
+                  <button className="btn btn-ghost btn-sm">
+                    {t.stage === 2
+                      ? ru
+                        ? "Пересоздать плей-офф"
+                        : "Regenerate the playoff"
+                      : rounds === "swiss"
+                        ? ru
+                          ? "Пересоздать первый тур"
+                          : "Regenerate round 1"
+                        : rounds === "groups"
+                          ? ru
+                            ? "Пересоздать группы"
+                            : "Regenerate the groups"
+                          : rounds
+                            ? ru
+                              ? "Пересоздать расписание"
+                              : "Regenerate the schedule"
+                            : ru
+                              ? "Пересоздать сетку"
+                              : "Regenerate the bracket"}
+                  </button>
                   <span className="small muted">
-                    {ru
-                      ? "Строится заново из текущих участников в порядке посева (дисквалифицированные исключаются). Доступно, пока нет ни одного результата."
-                      : "Rebuilt from the current entrants in seed order (disqualified entrants are left out). Available until the first result."}
+                    {t.stage === 2
+                      ? ru
+                        ? "Плей-офф строится заново по итоговой таблице основного этапа (дисквалифицированные исключаются, их место занимает следующий по таблице). Доступно до первого результата плей-офф."
+                        : "The playoff is rebuilt from the final main-stage table (disqualified entrants are left out and the next in the table takes their place). Available until the first playoff result."
+                      : ru
+                        ? "Строится заново из текущих участников в порядке посева (дисквалифицированные исключаются). Доступно, пока нет ни одного результата."
+                        : "Rebuilt from the current entrants in seed order (disqualified entrants are left out). Available until the first result."}
                   </span>
                 </ActionForm>
               ) : (
@@ -513,14 +591,39 @@ export default async function ManageTournament({ params, searchParams }: { param
               ))}
             </ul>
           ) : null}
-          <BracketView lang={lang} matches={matches} format={t.format} />
+          <BracketView lang={lang} matches={rounds ? mainMatches : matches} format={t.format} />
+          {playoff && playoffMatches.length ? (
+            <div className="bracket-group">
+              <h3 className="h3">{ru ? "Плей-офф" : "Playoff"}</h3>
+              <BracketView lang={lang} matches={playoffMatches} format={playoff.format} />
+            </div>
+          ) : null}
         </section>
       ) : null}
 
-      {rounds && roundTable.length ? (
+      {groupTables.length ? (
         <section className="section-tight">
-          <h2 className="h3">{d.tournaments.tabs.standings}</h2>
-          <StandingsTable lang={lang} format={rounds} rows={roundTable} names={names} final={status === "COMPLETED" || status === "ARCHIVED"} />
+          <h2 className="h3">{ru ? "Таблицы групп" : "Group tables"}</h2>
+          <div className="stage-tables">
+            {groupTables.map((g) => (
+              <div key={g.group} className="stack-sm">
+                <h3 className="h4">{groupTitle(g.group, lang)}</h3>
+                <StandingsTable lang={lang} format="groups" rows={g.rows} names={names} final={false} advance={settings.groups?.advance ?? 0} />
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : rounds && roundTable.length ? (
+        <section className="section-tight">
+          <h2 className="h3">{playoff ? (ru ? "Таблица основного этапа" : "Main-stage table") : d.tournaments.tabs.standings}</h2>
+          <StandingsTable
+            lang={lang}
+            format={rounds}
+            rows={roundTable}
+            names={names}
+            final={finished && !playoff}
+            advance={playoff ? Math.min(playoff.size, roundTable.length) : 0}
+          />
         </section>
       ) : null}
 

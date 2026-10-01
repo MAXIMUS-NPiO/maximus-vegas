@@ -6,12 +6,11 @@ import { pageMeta } from "@/lib/meta.ts";
 import { viewer } from "@/server/viewer.ts";
 import { getMatch } from "@/server/queries.ts";
 import { canRefereeTournament } from "@/server/tournaments.ts";
-import { roundName } from "@/server/bracket.ts";
-import { deRoundName } from "@/server/double.ts";
 import { settingsOf } from "@/server/format-settings.ts";
 import { mediaUrl } from "@/server/media.ts";
 import { ActionForm, Badge, DbDown, Field, Flash, type SearchParams } from "@/components/ui";
 import { LocalDateTimeInput, LocalTime, TimeZoneField } from "@/components/time";
+import { matchLabel } from "@/components/tournament";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string; id: string }> }): Promise<Metadata> {
   const { lang, id } = await params;
@@ -37,14 +36,15 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
   const referee = await canRefereeTournament(db, { id: m.tournament_id, org_id: m.org_id }, user);
   const ru = lang === "ru";
   const inRounds = m.bracket === "RR" || m.bracket === "SW";
-  const roundLabel = inRounds
-    ? ru
-      ? `Тур ${m.round}`
-      : `Round ${m.round}`
-    : m.t_format === "double_elimination"
-      ? deRoundName((m.bracket ?? "W") as "W" | "L" | "GF", m.round, m.w_rounds, m.l_rounds, lang)
-      : roundName(m.round, m.rounds, lang);
-  const drawsOk = inRounds && settingsOf({ format: m.t_format, format_settings: m.t_settings }).allowDraws;
+  const tSettings = settingsOf({ format: m.t_format, format_settings: m.t_settings });
+  const roundLabel = matchLabel(
+    m,
+    { format: m.t_format, playoffFormat: tSettings.playoff?.format, wRounds: m.w_rounds, lRounds: m.l_rounds, gRounds: m.bracket === "G" ? m.rounds : 0 },
+    lang,
+  );
+  // Once the playoff exists, the main stage that seeded it is final.
+  const stageLocked = (m.stage ?? 1) === 1 && m.t_stage === 2;
+  const drawsOk = inRounds && tSettings.allowDraws;
   const drawn = m.status === "completed" && !m.winner_reg && Boolean(m.a_reg && m.b_reg);
   const drawNote = inRounds
     ? drawsOk
@@ -59,7 +59,8 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
   const mySide = user ? (a?.leaders.includes(user.id) ? "a" : b?.leaders.includes(user.id) ? "b" : null) : null;
   const openPost = disputes.find((x) => x.kind === "post_result" && x.status === "open");
   // A decided winner can be disputed; a draw is corrected by the referee (versioned, logged).
-  const canFilePost = Boolean(mySide) && m.status === "completed" && m.outcome !== "bye" && Boolean(m.winner_reg) && ["IN_PROGRESS", "PAUSED", "COMPLETED"].includes(m.t_status) && !openPost;
+  const canFilePost =
+    Boolean(mySide) && m.status === "completed" && m.outcome !== "bye" && Boolean(m.winner_reg) && ["IN_PROGRESS", "PAUSED", "COMPLETED"].includes(m.t_status) && !openPost && !stageLocked;
   const live = m.t_status === "IN_PROGRESS";
   const pending = results.find((r) => r.status === "pending");
   const confirmed = results.find((r) => r.status === "confirmed");
@@ -284,7 +285,13 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
               <button className="btn btn-ghost btn-sm">{d.match.save}</button>
             </ActionForm>
           ) : null}
-          {m.status === "completed" && m.outcome !== "bye" && both ? (
+          {m.status === "completed" && m.outcome !== "bye" && both && stageLocked ? (
+            <p className="small muted">
+              {ru
+                ? "Плей-офф уже начался: результат основного этапа зафиксирован и не исправляется."
+                : "The playoff has started: this main-stage result is final and cannot be corrected."}
+            </p>
+          ) : m.status === "completed" && m.outcome !== "bye" && both ? (
             <details className="disclosure">
               <summary>{d.match.correctTitle}</summary>
               <p className="small muted">{d.match.correctNote}</p>
@@ -360,12 +367,20 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
               </Field>
               <button className="btn btn-ghost btn-sm">{ru ? "Оставить результат в силе" : "Uphold the result"}</button>
             </ActionForm>
-            <ActionForm action="dispute.decide" lang={lang} back={back} hidden={{ dispute: openPost.id, decision: "overturn" }} className="stack">
-              <Field label={ru ? "Обоснование" : "Reasoning"}>
-                <textarea name="note" required minLength={5} maxLength={1000} rows={2} />
-              </Field>
-              <button className="btn btn-danger btn-sm">{ru ? "Отменить результат" : "Overturn the result"}</button>
-            </ActionForm>
+            {stageLocked ? (
+              <p className="small muted">
+                {ru
+                  ? "Отмена недоступна: плей-офф уже начался и результаты основного этапа зафиксированы."
+                  : "Overturning is unavailable: the playoff has started and main-stage results are final."}
+              </p>
+            ) : (
+              <ActionForm action="dispute.decide" lang={lang} back={back} hidden={{ dispute: openPost.id, decision: "overturn" }} className="stack">
+                <Field label={ru ? "Обоснование" : "Reasoning"}>
+                  <textarea name="note" required minLength={5} maxLength={1000} rows={2} />
+                </Field>
+                <button className="btn btn-danger btn-sm">{ru ? "Отменить результат" : "Overturn the result"}</button>
+              </ActionForm>
+            )}
           </div>
         </section>
       ) : null}

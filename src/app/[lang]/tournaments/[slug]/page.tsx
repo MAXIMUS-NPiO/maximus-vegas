@@ -13,7 +13,8 @@ import { planDoubleElimination } from "@/server/double.ts";
 import { roundRobinSchedule } from "@/server/roundrobin.ts";
 import { pairSwissRound } from "@/server/swiss.ts";
 import { isRoundFormat, settingsOf, type FormatSettings } from "@/server/format-settings.ts";
-import { roundStandings } from "@/server/rounds.ts";
+import { groupStandings, roundStandings } from "@/server/rounds.ts";
+import { planGauntlet, snakeGroups } from "@/server/stages.ts";
 import { leaderboardStandings, scoreLog } from "@/server/leaderboard.ts";
 import { DEFAULT_WEIGHTS, mergeWeights, WEIGHT_KEYS } from "@/server/scoring.ts";
 import { tournamentSponsors } from "@/server/sponsors.ts";
@@ -21,7 +22,7 @@ import { mediaUrl } from "@/server/media.ts";
 import type { Database } from "@/server/db.ts";
 import type { SessionUser } from "@/server/auth.ts";
 import { ActionForm, Badge, DbDown, Empty, Field, Flash, SignInPrompt, type SearchParams } from "@/components/ui";
-import { BracketView, formatLabel, RoundRules, StandingsTable, type StandingName } from "@/components/tournament";
+import { BracketView, formatLabel, groupTitle, playoffFormatLabel, RoundRules, StandingsTable, type StandingName } from "@/components/tournament";
 import { Countdown, LocalTime } from "@/components/time";
 import { reviewLabel } from "@/lib/labels.ts";
 
@@ -60,11 +61,15 @@ async function eligibleTeams(db: Database, user: SessionUser, game: string, size
 /** Rounds shown in a round-robin preview before the start; the full schedule appears at the start. */
 const PREVIEW_ROUNDS = 5;
 
-function preview(list: Participant[], format: string, settings: FormatSettings): BracketMatch[] {
-  const seeded = list
+/** Registered entrants in the order the start will seed them (manual seeds first, then registration). */
+const seededList = (list: Participant[]) =>
+  list
     .filter((p) => p.status === "registered")
     .sort((a, b) => (a.seed ?? 1e9) - (b.seed ?? 1e9) || new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-  if (seeded.length < 2) return [];
+
+function preview(list: Participant[], format: string, settings: FormatSettings): BracketMatch[] {
+  const seeded = seededList(list);
+  if (seeded.length < 2 || format === "groups") return [];
   const game = (id: string, bracketKey: "RR" | "SW", round: number, position: number, a: Participant, b: Participant | null): BracketMatch => ({
     id,
     bracket: bracketKey,
@@ -95,7 +100,7 @@ function preview(list: Participant[], format: string, settings: FormatSettings):
     if (pairing.bye) out.push(game("p-SW-1-bye", "SW", 1, out.length, byId.get(pairing.bye)!, null));
     return out;
   }
-  const base = (m: { round: number; position: number; a: Participant | null; b: Participant | null }, bracketKey: "W" | "L" | "GF", aVoid = false, bVoid = false) => ({
+  const base = (m: { round: number; position: number; a: Participant | null; b: Participant | null }, bracketKey: "W" | "L" | "GF" | "G", aVoid = false, bVoid = false) => ({
     id: `p-${bracketKey}-${m.round}-${m.position}`,
     bracket: bracketKey,
     a_void: aVoid,
@@ -114,6 +119,7 @@ function preview(list: Participant[], format: string, settings: FormatSettings):
     scheduled_at: null,
   });
   if (format === "double_elimination") return planDoubleElimination(seeded).matches.map((m) => base(m, m.bracket, m.aVoid, m.bVoid)) as BracketMatch[];
+  if (format === "gauntlet") return planGauntlet(seeded).matches.map((m) => base({ round: m.round, position: 0, a: m.a, b: m.b }, "G")) as BracketMatch[];
   return planSingleElimination(seeded).matches.map((m) => base(m, "W")) as BracketMatch[];
 }
 
@@ -152,7 +158,16 @@ export default async function TournamentPage({ params, searchParams }: { params:
   const previewMatches = !started && !leaderboard ? preview(list, t.format, settings) : [];
   const previewRounds = rounds === "round_robin" ? roundRobinSchedule(list.filter((p) => p.status === "registered"), settings.legs ?? 1).rounds : 0;
   const standings = t.status === "COMPLETED" ? list.filter((p) => p.placement !== null).sort((a, b) => (a.placement ?? 0) - (b.placement ?? 0)) : [];
-  const roundTable = rounds && started ? await roundStandings(db, t) : [];
+  // A main stage (round robin, Swiss or groups) may be followed by a playoff (stage 2).
+  const playoff = rounds ? (settings.playoff ?? null) : null;
+  const mainMatches = matches.filter((m) => (m.stage ?? 1) === 1);
+  const playoffMatches = matches.filter((m) => m.stage === 2);
+  const roundTable = (rounds === "round_robin" || rounds === "swiss") && started ? await roundStandings(db, t) : [];
+  const groupTables = rounds === "groups" && started ? await groupStandings(db, t) : [];
+  const groupCount = settings.groups?.count ?? 0;
+  const plannedGroups = rounds === "groups" && !started && seededList(list).length >= 2 ? snakeGroups(seededList(list), groupCount) : [];
+  const groupMinimum = groupCount * Math.max(2, settings.groups?.advance ?? 1);
+  const finished = t.status === "COMPLETED" || t.status === "ARCHIVED";
   const names = new Map<string, StandingName>(list.map((p) => [p.id, { name: p.name, username: p.username, team_slug: p.team_slug }]));
   const linked = await db.query<{ id: string; slug: string; name: string; season: string }>(
     "select id, slug, name, season from circuits where id = any($1)",
@@ -169,6 +184,19 @@ export default async function TournamentPage({ params, searchParams }: { params:
   const myLines = leaderboard && entry ? await scoreLog(db, t.id, { registrationId: entry.id }) : [];
   const [myCountry] = user && t.region_lock.length ? await db.query<{ country_code: string | null }>("select country_code from users where id = $1", [user.id]) : [];
   const tabs = leaderboard ? (["overview", "rules", "participants", "leaderboard", "standings"] as const) : (["overview", "rules", "participants", "bracket", "standings"] as const);
+  const MainTables = () =>
+    groupTables.length ? (
+      <div className="stage-tables">
+        {groupTables.map((g) => (
+          <div key={g.group} className="stack-sm">
+            <h3 className="h4">{groupTitle(g.group, lang)}</h3>
+            <StandingsTable lang={lang} format="groups" rows={g.rows} names={names} final={false} advance={settings.groups?.advance ?? 0} />
+          </div>
+        ))}
+      </div>
+    ) : rounds ? (
+      <StandingsTable lang={lang} format={rounds} rows={roundTable} names={names} final={finished && !playoff} advance={playoff ? Math.min(playoff.size, roundTable.length) : 0} />
+    ) : null;
 
   return (
     <div className="container page">
@@ -210,6 +238,15 @@ export default async function TournamentPage({ params, searchParams }: { params:
             <dt>{d.tournaments.format}</dt>
             <dd>{formatLabel(t.format, lang)}</dd>
           </div>
+          {playoff ? (
+            <div>
+              <dt>{ru ? "Плей-офф" : "Playoff"}</dt>
+              <dd>
+                {playoffFormatLabel(playoff.format, lang)} · {playoff.size}
+                {t.stage === 2 && !finished ? ` · ${ru ? "идёт" : "under way"}` : ""}
+              </dd>
+            </div>
+          ) : null}
           {t.region ? (
             <div>
               <dt>{d.tournaments.region}</dt>
@@ -569,7 +606,61 @@ export default async function TournamentPage({ params, searchParams }: { params:
         <section id="bracket" className="section-tight">
           <h2 className="h3">{rounds ? (ru ? "Туры" : "Rounds") : d.tournaments.tabs.bracket}</h2>
           {started ? (
-            <BracketView lang={lang} matches={matches} format={t.format} />
+            <>
+              <BracketView lang={lang} matches={rounds ? mainMatches : matches} format={t.format} />
+              {playoff ? (
+                <div className="bracket-group">
+                  <h3 className="h3">{ru ? "Плей-офф" : "Playoff"}</h3>
+                  {playoffMatches.length ? (
+                    <BracketView lang={lang} matches={playoffMatches} format={playoff.format} />
+                  ) : t.stage === 2 ? (
+                    <p className="muted">
+                      {ru
+                        ? "Плей-офф не состоялся: из основного этапа вышло меньше двух участников. Места определены по основному этапу."
+                        : "No playoff was played: fewer than two entrants came through the main stage. Places follow the main stage."}
+                    </p>
+                  ) : (
+                    <p className="muted">
+                      {ru
+                        ? `Плей-офф (${playoffFormatLabel(playoff.format, lang)}, ${playoff.size} участников) будет создан автоматически после последнего матча основного этапа.`
+                        : `The playoff (${playoffFormatLabel(playoff.format, lang)}, ${playoff.size} entrants) is created automatically after the last main-stage match.`}
+                    </p>
+                  )}
+                </div>
+              ) : null}
+            </>
+          ) : plannedGroups.length ? (
+            <>
+              <p className="muted small">
+                {ru
+                  ? "Предварительно: состав групп по текущему посеву (змейка). Расписание туров появится при старте."
+                  : "Preview: groups by the current seeds (snake). The round schedule appears at the start."}
+                {seededList(list).length < groupMinimum
+                  ? ru
+                    ? ` Для старта нужно не меньше ${groupMinimum} участников.`
+                    : ` At least ${groupMinimum} entrants are needed to start.`
+                  : ""}
+              </p>
+              <div className="group-grid">
+                {plannedGroups.map((g, i) => (
+                  <div key={i} className="card">
+                    <h3 className="h4">{groupTitle(i + 1, lang)}</h3>
+                    <ol>
+                      {g.map((p) => (
+                        <li key={p.id}>{p.name}</li>
+                      ))}
+                    </ol>
+                  </div>
+                ))}
+              </div>
+              {playoff ? (
+                <p className="small muted">
+                  {ru
+                    ? `Затем плей-офф: ${playoffFormatLabel(playoff.format, lang)}, ${playoff.size} участников.`
+                    : `Then a playoff: ${playoffFormatLabel(playoff.format, lang)}, ${playoff.size} entrants.`}
+                </p>
+              ) : null}
+            </>
           ) : previewMatches.length ? (
             <>
               <p className="muted small">
@@ -584,6 +675,13 @@ export default async function TournamentPage({ params, searchParams }: { params:
                     : d.tournaments.bracketPreview}
               </p>
               <BracketView lang={lang} matches={previewMatches} linkMatches={false} format={t.format} />
+              {playoff ? (
+                <p className="small muted">
+                  {ru
+                    ? `После основного этапа — плей-офф: ${playoffFormatLabel(playoff.format, lang)}, ${playoff.size} лучших по таблице.`
+                    : `After the main stage, a playoff: ${playoffFormatLabel(playoff.format, lang)} for the top ${playoff.size} of the table.`}
+                </p>
+              ) : null}
             </>
           ) : (
             <p className="muted">{d.tournaments.bracketNotYet}</p>
@@ -593,12 +691,46 @@ export default async function TournamentPage({ params, searchParams }: { params:
 
       <section id="standings" className="section-tight">
         <h2 className="h3">{d.tournaments.tabs.standings}</h2>
-        {rounds && roundTable.length ? (
+        {playoff && finished && standings.length ? (
           <>
-            {t.status !== "COMPLETED" && t.status !== "ARCHIVED" ? (
-              <p className="small muted">{ru ? "Промежуточная таблица: места фиксируются после последнего тура." : "Provisional table: places are fixed after the last round."}</p>
+            <ol className="standings">
+              {standings.map((p) => (
+                <li key={p.id} className={p.placement === 1 ? "is-first" : undefined}>
+                  <span className="place">{p.placement}</span>
+                  <span>{p.name}</span>
+                </li>
+              ))}
+            </ol>
+            <p className="small muted">
+              {ru
+                ? "Места: сначала плей-офф, затем остальные по основному этапу."
+                : "Places: the playoff first, then everyone else by the main stage."}
+            </p>
+            {groupTables.length || roundTable.length ? (
+              <details className="disclosure">
+                <summary>{ru ? "Таблица основного этапа" : "Main-stage table"}</summary>
+                <MainTables />
+              </details>
             ) : null}
-            <StandingsTable lang={lang} format={rounds} rows={roundTable} names={names} final={t.status === "COMPLETED" || t.status === "ARCHIVED"} />
+          </>
+        ) : rounds && (roundTable.length || groupTables.length) ? (
+          <>
+            {!finished ? (
+              <p className="small muted">
+                {playoff
+                  ? t.stage === 2
+                    ? ru
+                      ? "Основной этап завершён: таблица окончательная. Итоговые места определит плей-офф."
+                      : "The main stage is over: the table is final. The playoff decides the final places."
+                    : ru
+                      ? "Промежуточная таблица: выделены места, которые сейчас выходят в плей-офф."
+                      : "Provisional table: highlighted places currently advance to the playoff."
+                  : ru
+                    ? "Промежуточная таблица: места фиксируются после последнего тура."
+                    : "Provisional table: places are fixed after the last round."}
+              </p>
+            ) : null}
+            <MainTables />
           </>
         ) : standings.length ? (
           <ol className="standings">

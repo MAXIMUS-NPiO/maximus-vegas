@@ -624,6 +624,11 @@ function tournamentInput(c: Ctx) {
             legs: c.form.legs,
             swissRounds: c.form.swissRounds,
             dqRule: c.form.dqRule,
+            groupCount: c.form.groupCount,
+            groupAdvance: c.form.groupAdvance,
+            playoffFormat: c.form.playoffFormat,
+            playoffSize: c.form.playoffSize,
+            roundHours: c.form.roundHours,
           }
         : undefined,
     circuit:

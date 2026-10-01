@@ -1,7 +1,7 @@
 import { dict, type Locale } from "@/lib/i18n.ts";
 import { GAMES } from "@/lib/games.ts";
 import { DEFAULT_WEIGHTS, mergeWeights, WEIGHT_KEYS } from "@/server/scoring.ts";
-import { editableSettings, RR_MAX_ENTRANTS, SWISS_MAX_ROUNDS } from "@/server/format-settings.ts";
+import { editableSettings, GAUNTLET_MAX, isRoundFormat, MAX_GROUPS, PLAYOFF_MAX, ROUND_HOURS_MAX, RR_MAX_ENTRANTS, SWISS_MAX_ROUNDS } from "@/server/format-settings.ts";
 import { DEFAULT_POINTS } from "@/server/standings.ts";
 import { ActionForm, Check, Field } from "./ui";
 import { LocalDateTimeInput, TimeZoneField } from "./time";
@@ -67,8 +67,7 @@ export function TournamentForm({
   const editing = Boolean(t?.id);
   const weights = mergeWeights(t?.scoring ?? null);
   // Round-robin and Swiss settings as the organiser entered them (never the values frozen at a start).
-  const rs =
-    t?.format === "round_robin" || t?.format === "swiss" ? editableSettings({ format: t.format, format_settings: t.format_settings }) : null;
+  const rs = t?.format && isRoundFormat(t.format) ? editableSettings({ format: t.format, format_settings: t.format_settings }) : null;
   const points = rs?.points ?? DEFAULT_POINTS;
   const activeCircuits = circuits.filter((c) => c.status === "active");
   const qualifiers = circuits.filter((c) => c.qualify_top > 0);
@@ -90,8 +89,8 @@ export function TournamentForm({
           label={ru ? "Формат" : "Format"}
           hint={
             ru
-              ? "Сетки, круговая и швейцарская системы — для игр с матчами «сторона против стороны»; leaderboard — для королевских битв и любых игр со статистикой."
-              : "Brackets, round robin and Swiss suit head-to-head games; leaderboards suit battle royales and any game with stats."
+              ? "Сетки, круговая, швейцарская, группы и лесенка — для игр с матчами «сторона против стороны»; leaderboard — для королевских битв и любых игр со статистикой."
+              : "Brackets, round robin, Swiss, groups and the gauntlet suit head-to-head games; leaderboards suit battle royales and any game with stats."
           }
         >
           <select name="format" defaultValue={t?.format ?? "single_elimination"}>
@@ -99,6 +98,8 @@ export function TournamentForm({
             <option value="double_elimination">{ru ? "Двойное выбывание (с перезапуском финала)" : "Double elimination (with bracket reset)"}</option>
             <option value="round_robin">{ru ? `Круговая система — каждый с каждым (до ${RR_MAX_ENTRANTS})` : `Round robin — everyone plays everyone (up to ${RR_MAX_ENTRANTS})`}</option>
             <option value="swiss">{ru ? "Швейцарская система — пары по очкам" : "Swiss system — pairings by points"}</option>
+            <option value="groups">{ru ? "Группы + плей-офф" : "Groups + playoff"}</option>
+            <option value="gauntlet">{ru ? `Лесенка (gauntlet) — до ${GAUNTLET_MAX}` : `Gauntlet (stepladder) — up to ${GAUNTLET_MAX}`}</option>
             <option value="leaderboard">{ru ? "Leaderboard по очкам" : "Points leaderboard"}</option>
           </select>
         </Field>
@@ -138,44 +139,82 @@ export function TournamentForm({
       <Check name="checkInRequired" label={o.checkIn} defaultChecked={t?.check_in_required ?? true} />
 
       <fieldset className="fieldset">
-        <legend>{ru ? "Круговая и швейцарская системы" : "Round robin and Swiss"}</legend>
+        <legend>{ru ? "Круговая, швейцарская системы и группы" : "Round robin, Swiss and groups"}</legend>
         <input type="hidden" name="formatSettings" value="1" />
         <p className="small muted">
           {ru
             ? "Используются только в этих форматах и фиксируются при старте. Очки — целые числа 0–100: победа больше поражения, ничья между ними."
             : "Used only in these formats and frozen at the start. Points are whole numbers 0–100: a win above a loss, a draw between them."}
         </p>
-        <div className="form-grid form-grid-4">
-          <Field label={ru ? "Очки за победу" : "Points for a win"}>
-            <input name="pointsWin" type="number" min={0} max={100} defaultValue={points.win} inputMode="numeric" />
-          </Field>
-          <Field label={ru ? "За ничью" : "For a draw"}>
-            <input name="pointsDraw" type="number" min={0} max={100} defaultValue={points.draw} inputMode="numeric" />
-          </Field>
-          <Field label={ru ? "За поражение" : "For a loss"}>
-            <input name="pointsLoss" type="number" min={0} max={100} defaultValue={points.loss} inputMode="numeric" />
-          </Field>
-          <Field label={ru ? "За bye (швейцарская)" : "For a bye (Swiss)"} hint={ru ? "Пусто — как за победу" : "Empty = same as a win"}>
-            <input name="pointsBye" type="number" min={0} max={100} defaultValue={t?.format === "swiss" ? points.bye : ""} inputMode="numeric" />
-          </Field>
-          <Field label={ru ? "Круги (круговая)" : "Legs (round robin)"}>
-            <select name="legs" defaultValue={String(rs?.legs ?? 1)}>
-              <option value="1">{ru ? "Один" : "One"}</option>
-              <option value="2">{ru ? "Два — дома и в гостях" : "Two — home and away"}</option>
-            </select>
-          </Field>
-          <Field label={ru ? "Дисквалификация (круговая)" : "Disqualification (round robin)"} hint={ru ? "Что происходит с результатами участника" : "What happens to the entrant's results"}>
-            <select name="dqRule" defaultValue={rs?.disqualification ?? "annul"}>
-              <option value="annul">{ru ? "Аннулировать все его матчи" : "Annul all of their matches"}</option>
-              <option value="forfeit">{ru ? "Оставшиеся матчи — соперникам" : "Remaining matches to opponents"}</option>
-              <option value="half">{ru ? "Правило 50%: аннулировать, если сыграно меньше половины" : "50% rule: annul if under half was played"}</option>
-            </select>
-          </Field>
-          <Field label={ru ? "Туров (швейцарская)" : "Rounds (Swiss)"} hint={ru ? `Пусто — автоматически; не больше ${SWISS_MAX_ROUNDS} и N − 1` : `Empty = automatic; at most ${SWISS_MAX_ROUNDS} and N − 1`}>
-            <input name="swissRounds" type="number" min={1} max={SWISS_MAX_ROUNDS} defaultValue={rs?.rounds ?? ""} inputMode="numeric" />
-          </Field>
+        <div className="fieldset-body">
+          <div className="form-grid form-grid-4">
+            <Field label={ru ? "Очки за победу" : "Points for a win"}>
+              <input name="pointsWin" type="number" min={0} max={100} defaultValue={points.win} inputMode="numeric" />
+            </Field>
+            <Field label={ru ? "За ничью" : "For a draw"}>
+              <input name="pointsDraw" type="number" min={0} max={100} defaultValue={points.draw} inputMode="numeric" />
+            </Field>
+            <Field label={ru ? "За поражение" : "For a loss"}>
+              <input name="pointsLoss" type="number" min={0} max={100} defaultValue={points.loss} inputMode="numeric" />
+            </Field>
+            <Field label={ru ? "За bye (швейцарская)" : "For a bye (Swiss)"} hint={ru ? "Пусто — как за победу" : "Empty = same as a win"}>
+              <input name="pointsBye" type="number" min={0} max={100} defaultValue={t?.format === "swiss" ? points.bye : ""} inputMode="numeric" />
+            </Field>
+            <Field label={ru ? "Круги (круговая, группы)" : "Legs (round robin, groups)"}>
+              <select name="legs" defaultValue={String(rs?.legs ?? 1)}>
+                <option value="1">{ru ? "Один" : "One"}</option>
+                <option value="2">{ru ? "Два — дома и в гостях" : "Two — home and away"}</option>
+              </select>
+            </Field>
+            <Field label={ru ? "Дисквалификация (круговая, группы)" : "Disqualification (round robin, groups)"} hint={ru ? "Что происходит с результатами участника" : "What happens to the entrant's results"}>
+              <select name="dqRule" defaultValue={rs?.disqualification ?? "annul"}>
+                <option value="annul">{ru ? "Аннулировать все его матчи" : "Annul all of their matches"}</option>
+                <option value="forfeit">{ru ? "Оставшиеся матчи — соперникам" : "Remaining matches to opponents"}</option>
+                <option value="half">{ru ? "Правило 50%: аннулировать, если сыграно меньше половины" : "50% rule: annul if under half was played"}</option>
+              </select>
+            </Field>
+            <Field label={ru ? "Туров (швейцарская)" : "Rounds (Swiss)"} hint={ru ? `Пусто — автоматически; не больше ${SWISS_MAX_ROUNDS} и N − 1` : `Empty = automatic; at most ${SWISS_MAX_ROUNDS} and N − 1`}>
+              <input name="swissRounds" type="number" min={1} max={SWISS_MAX_ROUNDS} defaultValue={rs?.rounds ?? ""} inputMode="numeric" />
+            </Field>
+          </div>
         </div>
         <Check name="allowDraws" label={ru ? "Допускать ничьи (равный счёт)" : "Allow draws (equal score)"} defaultChecked={rs?.allowDraws ?? false} />
+      </fieldset>
+
+      <fieldset className="fieldset">
+        <legend>{ru ? "Этапы: группы, плей-офф, расписание туров" : "Stages: groups, playoff, round schedule"}</legend>
+        <p className="small muted">
+          {ru
+            ? "Для групп, круговой и швейцарской систем. Группы составляются змейкой по посеву; в группе — круговая система с очками выше. Плей-офф для групп обязателен (по умолчанию — олимпийская система), его размер — групп × выходящих; для круговой и швейцарской он необязателен. Всё фиксируется при старте."
+            : "For groups, round robin and Swiss. Groups are dealt in a snake by seed; each group is a round robin with the points above. Groups always end in a playoff (single elimination by default) of groups × advancing entrants; for round robin and Swiss it is optional. Everything is frozen at the start."}
+        </p>
+        <div className="fieldset-body">
+          <div className="form-grid form-grid-4">
+            <Field label={ru ? "Групп" : "Groups"} hint={`2–${MAX_GROUPS}`}>
+              <input name="groupCount" type="number" min={2} max={MAX_GROUPS} defaultValue={rs?.groups?.count ?? 4} inputMode="numeric" />
+            </Field>
+            <Field label={ru ? "Выходят из группы" : "Advance per group"} hint="1–16">
+              <input name="groupAdvance" type="number" min={1} max={16} defaultValue={rs?.groups?.advance ?? 2} inputMode="numeric" />
+            </Field>
+            <Field label={ru ? "Плей-офф" : "Playoff"}>
+              <select name="playoffFormat" defaultValue={rs?.playoff?.format ?? "none"}>
+                <option value="none">{ru ? "Без плей-офф" : "No playoff"}</option>
+                <option value="single_elimination">{ru ? "Олимпийская система" : "Single elimination"}</option>
+                <option value="double_elimination">{ru ? "Двойное выбывание" : "Double elimination"}</option>
+                <option value="gauntlet">{ru ? `Лесенка (до ${GAUNTLET_MAX})` : `Gauntlet (up to ${GAUNTLET_MAX})`}</option>
+              </select>
+            </Field>
+            <Field label={ru ? "Участников плей-офф" : "Playoff entrants"} hint={ru ? `Круговая и швейцарская: лучшие N по таблице, 2–${PLAYOFF_MAX}` : `Round robin and Swiss: the top N of the table, 2–${PLAYOFF_MAX}`}>
+              <input name="playoffSize" type="number" min={2} max={PLAYOFF_MAX} defaultValue={rs?.playoff?.size ?? 8} inputMode="numeric" />
+            </Field>
+            <Field
+              label={ru ? "Интервал между турами, часов" : "Hours between rounds"}
+              hint={ru ? `0 — тур 1 в момент старта, остальные по договорённости; до ${ROUND_HOURS_MAX}` : `0 = round 1 at the start, later rounds by arrangement; up to ${ROUND_HOURS_MAX}`}
+            >
+              <input name="roundHours" type="number" min={0} max={ROUND_HOURS_MAX} defaultValue={rs?.roundHours ?? 0} inputMode="numeric" />
+            </Field>
+          </div>
+        </div>
       </fieldset>
 
       {circuits.length ? (
@@ -236,12 +275,14 @@ export function TournamentForm({
             <input name="submissionHours" type="number" min={1} max={720} defaultValue={t?.submission_hours ?? ""} />
           </Field>
         </div>
-        <div className="form-grid form-grid-4">
-          {WEIGHT_KEYS.map((k) => (
-            <Field key={k} label={WEIGHT_NAMES[k][lang]} hint={`${ru ? "по умолчанию" : "default"} ${DEFAULT_WEIGHTS[k]}`}>
-              <input name={`w_${k}`} type="number" min={0} max={1000} step="any" defaultValue={weights[k]} inputMode="decimal" />
-            </Field>
-          ))}
+        <div className="fieldset-body">
+          <div className="form-grid form-grid-4">
+            {WEIGHT_KEYS.map((k) => (
+              <Field key={k} label={WEIGHT_NAMES[k][lang]} hint={`${ru ? "по умолчанию" : "default"} ${DEFAULT_WEIGHTS[k]}`}>
+                <input name={`w_${k}`} type="number" min={0} max={1000} step="any" defaultValue={weights[k]} inputMode="decimal" />
+              </Field>
+            ))}
+          </div>
         </div>
       </fieldset>
 

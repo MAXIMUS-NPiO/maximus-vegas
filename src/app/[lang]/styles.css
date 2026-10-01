@@ -1733,6 +1733,20 @@ a.b-link:hover {
   font-weight: 700;
   color: var(--muted);
 }
+/* Settings grids follow the width of their own block, so a form in a narrow column never squeezes four fields. */
+.fieldset-body {
+  container-type: inline-size;
+}
+@container (max-width: 620px) {
+  .fieldset-body .form-grid-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@container (max-width: 340px) {
+  .fieldset-body .form-grid-4 {
+    grid-template-columns: 1fr;
+  }
+}
 button[aria-busy="true"] {
   opacity: 0.6;
   cursor: progress;
@@ -2114,6 +2128,23 @@ button:disabled {
 }
 .table tr.is-out td {
   color: var(--dim);
+}
+.table tr.is-advancing td:first-child {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.group-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  gap: 14px;
+}
+.group-grid .card ol {
+  margin: 6px 0 0;
+  padding-left: 22px;
+}
+.stage-tables {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
 }
 .circuit-divisions {
   display: flex;
