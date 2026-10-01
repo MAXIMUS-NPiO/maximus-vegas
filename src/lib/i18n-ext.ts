@@ -45,6 +45,15 @@ const okRu: Record<string, string> = {
   party_left: "Вы вышли из группы.",
   party_disbanded: "Группа распущена.",
   party_removed: "Игрок исключён из группы.",
+  report_filed: "Обращение отправлено команде портала. Итог появится в разделе «Честная игра: мой статус».",
+  report_exists: "Ваше обращение об этом игроке уже рассматривается.",
+  appeal_filed: "Апелляция подана. Её рассмотрит сотрудник, который не принимал исходное решение.",
+  report_dismissed: "Обращение закрыто без санкции; автор получил уведомление.",
+  sanction_issued: "Санкция записана: правило, доказательства и хеш доказательств — в журнале решений.",
+  sanction_revoked: "Санкция отменена, причина сохранена.",
+  appeal_decided: "Решение по апелляции принято, игрок получил уведомление.",
+  rule_published: "Правило опубликовано.",
+  rule_versioned: "Новая редакция правила опубликована; прежняя сохранена в истории.",
   application_saved: "Заявка сохранена. Номер показан ниже.",
   invoice_issued: "Счёт выставлен.",
   refund_requested: "Запрос на возврат отправлен провайдеру. Статус обновится после подтверждения.",
@@ -119,6 +128,15 @@ const okEn: Record<string, string> = {
   party_left: "You left the party.",
   party_disbanded: "Party disbanded.",
   party_removed: "Player removed from the party.",
+  report_filed: "Report sent to the portal team. The outcome appears in “Fair play: my status”.",
+  report_exists: "Your report about this player is already under review.",
+  appeal_filed: "Appeal filed. A staff member who did not take the original decision will review it.",
+  report_dismissed: "Report closed without a sanction; the reporter has been notified.",
+  sanction_issued: "Sanction recorded: rule, evidence and the evidence digest are in the decision log.",
+  sanction_revoked: "Sanction revoked; the reason is kept.",
+  appeal_decided: "Appeal decided; the player has been notified.",
+  rule_published: "Rule published.",
+  rule_versioned: "New version of the rule published; the previous one stays in the history.",
   application_saved: "Application saved. Its reference is shown below.",
   invoice_issued: "Invoice issued.",
   refund_requested: "Refund requested from the provider. The status updates once confirmed.",
@@ -251,6 +269,17 @@ const errorsRu: Record<string, string> = {
   ready_check_pending: "Идёт проверка готовности: состав группы менять нельзя, можно отказаться от матча.",
   ready_check_closed: "Проверка готовности уже завершена или время вышло.",
   queue_cooldown: "Очередь временно недоступна: проверка готовности не подтверждена. Срок указан на странице быстрого матча.",
+  account_restricted: "Аккаунт ограничен решением по честной игре: доступны просмотр и апелляция. Подробности — в разделе «Честная игра: мой статус».",
+  queue_restricted: "Быстрый матч и вызовы недоступны: у вас или у игрока группы действует ограничение по честной игре.",
+  tournament_restricted: "Участие в турнирах недоступно: у вас или у игрока состава действует ограничение по честной игре.",
+  report_limit: "Не больше 10 обращений за сутки. Если нарушение серьёзное, напишите в поддержку.",
+  invalid_evidence: "Доказательства: от 1 до 10 строк, каждая — ссылка на страницу портала (/ru/…) или https-ссылка, затем пояснение.",
+  sanction_confidence: "Уверенность недостаточна для этой меры: блокировки очереди и турниров — от средней, окончательная блокировка аккаунта — только высокая.",
+  sanction_term: "Срок не по правилам: 1–365 дней для блокировок, до 72 часов для защитной блокировки (только по обращению); предупреждение без срока.",
+  rule_not_found: "Такого действующего правила нет.",
+  appeal_closed: "Апелляция недоступна: прошло больше 14 дней или санкция уже отменена.",
+  appeal_exists: "Апелляция по этой санкции уже подана.",
+  appeal_needs_other_reviewer: "Апелляцию рассматривает сотрудник, который не выносил исходное решение.",
 };
 
 const errorsEn: Record<string, string> = {
@@ -356,6 +385,17 @@ const errorsEn: Record<string, string> = {
   ready_check_pending: "A ready check is running: the party cannot change now; you can decline the match.",
   ready_check_closed: "The ready check has already ended or its time is up.",
   queue_cooldown: "The queue is unavailable for now: a ready check was not confirmed. The time is shown on the quick match page.",
+  account_restricted: "The account is restricted by a fair-play decision: you can read and appeal. Details are in “Fair play: my status”.",
+  queue_restricted: "Quick match and challenges are unavailable: you or a party player has a fair-play restriction.",
+  tournament_restricted: "Tournament entry is unavailable: you or a roster player has a fair-play restriction.",
+  report_limit: "At most 10 reports a day. For a serious violation, write to support.",
+  invalid_evidence: "Evidence: 1 to 10 lines, each a portal page (/en/…) or an https link, then a note.",
+  sanction_confidence: "Confidence is too low for this measure: queue and tournament bans need medium or high, a final account suspension needs high.",
+  sanction_term: "The term breaks the rules: 1–365 days for bans, up to 72 hours for a protective hold (only on a report); a warning has no term.",
+  rule_not_found: "No such rule in force.",
+  appeal_closed: "Appeal unavailable: more than 14 days have passed or the sanction is already revoked.",
+  appeal_exists: "An appeal against this sanction has already been filed.",
+  appeal_needs_other_reviewer: "An appeal is decided by a staff member who did not take the original decision.",
 };
 
 const kindsRu: Record<string, string> = {
@@ -429,6 +469,12 @@ const kindsRu: Record<string, string> = {
   ready_check_returned: "Матч не состоялся ({game}) — вы снова в очереди на прежнем месте",
   ready_check_removed: "Матч не состоялся ({game}) — игрок вашей группы не подтвердил готовность, группа вышла из очереди",
   ready_check_dodged: "Готовность не подтверждена ({game}) — очередь недоступна {minutes} мин",
+  conduct_report: "Новое обращение о нарушении правил",
+  conduct_appeal: "Новая апелляция на санкцию",
+  sanction_issued: "Решение по честной игре: к вашему аккаунту применена мера — правило и срок в разделе «Честная игра»",
+  sanction_revoked: "Санкция по вашему аккаунту отменена",
+  appeal_decided: "Решение по вашей апелляции принято",
+  report_closed: "Ваше обращение рассмотрено",
 };
 
 const kindsEn: Record<string, string> = {
@@ -502,6 +548,12 @@ const kindsEn: Record<string, string> = {
   ready_check_returned: "The match did not happen ({game}) — you are back in the queue in your previous place",
   ready_check_removed: "The match did not happen ({game}) — a party player did not confirm, the party left the queue",
   ready_check_dodged: "Ready check not confirmed ({game}) — the queue is unavailable for {minutes} min",
+  conduct_report: "New report of a rule violation",
+  conduct_appeal: "New appeal against a sanction",
+  sanction_issued: "Fair-play decision: a measure applies to your account — the rule and term are in “Fair play”",
+  sanction_revoked: "A sanction on your account was revoked",
+  appeal_decided: "Your appeal has been decided",
+  report_closed: "Your report has been reviewed",
 };
 
 export const extRu = {

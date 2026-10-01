@@ -47,3 +47,17 @@ test("no co-author or generated-with lines in tracked files", () => {
     .filter((f) => pattern.test(readFileSync(`${root}${f}`, "utf8")));
   assert.deepEqual(hits, []);
 });
+
+test("pages with forms never use the no-referrer policy: browsers then send Origin: null and the action route refuses the form", () => {
+  let listed: string;
+  try {
+    listed = execFileSync("git", ["ls-files", "-z", "src/app"], { cwd: root, encoding: "utf8" });
+  } catch {
+    return; // not a git checkout
+  }
+  const offenders = listed
+    .split("\0")
+    .filter((f) => /\.(ts|tsx)$/.test(f))
+    .filter((f) => /referrer:\s*["']no-referrer["']/.test(readFileSync(`${root}${f}`, "utf8")));
+  assert.deepEqual(offenders, []);
+});

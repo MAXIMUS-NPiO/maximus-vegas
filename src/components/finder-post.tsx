@@ -118,6 +118,11 @@ export function PostCard({
           <button className="btn btn-ghost btn-xs">{x.moderateClose}</button>
         </ActionForm>
       ) : null}
+      {viewer && viewer.username !== p.username ? (
+        <Link href={`/${lang}/conduct?user=${p.username}#report`} className="text-link small finder-report">
+          {x.report}
+        </Link>
+      ) : null}
     </article>
   );
 }

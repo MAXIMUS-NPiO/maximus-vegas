@@ -16,6 +16,7 @@ export default function robots(): MetadataRoute.Robots {
     "progress",
     "billing",
     "challenges",
+    "conduct",
     "welcome",
     "verify-email",
     "activate",

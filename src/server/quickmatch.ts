@@ -20,6 +20,7 @@ import { notify } from "./access.ts";
 import { fail } from "./errors.ts";
 import { gameBySlug, isGame } from "../lib/games.ts";
 import { expireStale } from "./challenges.ts";
+import { assertNotRestricted } from "./restrictions.ts";
 import * as v from "./validate.ts";
 import { dodgeMinutes, MAX_PARTY, pairUnits, RATING_START, READY_SECONDS, ratingWindow, type PairReasons, type QueueUnit } from "./matchmaking-rules.ts";
 
@@ -442,6 +443,7 @@ export async function joinQuickMatch(db: Database, user: SessionUser, gameInput:
     if ((active?.n ?? 0) !== members.length) fail("party_member_inactive");
     const [cool] = await q.query<{ until: Date | null }>("select max(cooldown_until) as until from quick_dodges where user_id = any($1::uuid[]) and cooldown_until > now()", [members]);
     if (cool?.until) fail("queue_cooldown");
+    await assertNotRestricted(q, members, "queue_ban");
     await q.query(
       `insert into quick_queue (user_id, game, expires_at, party_id, region)
        select m, $2, now() + ($3 || ' minutes')::interval, $4, $5 from unnest($1::uuid[]) as m`,
@@ -494,28 +496,47 @@ export async function answerReadyCheck(
  * leaving counts as declining it.
  */
 export async function leaveQuickMatch(db: Database, user: SessionUser): Promise<{ left: boolean }> {
-  const [ref] = await db.query<{ game: string }>("select game from quick_queue where user_id = $1", [user.id]);
-  if (!ref) return { left: false };
+  return { left: await dropFromQueue(db, user.id, user.id, user.username) };
+}
+
+/**
+ * Takes a player out of quick match on a staff decision (a sanction): the same as cancelling the search,
+ * recorded with the staff member as the actor.
+ */
+export async function removeFromQueue(db: Database, userId: string, actorId: string): Promise<boolean> {
+  const [who] = await db.query<{ username: string }>("select username from users where id = $1", [userId]);
+  return dropFromQueue(db, userId, actorId, who?.username ?? "");
+}
+
+async function dropFromQueue(db: Database, userId: string, actorId: string, username: string): Promise<boolean> {
+  const [ref] = await db.query<{ game: string }>("select game from quick_queue where user_id = $1", [userId]);
+  if (!ref) return false;
   return db.tx(async (q) => {
     await lockGame(q, ref.game);
-    const [row] = await q.query<{ party_id: string | null; held_by: string | null }>("select party_id, held_by from quick_queue where user_id = $1 for update", [user.id]);
-    if (!row) return { left: false };
+    const [row] = await q.query<{ party_id: string | null; held_by: string | null }>("select party_id, held_by from quick_queue where user_id = $1 for update", [userId]);
+    if (!row) return false;
     if (row.held_by) {
       const [check] = await q.query<CheckRow>("select id, game, size, status, reasons, expires_at from ready_checks where id = $1 for update", [row.held_by]);
       if (check?.status === "pending") {
-        await q.query("update ready_check_players set answer = 'declined', answered_at = now() where ready_check_id = $1 and user_id = $2", [check.id, user.id]);
-        await failReadyCheck(q, check, "declined", user.id);
-        return { left: true };
+        await q.query("update ready_check_players set answer = 'declined', answered_at = now() where ready_check_id = $1 and user_id = $2", [check.id, userId]);
+        await failReadyCheck(q, check, "declined", actorId);
+        return true;
       }
     }
     const unit = row.party_id
       ? (await q.query<{ user_id: string }>("select user_id from quick_queue where party_id = $1", [row.party_id])).map((r) => r.user_id)
-      : [user.id];
+      : [userId];
     if (row.party_id) await q.query("delete from quick_queue where party_id = $1", [row.party_id]);
-    else await q.query("delete from quick_queue where user_id = $1", [user.id]);
-    if (row.party_id) await notify(q, unit.filter((id) => id !== user.id), "party_queue_left", { user: user.username, quick: "1" });
-    await audit(q, { actorId: user.id, action: "quick_match.left", entity: "user", entityId: user.id, data: { game: ref.game, party: row.party_id } });
-    return { left: true };
+    else await q.query("delete from quick_queue where user_id = $1", [userId]);
+    if (row.party_id) await notify(q, unit.filter((id) => id !== userId), "party_queue_left", { user: username, quick: "1" });
+    await audit(q, {
+      actorId,
+      action: actorId === userId ? "quick_match.left" : "quick_match.removed",
+      entity: "user",
+      entityId: userId,
+      data: { game: ref.game, party: row.party_id },
+    });
+    return true;
   });
 }
 

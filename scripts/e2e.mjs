@@ -601,7 +601,7 @@ if (process.env.OWNER_CODE) {
   assert.ok(/[A-Z2-7]{5}-[A-Z2-7]{5}/.test(codes), "recovery codes shown once");
   await org.post("mfa.codes_saved", {});
   assert.ok(!/[A-Z2-7]{5}-[A-Z2-7]{5}<\/li>/.test((await org.get("/ru/admin/security")).text), "recovery codes are not shown again");
-  for (const tab of ["overview", "users", "memberships", "offers", "payments", "outbox", "tournaments", "sponsors", "security", "audit"]) {
+  for (const tab of ["overview", "users", "conduct", "memberships", "offers", "payments", "outbox", "tournaments", "sponsors", "security", "audit"]) {
     const r = await org.get(`/ru/admin?tab=${tab}`);
     assert.equal(r.status, 200, `admin tab ${tab}`);
   }
@@ -610,5 +610,36 @@ if (process.env.OWNER_CODE) {
   const payments = (await org.get("/ru/admin?tab=payments")).text;
   assert.ok(payments.includes("Оплаты выключены"), "readiness explains why collection is off");
   log("owner code grants admin once; second factor enrolled with TOTP; recovery codes shown once; all control-centre tabs render");
+
+  // ---------- Fair play: report → sanction with evidence → restricted account → appeal waiting for another reviewer ----------
+  assert.equal(
+    (await c3.post("conduct.report", { username: d4.username, rule: "CHEATING", context: "/ru/matchmaking", description: "e2e: стороннее ПО видно на записи матча." })).ok,
+    "report_filed",
+  );
+  const conductQueuePage = (await org.get("/ru/admin?tab=conduct")).text;
+  const subjectAt = conductQueuePage.indexOf(d4.username);
+  const reportId = subjectAt >= 0 ? uuidAfter(conductQueuePage.slice(subjectAt), "report") : undefined;
+  assert.ok(reportId, "the report is in the staff queue");
+  const sanctioned = await org.post("conduct.sanction", {
+    report: reportId,
+    username: d4.username,
+    kind: "suspension",
+    confidence: "high",
+    days: "3",
+    rule: "CHEATING",
+    evidence: "/ru/matchmaking — e2e запись матча",
+    decision: "e2e: подтверждено записью матча и журналом.",
+  });
+  assert.equal(sanctioned.ok, "sanction_issued", sanctioned.location);
+  assert.equal((await d4.post("quick.join", { game: "cs2" })).e, "account_restricted", "a suspended account cannot act");
+  const conductPage = (await d4.get("/ru/conduct")).text;
+  const sanctionId = uuidAfter(conductPage, "sanction");
+  assert.ok(sanctionId && conductPage.includes("Ограничение аккаунта") && conductPage.includes("e2e: подтверждено"), "the player sees rule, decision and term");
+  assert.equal((await d4.post("conduct.appeal", { sanction: sanctionId, statement: "e2e: запись не моя, прошу проверить заново." })).ok, "appeal_filed", "appealing stays possible");
+  assert.ok((await org.get("/ru/admin?tab=conduct")).text.includes("апелляцию рассматривает другой сотрудник"), "the issuer does not decide the appeal");
+  assert.ok((await c3.get("/ru/conduct")).text.includes("меры приняты"), "the reporter sees the outcome only");
+  const trustPage = (await guest.get("/ru/trust")).text;
+  assert.ok(trustPage.includes("Отчётность за 90 дней") && trustPage.includes("CHEATING") && !trustPage.includes(d4.username), "the trust page shows rules and counts, no names");
+  log("fair play: report, sanction with rule and evidence, restricted account can only appeal, appeal left to another reviewer, public counts without names");
 }
 console.log(`\nE2E OK against ${BASE} (run ${RUN})`);

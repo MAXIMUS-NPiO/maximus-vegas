@@ -16,6 +16,8 @@ export function notificationLink(lang: Locale, data: Record<string, string>) {
   if (data.orgSlug) return `/${lang}/organizer/${data.orgSlug}`;
   if (data.circuitSlug) return `/${lang}/circuits/${data.circuitSlug}`;
   if (data.quick) return `/${lang}/matchmaking`;
+  if (data.conductAdmin) return `/${lang}/admin?tab=conduct`;
+  if (data.conduct) return `/${lang}/conduct`;
   if (data.profile) return `/${lang}/players/${data.profile}`;
   if (data.finder) return `/${lang}/finder#mine`;
   return `/${lang}/hub`;

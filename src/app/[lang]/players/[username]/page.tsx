@@ -78,9 +78,14 @@ export default async function Player({ params }: { params: Promise<{ lang: strin
               {d.players.edit}
             </Link>
           ) : user ? (
-            <Link href={`/${lang}/challenges?to=${p.user.username}`} className="btn btn-ghost btn-sm">
-              {ru ? "Вызвать на матч 1v1" : "Challenge to a 1v1"}
-            </Link>
+            <span className="row">
+              <Link href={`/${lang}/challenges?to=${p.user.username}`} className="btn btn-ghost btn-sm">
+                {ru ? "Вызвать на матч 1v1" : "Challenge to a 1v1"}
+              </Link>
+              <Link href={`/${lang}/conduct?user=${p.user.username}#report`} className="text-link small">
+                {ru ? "Сообщить о нарушении" : "Report a violation"}
+              </Link>
+            </span>
           ) : null}
         </div>
         <dl className="stat-row">

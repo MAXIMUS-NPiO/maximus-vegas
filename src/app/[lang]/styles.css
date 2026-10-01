@@ -2567,3 +2567,17 @@ button:disabled {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
+
+/* Fair play: sanctions, evidence, appeals */
+.evidence-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  overflow-wrap: anywhere;
+}
+.text-bad {
+  color: var(--bad);
+  font-weight: 700;
+}
+.trust-steps {
+  counter-reset: step;
+}
