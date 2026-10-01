@@ -49,7 +49,7 @@ Title: Release report · Status: PENDING MIPA REGISTRATION · Version: 1.0 · Da
 | `scripts/e2e.mjs` | Production-сборка (`next start`) на новой базе PostgreSQL 16.2, без почты и оплаты | Пройден: все прежние сценарии плюс группы → плей-офф на 5 участников (две группы, автоматический финал, итоговые места) и лесенка на 4 участника |
 | Просмотр и переполнение | Chromium (Playwright): 16 новых и изменённых страниц × ширины 390, 820, 1440 | 48 проверок, все `200`, горизонтального переполнения нет; снимки просмотрены |
 
-**Не выполнялись:** e2e против production (запрещено: создаёт записи), проверка на Node.js 24 (локально доступна версия 22.22.2), GitHub Actions (запускается при push в `main`).
+**Не выполнялись локально:** e2e против production (запрещено: создаёт записи), проверка на Node.js 24 (локально доступна версия 22.22.2). GitHub Actions после push выполнил `npm run check` на Node.js 24 (`.nvmrc`) — успешно (раздел 5a).
 
 ## 5. Состояние после выката
 
@@ -60,6 +60,21 @@ Title: Release report · Status: PENDING MIPA REGISTRATION · Version: 1.0 · Da
 | Турниры release 1–3 | Не меняются: этап 1, без групп и плей-офф, места прежние |
 | Оплата и письма | Без изменений: оплата выключена, письма — в очереди до подключения сервиса |
 | Экономика | Без изменений: ставок, платного входа и призов из взносов нет |
+
+## 5a. Проверка production (1 October 2026, 00:33–00:37 UTC = 04:33–04:37 по Дубаю; только чтение)
+
+| Проверка | Результат |
+| --- | --- |
+| Remote `main` после push | `34523153b81e14c069fcc38bdba6b5ce955c47c2` (fast-forward с `a3524c4`), прочитан `git ls-remote` |
+| GitHub Actions | Workflow «Quality checks» для `3452315` — успешно (`npm ci`, `npm run check` на Node.js 24) |
+| Смена версии на `www.maximus.vegas` | Через ~2 минуты после push `/ru/status` показывает модули «Многоэтапные турниры: группы, лиги и плей-офф» и «Лесенка (gauntlet)» как работающие, а «Форматы FFA и более двух этапов» — в разработке |
+| Миграция 7 | Применена: запрос страницы матча читает `tournaments.stage`; несуществующий матч `/ru/matches/<uuid>` отвечает `404`, а не ошибкой сервера |
+| `/api/health` | `{"status":"ok","database":"postgres","email":"not_connected","payments":"off"}` |
+| Публичные страницы | 18 адресов, включая `/ru`, `/en`, `/ru/tournaments`, `/en/tournaments`, `/ru/circuits`, `/en/circuits`, `/ru/status`, `/en/status`, `/ru/rankings`, `/ru/organizer`, `/sitemap.xml`, — `200`; несуществующий турнир — `404` |
+| Личные страницы без входа | `/ru/hub`, `/ru/organizer/t/<адрес>` — `307` на вход |
+| Ответ сервера | `x-vercel-id: iad1::iad1::…` |
+
+Турниры на production не создавались: проверка только читает. Идентификатор deployment в Vercel и связь deployment → commit через API Vercel не проверены: доступа к Vercel из этой среды нет. Подтверждены commit, push, проверки GitHub Actions и изменённое поведение production.
 
 ## 6. Развёртывание и откат
 
