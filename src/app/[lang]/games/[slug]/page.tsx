@@ -32,12 +32,12 @@ export default async function GamePage({ params }: { params: Promise<{ lang: str
   return (
     <div className="container page">
       <PageHead eyebrow={`${game.genre[lang]} · ${game.platforms.map((p) => d.games.platforms[p]).join(" · ")}`} title={game.name}>
-        <span className={game.bracket ? "badge badge-ok" : "badge badge-warn"}>{game.bracket ? d.games.formatBracket : d.games.formatFfa}</span>
+        <span className="badge badge-ok">{game.bracket ? d.games.formatBracket : d.games.formatFfa}</span>
       </PageHead>
       <div className="split">
         <section>
           <h2 className="h3">{d.games.verificationTitle}</h2>
-          <p>{d.games.verificationManual}</p>
+          <p>{game.bracket ? d.games.verificationManual : d.games.verificationFfa}</p>
           {game.apiNote ? (
             <div className="notice">
               <strong>{d.games.apiTitle}</strong>
@@ -48,7 +48,7 @@ export default async function GamePage({ params }: { params: Promise<{ lang: str
         <section>
           <h2 className="h3">{d.games.matrixTitle}</h2>
           <dl className="kv">
-            {d.games.matrix.map(([k, v]) => (
+            {(game.bracket ? d.games.matrix : d.games.matrixFfa).map(([k, v]) => (
               <div key={k}>
                 <dt>{k}</dt>
                 <dd>{v}</dd>
@@ -56,7 +56,7 @@ export default async function GamePage({ params }: { params: Promise<{ lang: str
             ))}
             <div>
               <dt>{d.games.teamSize}</dt>
-              <dd>{game.teamSize === 1 ? d.games.solo : `${game.teamSize}v${game.teamSize}`}</dd>
+              <dd>{game.teamSize === 1 ? d.games.solo : game.bracket ? `${game.teamSize}v${game.teamSize}` : d.games.squads.replace("{n}", String(game.teamSize))}</dd>
             </div>
           </dl>
         </section>
@@ -73,11 +73,9 @@ export default async function GamePage({ params }: { params: Promise<{ lang: str
           </div>
         ) : (
           <Empty title={d.games.noTournaments}>
-            {game.bracket ? (
-              <Link href={`/${lang}/organizer`} className="text-link">
-                {d.tournaments.create}
-              </Link>
-            ) : null}
+            <Link href={`/${lang}/organizer`} className="text-link">
+              {d.tournaments.create}
+            </Link>
           </Empty>
         )}
       </section>
