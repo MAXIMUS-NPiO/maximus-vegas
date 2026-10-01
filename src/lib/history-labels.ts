@@ -54,6 +54,8 @@ const LABELS: Record<string, { ru: string; en: string }> = {
   "match.referee_call_closed": { ru: "Судья ответил на вызов", en: "Referee answered a call" },
   "match.paused": { ru: "Матч на паузе", en: "Match paused" },
   "match.bracket_repaired": { ru: "Сетка восстановлена после исправления", en: "Bracket repaired after a correction" },
+  "match.veto": { ru: "Ход вето карт", en: "Map veto turn" },
+  "match.veto_reset": { ru: "Вето сброшено", en: "Veto reset" },
   "match.resumed": { ru: "Матч продолжен", en: "Match resumed" },
   "tournament.incident_opened": { ru: "Записан инцидент", en: "Incident logged" },
   "tournament.incident_assigned": { ru: "Назначен ответственный за инцидент", en: "Incident assigned" },

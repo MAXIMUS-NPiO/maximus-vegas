@@ -16,6 +16,7 @@ import { ActionForm, Badge, DbDown, Empty, Field, Flash, type SearchParams } fro
 import { Countdown, LocalTime } from "@/components/time";
 import { matchLabel, seriesText } from "@/components/tournament";
 import { CallBlock } from "@/components/referee-call";
+import { vetoFor } from "@/server/veto.ts";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
   const { lang } = await params;
@@ -26,7 +27,7 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
 type Detail = NonNullable<Awaited<ReturnType<typeof getMatch>>>;
 
 /** Everything the screen shows about one match, loaded once per event. */
-async function matchDetail(db: Database, matchId: string) {
+async function matchDetail(db: Database, matchId: string, userId: string) {
   const data = await getMatch(db, matchId);
   if (!data) return null;
   const m = data.match;
@@ -42,7 +43,8 @@ async function matchDetail(db: Database, matchId: string) {
     ? await db.query<{ id: string; scheduled_at: Date | null }>("select id, scheduled_at from matches where id = any($1::uuid[])", [nextIds])
     : [];
   const calls = await refereeCalls(db, matchId);
-  return { data, settings, bestOf: series.bestOf, next, calls };
+  const veto = await vetoFor(db, matchId, userId);
+  return { data, settings, bestOf: series.bestOf, next, calls, veto };
 }
 
 function SideLine({ s, lang }: { s: Detail["a"]; lang: Locale }) {
@@ -122,6 +124,7 @@ function EntryCard({ e, detail, lang, username }: { e: GameDayEntry; detail: Awa
             score,
             place: e.registration.placement,
             reason: m?.pause_reason || undefined,
+            vetoAction: detail?.veto?.state.next?.action,
           })}
         </p>
         {e.step.deadline ? (
@@ -139,6 +142,11 @@ function EntryCard({ e, detail, lang, username }: { e: GameDayEntry; detail: Awa
             <ActionForm action="match.checkin" lang={lang} back={back} hidden={{ match: m.id }}>
               <button className="btn btn-primary btn-sm">{actionText("checkin", lang)}</button>
             </ActionForm>
+          ) : null}
+          {action === "veto" && e.leader && m ? (
+            <Link href={`/${lang}/matches/${m.id}#veto`} className="btn btn-primary btn-sm">
+              {actionText("veto", lang)}
+            </Link>
           ) : null}
           {action === "report" && e.leader && m ? (
             <Link href={`/${lang}/matches/${m.id}#report`} className="btn btn-primary btn-sm">
@@ -215,6 +223,19 @@ function EntryCard({ e, detail, lang, username }: { e: GameDayEntry; detail: Awa
               <p className="small">
                 {g.format}: <strong>{seriesText(detail.bestOf, lang)}</strong>
               </p>
+              {detail.veto ? (
+                <p className="small">
+                  {detail.veto.state.complete ? (
+                    <>
+                      {g.maps}: <strong>{detail.veto.state.maps.map((x) => x.map).join(", ")}</strong>
+                    </>
+                  ) : (
+                    <Link href={`/${lang}/matches/${m.id}#veto`} className="text-link">
+                      {g.vetoOpen}
+                    </Link>
+                  )}
+                </p>
+              ) : null}
             </div>
             <div className="card">
               <p className="field-label">{d.match.room}</p>
@@ -298,7 +319,7 @@ export default async function GameDay({ params, searchParams }: { params: Promis
   if (!user) redirect(`/${lang}/signin?next=/${lang}/gameday`);
   const g = gameDayText[lang];
   const entries = await gameDay(db, user);
-  const details = await Promise.all(entries.map((e) => (e.matchId ? matchDetail(db, e.matchId) : Promise.resolve(null))));
+  const details = await Promise.all(entries.map((e) => (e.matchId ? matchDetail(db, e.matchId, user.id) : Promise.resolve(null))));
   return (
     <div className="container page">
       <h1>{g.title}</h1>

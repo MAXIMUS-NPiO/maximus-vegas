@@ -23,6 +23,8 @@ import { previewRepair, type Plan, type Step } from "@/server/repair.ts";
 import { DomainError } from "@/server/errors.ts";
 import { bracket } from "@/server/queries.ts";
 import { labelContext } from "@/components/tournament";
+import { vetoFor } from "@/server/veto.ts";
+import { MapVeto } from "@/components/map-veto";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string; id: string }> }): Promise<Metadata> {
   const { lang, id } = await params;
@@ -115,6 +117,7 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
       })
     : null;
   const lo = liveopsText[lang];
+  const vetoView = m.a_reg && m.b_reg ? await vetoFor(db, m.id, user?.id) : null;
   // Correction of a decided elimination match goes through a preview of its consequences (bracket repair).
   const elimination = ["W", "L", "GF"].includes(m.bracket ?? "");
   const first = (x: string | string[] | undefined) => (Array.isArray(x) ? x[0] : x) ?? "";
@@ -227,6 +230,7 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
                     series: series.bestOf > 1 ? seriesText(series.bestOf, lang) : undefined,
                     score: pending ? `${a?.name ?? "A"} ${pending.score_a} : ${pending.score_b} ${b?.name ?? "B"}` : undefined,
                     reason: m.pause_reason || undefined,
+                    vetoAction: vetoView?.state.next?.action,
                   })}
                 </strong>
               </p>
@@ -299,6 +303,10 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
           </div>
           <p className="small muted">{ru ? "Отметка помогает организатору видеть, кто на месте. Она не блокирует матч: неявку фиксирует судья." : "Check-in shows the organiser who is here. It never blocks the match: the referee records no-shows."}</p>
         </section>
+      ) : null}
+
+      {vetoView && a && b && ((open && liveOrPaused) || vetoView.state.done.length) ? (
+        <MapVeto lang={lang} matchId={m.id} names={{ a: a.name, b: b.name }} veto={vetoView} mySide={viewerSide} leader={Boolean(mySide)} staff={referee && open} back={back} />
       ) : null}
 
       {viewerSide && open && liveOrPaused && both ? (

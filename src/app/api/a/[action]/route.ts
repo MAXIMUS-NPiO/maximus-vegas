@@ -21,6 +21,7 @@ import * as feedback from "@/server/feedback.ts";
 import * as gameday from "@/server/gameday.ts";
 import * as liveops from "@/server/liveops.ts";
 import * as repair from "@/server/repair.ts";
+import * as veto from "@/server/veto.ts";
 import { storeUpload } from "@/server/media.ts";
 import { drainOutbox, mailConfigured } from "@/server/mail.ts";
 import { fail } from "@/server/errors.ts";
@@ -517,6 +518,16 @@ const handlers: Record<string, Handler> = {
     const r = await liveops.resolveIncident(c.db, u(c), idOf(c.form.incident), c.form.note);
     return { ok: r.closed ? "incident_resolved" : "saved" };
   },
+  "match.veto": async (c) => {
+    const id = idOf(c.form.match);
+    const state = await veto.vetoMap(c.db, u(c), id, c.form.map);
+    return { to: matchOrGameDay(c, id), ok: state.complete ? "veto_done" : "veto_saved" };
+  },
+  "match.veto_reset": async (c) => {
+    const id = idOf(c.form.match);
+    const r = await veto.resetVeto(c.db, u(c), id, c.form.reason);
+    return { to: matchPath(c, id), ok: r.changed ? "veto_reset" : "saved" };
+  },
   "match.repair": async (c) => {
     const id = idOf(c.form.match);
     const plan = await repair.repairBracket(c.db, u(c), id, {
@@ -803,6 +814,7 @@ function tournamentInput(c: Ctx) {
         ? { emailVerified: c.form.admissionEmail, minAccountDays: c.form.admissionDays, minXp: c.form.admissionXp, minMatches: c.form.admissionMatches }
         : undefined,
     matchMinutes: "admissionFields" in c.form ? c.form.matchMinutes : undefined,
+    mapPool: "seriesFields" in c.form ? c.form.mapPool : undefined,
   };
 }
 

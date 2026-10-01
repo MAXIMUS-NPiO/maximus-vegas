@@ -42,6 +42,7 @@ export type TournamentDefaults = {
   roster_locks_at?: Date | string | null;
   no_show_minutes?: number | null;
   series_rules?: unknown;
+  map_pool?: unknown;
   admission?: unknown;
   match_minutes?: number | null;
 };
@@ -338,6 +339,16 @@ export function TournamentForm({
             })}
           </div>
         </details>
+        <Field
+          label={ru ? "Пул карт для вето" : "Map pool for the veto"}
+          hint={
+            ru
+              ? "Через запятую или с новой строки, 2–15 карт; пусто — без вето. Сверьте с действующим пулом издателя. Ходы по длине серии: два первых бана, затем пики, затем оставшиеся баны, последняя карта — решающая; начинает верхний посев (MV-VETO-1). Пул фиксируется после первого хода вето."
+              : "Separated by commas or new lines, 2–15 maps; empty means no veto. Check against the publisher's current pool. Turns by series length: two opening bans, then the picks, then the remaining bans; the last map is the decider; the higher seed starts (MV-VETO-1). The pool is frozen after the first veto turn."
+          }
+        >
+          <textarea name="mapPool" rows={2} maxLength={600} defaultValue={Array.isArray(t?.map_pool) ? (t!.map_pool as string[]).join(", ") : ""} />
+        </Field>
       </fieldset>
 
       <fieldset className="fieldset">

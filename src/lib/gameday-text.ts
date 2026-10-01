@@ -24,6 +24,8 @@ const STEPS: Record<StepKey, { ru: string; en: string }> = {
     ru: "Соперник не отметился в срок. Позовите судью: он может засчитать неявку.",
     en: "Your opponent did not check in on time. Call the referee: they can record a no-show.",
   },
+  veto_turn: { ru: "Ваш ход в вето карт: {vetoAction}.", en: "Your turn in the map veto: {vetoAction}." },
+  veto_wait: { ru: "Вето карт: ход соперника. Матч начнётся после выбора карт.", en: "Map veto: your opponent's turn. The match starts once the maps are set." },
   play: { ru: "Сыграйте матч{series} и отправьте счёт с доказательством.", en: "Play the match{series} and report the score with evidence." },
   confirm: { ru: "Соперник отправил счёт {score}. Подтвердите его или откройте спор.", en: "Your opponent reported {score}. Confirm it or open a dispute." },
   wait_confirm: {
@@ -60,6 +62,7 @@ const STEPS: Record<StepKey, { ru: string; en: string }> = {
 
 const ACTIONS: Record<StepAction | "open_match" | "dispute", { ru: string; en: string }> = {
   checkin: { ru: "Я на месте", en: "I'm here" },
+  veto: { ru: "К вето карт", en: "Open the veto" },
   report: { ru: "Отправить счёт", en: "Report the score" },
   confirm: { ru: "Подтвердить счёт", en: "Confirm the score" },
   call_referee: { ru: "Позвать судью", en: "Call the referee" },
@@ -73,8 +76,14 @@ const ACTIONS: Record<StepAction | "open_match" | "dispute", { ru: string; en: s
 
 const fillVars = (t: string, vars: Record<string, string | number | undefined>) => t.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ""));
 
-export function stepText(key: StepKey, lang: Locale, vars: { series?: string; score?: string; place?: number | null; reason?: string } = {}) {
-  let text = fillVars(STEPS[key][lang], { series: vars.series ? ` (${vars.series})` : "", score: vars.score ?? "", reason: vars.reason ? `: ${vars.reason}` : "" });
+export function stepText(key: StepKey, lang: Locale, vars: { series?: string; score?: string; place?: number | null; reason?: string; vetoAction?: "ban" | "pick" } = {}) {
+  const vetoAction = vars.vetoAction === "pick" ? (lang === "ru" ? "выберите карту" : "pick a map") : lang === "ru" ? "уберите карту" : "ban a map";
+  let text = fillVars(STEPS[key][lang], {
+    series: vars.series ? ` (${vars.series})` : "",
+    score: vars.score ?? "",
+    reason: vars.reason ? `: ${vars.reason}` : "",
+    vetoAction,
+  });
   if (key === "finished" && vars.place) text += lang === "ru" ? ` Ваше место: ${vars.place}.` : ` Your place: ${vars.place}.`;
   return text;
 }
@@ -117,6 +126,8 @@ export const gameDayText = {
     staffClose: "Ответить и закрыть",
     staffEmpty: "Открытых вызовов нет.",
     side: "сторона",
+    maps: "Карты",
+    vetoOpen: "Вето карт не завершено",
   },
   en: {
     title: "Game Day",
@@ -153,5 +164,7 @@ export const gameDayText = {
     staffClose: "Reply and close",
     staffEmpty: "No open calls.",
     side: "side",
+    maps: "Maps",
+    vetoOpen: "Map veto in progress",
   },
 } satisfies Record<Locale, Record<string, string>>;

@@ -970,4 +970,24 @@ export const migrations: Migration[] = [
       `alter table matches add column pause_reason text not null default ''`,
     ],
   },
+  {
+    id: 12,
+    name: "map_veto",
+    statements: [
+      // Map pool of the event (MV-VETO-1); no pool means no veto.
+      `alter table tournaments add column map_pool jsonb`,
+      // One row per veto turn: who banned or picked which map. A map is taken once per match.
+      `create table match_vetoes (
+        match_id uuid not null references matches(id) on delete cascade,
+        step int not null check (step between 1 and 30),
+        side text not null check (side in ('a','b')),
+        action text not null check (action in ('ban','pick')),
+        map text not null,
+        created_by uuid not null references users(id),
+        created_at timestamptz not null default now(),
+        primary key (match_id, step),
+        unique (match_id, map)
+      )`,
+    ],
+  },
 ];

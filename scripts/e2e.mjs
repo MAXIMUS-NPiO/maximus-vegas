@@ -173,6 +173,7 @@ const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 16);
 const created = await org.post("tournament.create", {
   org: orgId, name: `E2E Cup ${RUN}`, game: "cs2", format: "single_elimination", participantType: "solo", teamSize: "5", maxParticipants: "8",
   checkInRequired: "on", region: "MENA", startsAt: tomorrow, tz: "Asia/Dubai", description: "e2e", rules: "bo1",
+  seriesFields: "1", mapPool: "Alpha, Bravo, Charlie",
 });
 assert.equal(created.ok, "tournament_created", created.location);
 const manage = created.path;
@@ -233,6 +234,12 @@ const incidentId = uuidAfter(queueView, "incident");
 assert.ok(incidentId);
 assert.equal((await org.post("incident.resolve", { incident: incidentId, note: "e2e: cable replaced", back: manage })).ok, "incident_resolved");
 log("live operations: match paused and resumed with results held, staff incident logged and closed from the queue, players cannot log one");
+const vetoPage = (await players[0].get(`/ru/matches/${gdMatch}`)).text;
+assert.ok(vetoPage.includes('id="veto"') && vetoPage.includes("MV-VETO-1"), "the match shows the map veto of the event's pool");
+const vetoTurn = await players[0].post("match.veto", { match: gdMatch, map: "Alpha", back: `/ru/matches/${gdMatch}` });
+assert.ok(vetoTurn.ok === "veto_saved" || vetoTurn.e === "not_your_turn", `a veto turn is taken or refused by turn order: ${vetoTurn.location}`);
+assert.equal((await players[4].post("match.veto", { match: gdMatch, map: "Bravo", back: `/ru/matches/${gdMatch}` })).e, "not_your_turn", "an outsider has no turn");
+log("map veto: the event's pool on the match page, turn order enforced");
 
 const passes = await playOut(players.slice(0, 4));
 const tPage = (await guest.get(`/ru/tournaments/${tSlug}`)).text;

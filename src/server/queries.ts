@@ -216,10 +216,11 @@ export async function getMatch(db: Queryable, id: string) {
       loser_next_match_id: string | null;
       paused_at: Date | null;
       pause_reason: string;
+      t_map_pool: unknown;
     }
   >(
     `select m.*, t.slug as t_slug, t.name as t_name, t.status as t_status, t.game as t_game, t.org_id, t.format as t_format, t.format_settings as t_settings,
-            t.stage as t_stage, t.no_show_minutes as t_no_show, t.series_rules as t_series, t.match_minutes as t_match_minutes,
+            t.stage as t_stage, t.no_show_minutes as t_no_show, t.series_rules as t_series, t.match_minutes as t_match_minutes, t.map_pool as t_map_pool,
             (select name from tournament_venues v where v.id = m.venue_id) as venue_name,
             (select max(round) from matches x where x.tournament_id = m.tournament_id and x.bracket = m.bracket and x.stage = m.stage)::int as rounds,
             coalesce((select max(round) from matches x where x.tournament_id = m.tournament_id and x.bracket = 'W'), 0)::int as w_rounds,
