@@ -18,6 +18,8 @@ export default function robots(): MetadataRoute.Robots {
     "challenges",
     "conduct",
     "scouting",
+    "passes",
+    "pass/",
     "welcome",
     "verify-email",
     "activate",

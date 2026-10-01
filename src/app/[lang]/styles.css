@@ -2689,3 +2689,8 @@ button:disabled {
 .prose-page > section {
   min-width: 0;
 }
+
+/* Venue passes: a QR large enough to scan from a phone screen. */
+.pass-qr {
+  width: 260px;
+}

@@ -5,6 +5,7 @@ import { audit } from "./audit.ts";
 import { DomainError, fail, isUniqueViolation } from "./errors.ts";
 import * as v from "./validate.ts";
 import { clanExport, eraseClanData, ownedClansWithMembers } from "./clans.ts";
+import { passExport, revokePassesOf } from "./venues.ts";
 
 const scrypt = promisify(scryptCb) as (
   password: string,
@@ -365,6 +366,7 @@ export async function exportAccount(db: Database, user: SessionUser) {
       "select ft.name as from_team, tt.name as to_team, tr.status, tr.note, tr.created_at, tr.completed_at from team_transfers tr join teams ft on ft.id = tr.from_team join teams tt on tt.id = tr.to_team where tr.player_id = $1 order by tr.created_at",
     ),
     ...(await clanExport(db, user.id)),
+    venuePasses: await passExport(db, user.id),
     scoutFilters: await q("select name, query, created_at from scout_filters where user_id = $1 order by created_at"),
     watchlist: await q("select u.username as player, w.note, w.created_at from scout_watch w join users u on u.id = w.player_id where w.user_id = $1 order by w.created_at"),
     reportsFiled: await q(
@@ -474,6 +476,8 @@ export async function deleteAccount(db: Database, user: SessionUser, confirmPass
     await q.query("update team_transfers set status = 'cancelled' where player_id = $1 and status = 'proposed'", [user.id]);
     // Clans: a sole owner's clan is disbanded; the account leaves its clan, invitations and future lineups.
     await eraseClanData(q, user.id);
+    // Venue passes of the account stop working.
+    await revokePassesOf(q, user.id);
     // Scouting: the account's filters and watchlist go, and it leaves every other watchlist.
     await q.query("delete from scout_filters where user_id = $1", [user.id]);
     await q.query("delete from scout_watch where user_id = $1 or player_id = $1", [user.id]);

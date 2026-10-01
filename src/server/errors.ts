@@ -211,6 +211,22 @@ export const ERROR_CODES = [
   "webhook_limit",
   "webhook_inactive",
   "webhook_delivered",
+  // Venues and passes
+  "venue_address",
+  "venue_limit",
+  "venue_state",
+  "venue_not_confirmed",
+  "pass_no_venue",
+  "pass_closed",
+  "pass_not_participant",
+  "pass_window",
+  "pass_state",
+  "pass_unknown",
+  "pass_used",
+  "pass_expired",
+  "pass_not_yet",
+  "pass_revoked",
+  "pass_withdrawn",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 

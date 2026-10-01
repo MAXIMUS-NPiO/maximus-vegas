@@ -408,3 +408,35 @@ test("referee calls: a burst of calls from both sides opens one call per side an
   assert.equal((await verifyAuditChain(db)).valid, true);
   await db.close();
 });
+
+test("venue passes: a burst of scans of one QR admits exactly once", { skip: !url }, async () => {
+  const { createVenue, submitVenue, reviewVenue, issueGuestPass, myPasses, admitPass } = await import("../src/server/venues.ts");
+  const db: Database = await openDatabase({ url });
+  const run = Date.now().toString(36);
+  const mk = async (name: string): Promise<SessionUser> => {
+    const s = await signUp(db, { email: `${name}${run}@example.com`, username: `${name}${run}`.slice(0, 24), displayName: name, password: "correct horse battery", adult: "on", terms: "on" });
+    return (await sessionUser(db, s.token))!;
+  };
+  const owner = await mk("vo");
+  const staffUser = await mk("vs");
+  await db.query("insert into user_roles (user_id, role) values ($1, 'support')", [staffUser.id]);
+  const holder = await mk("vh");
+  const space = await createOrg(db, owner, { name: `Venue Conc ${run}`, description: "" });
+  const venue = await createVenue(db, owner, space.id, { name: `Conc Hall ${run}`, kind: "club", address: "Test street 1", city: "Dubai", country: "AE", description: "", website: "" });
+  await submitVenue(db, owner, venue.id);
+  // The support role was granted after sign-in: the session object is refreshed by hand for the review.
+  await reviewVenue(db, { ...staffUser, roles: ["support"] }, venue.id, "confirm", "");
+  const from = new Date(Date.now() - 60_000).toISOString().slice(0, 16);
+  const until = new Date(Date.now() + 3_600_000).toISOString().slice(0, 16);
+  await issueGuestPass(db, owner, venue.id, { username: holder.username, from, until, tz: "UTC", note: "" });
+  const [pass] = await myPasses(db, holder.id);
+  const results = await Promise.all(Array.from({ length: 8 }, () => admitPass(db, owner, pass.token)));
+  assert.deepEqual(results.map((r) => r.result).sort(), ["admitted", ...Array(7).fill("used")]);
+  const [log] = await db.query<{ admitted: number; total: number }>(
+    "select count(*) filter (where result = 'admitted')::int as admitted, count(*)::int as total from venue_checkins where pass_id = $1",
+    [pass.id],
+  );
+  assert.deepEqual([log.admitted, log.total], [1, 8]);
+  assert.equal((await verifyAuditChain(db)).valid, true);
+  await db.close();
+});

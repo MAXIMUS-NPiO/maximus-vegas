@@ -23,6 +23,7 @@ import { feedbackList, feedbackSummary } from "@/server/feedback.ts";
 import { DEFAULT_MATCH_MINUTES } from "@/server/conflicts.ts";
 import { eventStaff, incidentQueue } from "@/server/liveops.ts";
 import { IncidentQueue } from "@/components/incident-queue";
+import { orgVenues } from "@/server/venues.ts";
 import { ActionForm, Badge, DbDown, Field, Flash, type SearchParams } from "@/components/ui";
 import { TournamentForm } from "@/components/tournament-form";
 import { BracketView, FfaRounds, formatLabel, groupTitle, labelContext, matchLabel, playoffFormatLabel, StandingsTable, type StandingName } from "@/components/tournament";
@@ -245,6 +246,9 @@ export default async function ManageTournament({ params, searchParams }: { param
   const circuitOptions = manager ? await listCircuits(db, { orgId: t.org_id }) : [];
   const matchFormat = isMatchFormat(t.format);
   const venueList = matchFormat ? await venues(db, t.id) : [];
+  // The physical venue the event is held at (a confirmed venue of this space), or online.
+  const placeId = (t as { venue_id?: string | null }).venue_id ?? null;
+  const places = manager ? (await orgVenues(db, t.org_id)).filter((v) => v.status === "confirmed" || v.id === placeId) : [];
   const conflicts = running && matchFormat ? await scheduleConflicts(db, t) : [];
   const conflicted = new Set(conflicts.flatMap((c) => [c.a, c.b]));
   const seriesRules = seriesRulesOf(t);
@@ -798,6 +802,28 @@ export default async function ManageTournament({ params, searchParams }: { param
             final={finished && !playoff}
             advance={playoff ? Math.min(playoff.size, roundTable.length) : 0}
           />
+        </section>
+      ) : null}
+
+      {manager && !finished && status !== "CANCELLED" ? (
+        <section className="section-tight" id="place">
+          <h2 className="h3">{ru ? "Место проведения" : "Where it is held"}</h2>
+          <p className="small muted">
+            {ru
+              ? "Подтверждённая площадка вашего пространства: участники получают QR-пропуск, который проходит один раз. Добавить площадку — в разделе «Площадки» пространства."
+              : "A confirmed venue of your space: participants get a QR pass that admits once. Add a venue in the space's “Venues” section."}
+          </p>
+          <ActionForm action="tournament.venue_set" lang={lang} back={`${back}#place`} hidden={hidden} className="inline-form">
+            <select name="venue" defaultValue={placeId ?? ""} aria-label={ru ? "Площадка" : "Venue"}>
+              <option value="">{ru ? "Онлайн, без площадки" : "Online, no venue"}</option>
+              {places.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.name} · {v.city}
+                </option>
+              ))}
+            </select>
+            <button className="btn btn-ghost btn-sm">{d.common.save}</button>
+          </ActionForm>
         </section>
       ) : null}
 

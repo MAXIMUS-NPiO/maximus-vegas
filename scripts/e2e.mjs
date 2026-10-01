@@ -778,5 +778,34 @@ if (process.env.OWNER_CODE) {
   const trustPage = (await guest.get("/ru/trust")).text;
   assert.ok(trustPage.includes("Отчётность за 90 дней") && trustPage.includes("CHEATING") && !trustPage.includes(d4.username), "the trust page shows rules and counts, no names");
   log("fair play: report, sanction with rule and evidence, restricted account can only appeal, appeal left to another reviewer, public counts without names");
+
+  // ---------- Venues: confirmation before publication; a QR pass admits once ----------
+  const venuesPath = `${space.path}/venues`;
+  const venueMade = await org.post("venue.create", { org: orgId, name: `E2E Hall ${RUN}`, kind: "club", address: "E2E street 1, floor 2", city: "Dubai", country: "AE", description: "e2e", website: "", back: venuesPath });
+  assert.equal(venueMade.ok, "venue_created", venueMade.location);
+  const venuesPage = (await org.get(venuesPath)).text;
+  const venueId = uuidAfter(venuesPage, "venue");
+  const venueSlug = /\/ru\/venues\/([a-z0-9-]+)/.exec(venuesPage)?.[1];
+  assert.ok(venueId && venueSlug);
+  assert.equal((await guest.get(`/ru/venues/${venueSlug}`)).status, 404, "a draft venue is not public");
+  assert.equal((await org.post("venue.submit", { venue: venueId, back: venuesPath })).ok, "venue_submitted");
+  assert.ok((await org.get("/ru/admin?tab=venues")).text.includes(`E2E Hall ${RUN}`), "the venue waits in the staff queue");
+  assert.equal((await org.post("venue.review", { venue: venueId, decision: "confirm", note: "" })).ok, "venue_reviewed");
+  assert.equal((await guest.get(`/ru/venues/${venueSlug}`)).status, 200);
+  assert.ok((await guest.get("/ru/venues")).text.includes(`E2E Hall ${RUN}`), "the confirmed venue is in the catalog");
+  const passFrom = new Date(Date.now() - 60_000).toISOString().slice(0, 16);
+  const passUntil = new Date(Date.now() + 3_600_000).toISOString().slice(0, 16);
+  assert.equal((await org.post("pass.guest", { venue: venueId, username: c3.username, from: passFrom, until: passUntil, tz: "UTC", note: "e2e", back: venuesPath })).ok, "pass_issued");
+  const passesPage = (await c3.get("/ru/passes")).text;
+  const passToken = /\/ru\/pass\/([A-Za-z0-9_-]{32})/.exec(passesPage)?.[1];
+  assert.ok(passesPage.includes("<svg") && passToken, "the holder sees the QR and its link");
+  assert.ok(!(await guest.get(`/ru/pass/${passToken}`)).text.includes(c3.username), "a stranger sees no holder details");
+  const scanView = (await org.get(`/ru/pass/${passToken}`)).text;
+  assert.ok(scanView.includes(c3.username) && scanView.includes("Пропустить"), "the venue's staff see the holder and the admit button");
+  assert.equal((await b.post("pass.admit", { token: passToken, back: `/ru/pass/${passToken}` })).e, "forbidden", "only the venue's staff admit");
+  assert.equal((await org.post("pass.admit", { token: passToken, back: `/ru/pass/${passToken}` })).ok, "pass_admitted");
+  assert.equal((await org.post("pass.admit", { token: passToken, back: `/ru/pass/${passToken}` })).e, "pass_used", "a reused QR is refused");
+  assert.ok((await org.get(venuesPath)).text.includes("уже использован"), "the refused scan is in the venue's log");
+  log("venues: a draft is hidden, staff confirm it, the catalog lists it; a guest pass shows a QR, admits once; a reuse and an outsider are refused");
 }
 console.log(`\nE2E OK against ${BASE} (run ${RUN})`);

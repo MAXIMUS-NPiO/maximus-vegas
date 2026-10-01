@@ -15,6 +15,8 @@ export function notificationLink(lang: Locale, data: Record<string, string>) {
   if (data.teamSlug) return `/${lang}/teams/${data.teamSlug}`;
   if (data.clanSlug) return `/${lang}/clans/${data.clanSlug}`;
   if (data.clans) return `/${lang}/clans#invites`;
+  if (data.passes) return `/${lang}/passes`;
+  if (data.adminTab) return `/${lang}/admin?tab=${data.adminTab}`;
   if (data.orgSlug) return `/${lang}/organizer/${data.orgSlug}`;
   if (data.circuitSlug) return `/${lang}/circuits/${data.circuitSlug}`;
   if (data.quick) return `/${lang}/matchmaking`;

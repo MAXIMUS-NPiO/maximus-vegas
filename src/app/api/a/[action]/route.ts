@@ -29,6 +29,7 @@ import * as scouting from "@/server/scouting.ts";
 import * as transfers from "@/server/transfers.ts";
 import * as clans from "@/server/clans.ts";
 import * as partner from "@/server/partner.ts";
+import * as venues from "@/server/venues.ts";
 import { storeUpload } from "@/server/media.ts";
 import { drainOutbox, mailConfigured } from "@/server/mail.ts";
 import { fail } from "@/server/errors.ts";
@@ -70,6 +71,15 @@ const signupDraft = (c: Ctx) => ({ email: c.form.email ?? "", username: c.form.u
 /** What an account under a suspension sanction may still do: read, appeal, manage its own access and data. */
 const RESTRICTED_OK = new Set(["auth.signout", "conduct.appeal", "notifications.read", "account.session", "account.password", "account.delete", "account.accept_terms"]);
 const conductAdmin = (c: Ctx) => `/${c.lang}/admin?tab=conduct`;
+const venueForm = (c: Ctx) => ({
+  name: c.form.name,
+  kind: c.form.kind,
+  address: c.form.address,
+  city: c.form.city,
+  country: c.form.country,
+  description: c.form.description,
+  website: c.form.website,
+});
 /**
  * A new API key or webhook secret is shown once: an HttpOnly cookie for the integrations page only, five
  * minutes, never in the URL; "I have saved it" clears it.
@@ -763,6 +773,47 @@ const handlers: Record<string, Handler> = {
     const reverse = c.form.reverse === "1";
     await transfers.decideTransferDispute(c.db, user, c.form.dispute, reverse, c.form.decision);
     return { to: conductAdmin(c), ok: reverse ? "transfer_reversed" : "transfer_upheld" };
+  },
+
+  // ---------- Venues and passes ----------
+  "venue.create": async (c) => {
+    await venues.createVenue(c.db, u(c), c.form.org, venueForm(c));
+    return { ok: "venue_created" };
+  },
+  "venue.update": async (c) => {
+    const r = await venues.updateVenue(c.db, u(c), c.form.venue, venueForm(c));
+    return { ok: r.resubmitted ? "venue_resubmitted" : "venue_saved" };
+  },
+  "venue.submit": async (c) => {
+    await venues.submitVenue(c.db, u(c), c.form.venue);
+    return { ok: "venue_submitted" };
+  },
+  "venue.review": async (c) => {
+    const user = await staff(c);
+    mfa.requireStepUp(user);
+    await venues.reviewVenue(c.db, user, c.form.venue, c.form.decision, c.form.note);
+    return { to: `/${c.lang}/admin?tab=venues`, ok: "venue_reviewed" };
+  },
+  "tournament.venue_set": async (c) => {
+    await venues.setTournamentVenue(c.db, u(c), c.form.tournament, c.form.venue);
+    return { ok: "saved" };
+  },
+  "pass.event": async (c) => {
+    const p = await venues.eventPass(c.db, u(c), c.form.tournament);
+    return { to: `/${c.lang}/passes#pass-${p.id}`, ok: "pass_ready" };
+  },
+  "pass.guest": async (c) => {
+    await venues.issueGuestPass(c.db, u(c), c.form.venue, { username: c.form.username, from: c.form.from, until: c.form.until, tz: c.form.tz, note: c.form.note });
+    return { ok: "pass_issued" };
+  },
+  "pass.revoke": async (c) => {
+    await venues.revokePass(c.db, u(c), c.form.pass);
+    return { ok: "pass_revoked" };
+  },
+  "pass.admit": async (c) => {
+    // A refusal is a result, not an error: it is logged and shown, never rolled back.
+    const r = await venues.admitPass(c.db, u(c), c.form.token);
+    return r.result === "admitted" ? { ok: "pass_admitted" } : { to: withParam(c.back, "e", `pass_${r.result}`) };
   },
 
   // ---------- Partner integrations: API keys, webhooks ----------
