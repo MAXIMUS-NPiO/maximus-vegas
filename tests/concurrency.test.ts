@@ -347,3 +347,36 @@ test("ffa: the last lobby games recorded together create the next round exactly 
     await db.close();
   }
 });
+
+test("referee calls: a burst of calls from both sides opens one call per side and notifies staff once each", { skip: !url }, async () => {
+  const { callReferee, closeRefereeCall } = await import("../src/server/gameday.ts");
+  const db: Database = await openDatabase({ url });
+  const run = Date.now().toString(36);
+  const mk = async (name: string): Promise<SessionUser> => {
+    const s = await signUp(db, { email: `${name}${run}@example.com`, username: `${name}${run}`.slice(0, 24), displayName: name, password: "correct horse battery", adult: "on", terms: "on" });
+    return (await sessionUser(db, s.token))!;
+  };
+  const org = await mk("rc");
+  const space = await createOrg(db, org, { name: `Calls ${run}`, description: "" });
+  const t = await createTournament(db, org, space.id, {
+    name: `Calls Cup ${run}`, game: "cs2", participantType: "solo", teamSize: 1, maxParticipants: 2,
+    checkInRequired: "", region: "", startsAt: "2030-01-01T12:00", timeZone: "UTC", description: "", rules: "",
+  });
+  await transition(db, org, t.id, "PUBLISHED");
+  await transition(db, org, t.id, "REGISTRATION_OPEN");
+  const [a, b] = await Promise.all([mk("rca"), mk("rcb")]);
+  await register(db, a, t.id);
+  await register(db, b, t.id);
+  await transition(db, org, t.id, "REGISTRATION_CLOSED");
+  await transition(db, org, t.id, "IN_PROGRESS");
+  const [m] = await db.query<{ id: string }>("select id from matches where tournament_id = $1", [t.id]);
+  const burst = await Promise.all([a, b, a, b, a, b].map((u, i) => callReferee(db, u, m.id, `Call number ${i}`)));
+  assert.equal(burst.filter((r) => r.created).length, 2, "one open call per side");
+  assert.equal(new Set(burst.map((r) => r.id)).size, 2);
+  const [n] = await db.query<{ n: number }>("select count(*)::int as n from notifications where user_id = $1 and kind = 'referee_call'", [org.id]);
+  assert.equal(n.n, 2);
+  const closes = await Promise.all(burst.slice(0, 2).flatMap((r) => [closeRefereeCall(db, org, r.id, "ok"), closeRefereeCall(db, org, r.id, "ok")]));
+  assert.equal(closes.filter((c) => c.closed).length, 2, "each call is closed once");
+  assert.equal((await verifyAuditChain(db)).valid, true);
+  await db.close();
+});

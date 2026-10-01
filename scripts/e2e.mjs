@@ -195,6 +195,27 @@ assert.equal((await org.post("tournament.transition", { tournament: tId, to: "RE
 assert.equal((await org.post("tournament.transition", { tournament: tId, to: "IN_PROGRESS" })).ok, "status_changed");
 log("5 registrations, duplicate refused, 4 check-ins, tournament started");
 
+// ---------- Game Day ----------
+const gdGuest = await guest.get("/ru/gameday");
+assert.ok([303, 307, 308].includes(gdGuest.status) && gdGuest.location.includes("/ru/signin"), "Game Day needs an account");
+const gd = (await players[0].get("/ru/gameday")).text;
+assert.ok(gd.includes("Игровой день") && gd.includes(`/ru/tournaments/${tSlug}`), "Game Day lists the live event");
+const gdMatch = /\/ru\/matches\/([0-9a-f-]{36})/.exec(gd)?.[1];
+assert.ok(gdMatch, "Game Day links the current match");
+assert.ok(gd.includes("Отметьтесь, что вы на месте"), "the step says what to do now");
+const gdCheck = await players[0].post("match.checkin", { match: gdMatch, back: "/ru/gameday" });
+assert.equal(gdCheck.ok, "checked_in");
+assert.equal(gdCheck.path, "/ru/gameday", "actions taken on Game Day return there");
+assert.equal((await players[0].post("match.call", { match: gdMatch, message: "e2e: opponent is not in the lobby", back: "/ru/gameday" })).ok, "referee_called");
+assert.equal((await players[0].post("match.call", { match: gdMatch, message: "e2e: again", back: "/ru/gameday" })).ok, "referee_call_exists");
+assert.equal((await players[4].post("match.call", { match: gdMatch, message: "e2e: not mine", back: "/ru/gameday" })).e, "not_participant");
+const refView = (await org.get(`/ru/matches/${gdMatch}`)).text;
+const callId = uuidAfter(refView, "call");
+assert.ok(callId && refView.includes("e2e: opponent is not in the lobby"), "the referee sees the open call");
+assert.equal((await org.post("match.call_close", { call: callId, note: "e2e: coming to your station", back: `/ru/matches/${gdMatch}` })).ok, "referee_call_closed");
+assert.ok((await players[0].get("/ru/gameday")).text.includes("e2e: coming to your station"), "the player sees the referee's reply");
+log("Game Day: current match and step, check-in returns to Game Day, referee call, duplicate and outsider refused, reply shown");
+
 const passes = await playOut(players.slice(0, 4));
 const tPage = (await guest.get(`/ru/tournaments/${tSlug}`)).text;
 assert.ok(tPage.includes("Завершён"), "tournament completed");

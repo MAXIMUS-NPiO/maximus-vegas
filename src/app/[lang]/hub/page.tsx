@@ -53,8 +53,8 @@ export default async function Hub({ params, searchParams }: { params: Promise<{ 
   const back = `/${lang}/hub`;
   const active = data.registrations.filter((r) => !["COMPLETED", "CANCELLED"].includes(r.status));
   const needsCheckIn = active.find((r) => r.check_in_open && r.reg_status === "registered" && !r.checked_in_at);
-  const step = data.matches.length
-    ? { text: d.hub.steps.match, href: `/${lang}/matches/${data.matches[0].id}` }
+  const step = data.matches.length || data.lobbies.length
+    ? { text: d.hub.steps.match, href: `/${lang}/gameday` }
     : needsCheckIn
       ? { text: d.hub.steps.checkin, href: `/${lang}/tournaments/${needsCheckIn.slug}` }
       : !active.length
@@ -124,7 +124,12 @@ export default async function Hub({ params, searchParams }: { params: Promise<{ 
       </Link>
 
       <section className="section-tight">
-        <h2 className="h3">{d.hub.nextMatch}</h2>
+        <div className="row-between">
+          <h2 className="h3">{d.hub.nextMatch}</h2>
+          <Link href={`/${lang}/gameday`} className="text-link small">
+            {d.x.nav.gameDay} →
+          </Link>
+        </div>
         {data.matches.length ? (
           <div className="grid grid-2">
             {data.matches.map((m) => (

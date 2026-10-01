@@ -18,6 +18,7 @@ import * as templates from "@/server/templates.ts";
 import * as schedule from "@/server/schedule.ts";
 import * as lobbies from "@/server/lobbies.ts";
 import * as feedback from "@/server/feedback.ts";
+import * as gameday from "@/server/gameday.ts";
 import { storeUpload } from "@/server/media.ts";
 import { drainOutbox, mailConfigured } from "@/server/mail.ts";
 import { fail } from "@/server/errors.ts";
@@ -44,6 +45,8 @@ type Handler = (c: Ctx) => Promise<Result>;
 const idOf = (value: string | undefined) => (value && /^[0-9a-f-]{36}$/i.test(value) ? value : fail("invalid_input"));
 const u = (c: Ctx) => requireUser(c.user);
 const matchPath = (c: Ctx, id: string) => `/${c.lang}/matches/${id}`;
+/** Actions sent from the Game Day screen return there; from anywhere else they open the match. */
+const matchOrGameDay = (c: Ctx, id: string) => (c.back.startsWith(`/${c.lang}/gameday`) ? c.back : matchPath(c, id));
 /** Control-centre actions: platform staff with a second factor verified in this session. */
 const staff = async (c: Ctx) => {
   const user = u(c);
@@ -416,7 +419,7 @@ const handlers: Record<string, Handler> = {
   "match.confirm": async (c) => {
     const id = idOf(c.form.match);
     await matches.confirmResult(c.db, u(c), id);
-    return { to: matchPath(c, id), ok: "result_confirmed" };
+    return { to: matchOrGameDay(c, id), ok: "result_confirmed" };
   },
   "match.dispute": async (c) => {
     const id = idOf(c.form.match);
@@ -470,7 +473,16 @@ const handlers: Record<string, Handler> = {
   "match.checkin": async (c) => {
     const id = idOf(c.form.match);
     await tournaments.matchCheckIn(c.db, u(c), id);
-    return { to: matchPath(c, id), ok: "checked_in" };
+    return { to: matchOrGameDay(c, id), ok: "checked_in" };
+  },
+  "match.call": async (c) => {
+    const id = idOf(c.form.match);
+    const r = await gameday.callReferee(c.db, u(c), id, c.form.message);
+    return { to: matchOrGameDay(c, id), ok: r.created ? "referee_called" : "referee_call_exists" };
+  },
+  "match.call_close": async (c) => {
+    const r = await gameday.closeRefereeCall(c.db, u(c), idOf(c.form.call), c.form.note);
+    return { to: matchPath(c, r.matchId), ok: r.closed ? "referee_call_closed" : "saved" };
   },
   "dispute.file": async (c) => {
     const id = idOf(c.form.match);
