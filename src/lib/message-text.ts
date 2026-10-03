@@ -180,6 +180,10 @@ export const systemText = {
       "Выключение останавливает только начало нового: начатое можно завершить, покинуть или решить. Сотрудники портала продолжают пользоваться функцией, чтобы проверить исправление.",
     featureNames: {
       quick_match: "Быстрый матч и группы",
+      connections: "Знакомства 18+",
+      cloud_gaming: "Хосты и P2P-сеансы",
+      recurring_pass: "Подарки сезонного Pass",
+      academy: "Академия",
       challenges: "Вызовы 1v1",
       finder: "Поиск команды и игроков",
       scouting: "Скаутинг",
@@ -241,6 +245,10 @@ export const systemText = {
       "Switching off stops only the start of something new: what is under way can be finished, left or decided. Portal staff keep using the feature to check a fix.",
     featureNames: {
       quick_match: "Quick match and parties",
+      connections: "Connections 18+",
+      cloud_gaming: "Hosts and P2P sessions",
+      recurring_pass: "Season Pass gifts",
+      academy: "Academy",
       challenges: "1v1 challenges",
       finder: "Team and player finder",
       scouting: "Scouting",

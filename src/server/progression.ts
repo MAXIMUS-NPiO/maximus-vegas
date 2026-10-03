@@ -206,17 +206,28 @@ export function passReward(tier: number, track: "free" | "premium"): PassReward 
   return { coins: 60 };
 }
 
-export async function seasonXp(q: Queryable, userId: string) {
-  return totalXp(q, userId, SEASON.startsAt);
+/** Fixed 90-day seasons retain the original epoch and historical claim keys. */
+export function currentSeason(now = new Date()) {
+  const length = 90 * 86400_000;
+  const index = Math.max(0, Math.floor((now.getTime() - SEASON.startsAt.getTime()) / length));
+  const startsAt = new Date(SEASON.startsAt.getTime() + index * length);
+  return { ...SEASON, id: `s${index + 1}`, startsAt, endsAt: new Date(startsAt.getTime() + length) };
 }
 
-export async function premiumUnlocked(q: Queryable, userId: string): Promise<"coins" | "membership" | null> {
+export async function seasonXp(q: Queryable, userId: string, season = currentSeason()) {
+  const [r] = await q.query<{ xp: number }>("select coalesce(sum(amount),0)::int as xp from xp_events where user_id=$1 and created_at >= $2 and created_at < $3", [userId, season.startsAt, season.endsAt]);
+  return r.xp;
+}
+
+export async function premiumUnlocked(q: Queryable, userId: string, season = currentSeason()): Promise<"coins" | "membership" | null> {
+  const SEASON = season;
   const [row] = await q.query<{ source: "coins" | "membership" }>("select source from pass_unlocks where user_id = $1 and season = $2", [userId, SEASON.id]);
   if (row) return row.source;
   return (await hasActiveMembership(q, userId)) ? "membership" : null;
 }
 
 export async function unlockPremium(db: Database, user: SessionUser) {
+  const SEASON = currentSeason();
   await db.tx(async (q) => {
     const [row] = await q.query("select 1 from pass_unlocks where user_id = $1 and season = $2", [user.id, SEASON.id]);
     if (row) fail("already_owned");
@@ -228,14 +239,15 @@ export async function unlockPremium(db: Database, user: SessionUser) {
 }
 
 export async function claimPassTier(db: Database, user: SessionUser, tierInput: unknown, trackInput: unknown) {
+  const SEASON = currentSeason();
   const tier = v.intIn(tierInput, 1, SEASON.tiers);
   const track = trackInput === "premium" ? "premium" : trackInput === "free" ? "free" : fail("invalid_input");
   const reward = passReward(tier, track);
   if (!reward) fail("not_found");
   await db.tx(async (q) => {
-    const xp = await seasonXp(q, user.id);
+    const xp = await seasonXp(q, user.id, SEASON);
     if (xp < tier * SEASON.xpPerTier) fail("tier_locked");
-    if (track === "premium" && !(await premiumUnlocked(q, user.id))) fail("premium_locked");
+    if (track === "premium" && !(await premiumUnlocked(q, user.id, SEASON))) fail("premium_locked");
     try {
       await q.query("insert into pass_claims (user_id, season, tier, track) values ($1, $2, $3, $4)", [user.id, SEASON.id, tier, track]);
     } catch (error) {

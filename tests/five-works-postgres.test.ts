@@ -1,0 +1,40 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { openDatabase } from "../src/server/db.ts";
+import { signUp, sessionUser, type SessionUser } from "../src/server/auth.ts";
+import { createOrg } from "../src/server/teams.ts";
+import { createVenue, submitVenue, reviewVenue } from "../src/server/venues.ts";
+import { setClubHours, addStation, bookStation, createClubEvent, rsvpEvent } from "../src/server/clubhouse.ts";
+import { grantXp } from "../src/server/progression.ts";
+import { createPassReward, reservePassReward, claimMission } from "../src/server/missions.ts";
+import { saveSocialProfile, likeProfile, sendSocialMessage } from "../src/server/social.ts";
+import { registerHost, reviewHost, hostHeartbeat, allocateHost, P2P_GAME } from "../src/server/p2p.ts";
+import { createSnapshot } from "../src/server/statistics.ts";
+import { verifyAuditChain } from "../src/server/audit.ts";
+const url = process.env.PG_TEST_URL;
+if (url && !["localhost","127.0.0.1"].includes(new URL(url).hostname)) throw new Error("Five-work concurrency fixtures require a local test database");
+test("Five-work transactions preserve capacity, mutual consent, reward uniqueness and snapshot limits under PostgreSQL concurrency", { skip: !url }, async () => {
+  const db = await openDatabase({url});
+  const mk = async (roles: SessionUser["roles"]=[]): Promise<SessionUser> => { const name=`pg${randomUUID().replaceAll('-','').slice(0,18)}`; const s=await signUp(db,{username:name,displayName:name,email:`${name}@example.com`,password:"isolated concurrency password",adult:"on",terms:"on"}); return {...(await sessionUser(db,s.token))!,roles}; };
+  try {
+    const owner=await mk(), staff=await mk(["admin"]), players=await Promise.all(Array.from({length:6},()=>mk()));
+    const org=await createOrg(db,owner,{name:`Concurrency ${randomUUID().slice(0,8)}`,description:""});
+    const venue=await createVenue(db,owner,org.id,{name:`Local ${randomUUID().slice(0,8)}`,kind:"clubhouse",city:"Test",country:"AE",address:"Isolated address",description:"",website:""});
+    await submitVenue(db,owner,venue.id);await reviewVenue(db,staff,venue.id,"confirm","Isolated PostgreSQL fixture");
+    await setClubHours(db,owner,venue.id,{timeZone:"UTC",opens:0,closes:1440},["0","1","2","3","4","5","6"]);
+    const station=await addStation(db,owner,venue.id,{name:"Concurrent station",equipment:"Fixture"});const day=new Date(Date.now()+86400_000);day.setUTCHours(12,0,0,0);const range={startsAt:day.toISOString().slice(0,16),endsAt:new Date(day.getTime()+3600_000).toISOString().slice(0,16),timeZone:"UTC"};
+    const bookings=await Promise.allSettled(players.map(p=>bookStation(db,p,station,range)));assert.equal(bookings.filter(r=>r.status==="fulfilled").length,1);
+    const event=await createClubEvent(db,owner,venue.id,{...range,title:"Capacity fixture",kind:"social",game:"cs2",description:"Free isolated fixture event",capacity:1,freeEntry:"on"});
+    await Promise.all(players.map(p=>rsvpEvent(db,p,event)));const states=await db.query<{status:string;n:number}>("select status,count(*)::int n from club_rsvps where event_id=$1 group by status",[event]);assert.equal(states.find(s=>s.status==="reserved")?.n,1);assert.equal(states.find(s=>s.status==="waitlisted")?.n,5);
+    await grantXp(db,players.map(p=>p.id),300,"match_win","cs2","pg-match",randomUUID());
+    const gift=await createPassReward(db,owner,venue.id,{title:"One stock",description:"One verified local gift",tier:1,quantity:1});const gifts=await Promise.allSettled(players.map(p=>reservePassReward(db,p,gift)));assert.equal(gifts.filter(r=>r.status==="fulfilled").length,1);
+    const missions=await Promise.allSettled(Array.from({length:6},()=>claimMission(db,players[0],"daily_play")));assert.equal(missions.filter(r=>r.status==="fulfilled").length,1);
+    const [a,b]=players;const profile={intent:"gaming",age:25,city:"Test",game:"cs2",languages:"English",bio:"Local concurrency profile",consent:"on"};await saveSocialProfile(db,a,profile);await saveSocialProfile(db,b,profile);
+    const matches=await Promise.all([likeProfile(db,a,b.id),likeProfile(db,b,a.id)]);const match=matches.find(Boolean)!;const client=randomUUID();const messages=await Promise.all(Array.from({length:5},()=>sendSocialMessage(db,a,match,"Exactly one message",client)));assert.equal(new Set(messages).size,1);
+    const host=await registerHost(db,owner,{name:"PG host",cpu:"Test CPU",gpu:"Test GPU",ram:8,region:"PG",consent:true},[P2P_GAME]);await reviewHost(db,staff,host,"approved","Isolated local host fixture");await hostHeartbeat(db,owner,host,true);const leases=await Promise.allSettled(players.map(p=>allocateHost(db,p,P2P_GAME,"PG",true)));assert.equal(leases.filter(r=>r.status==="fulfilled").length,1);
+    for(let i=0;i<4;i++) await createSnapshot(db,a);
+    const snapshots=await Promise.allSettled(Array.from({length:6},()=>createSnapshot(db,a)));assert.equal(snapshots.filter(r=>r.status==="fulfilled").length,1);
+    const [count]=await db.query<{n:number}>("select count(*)::int n from stats_snapshots where user_id=$1",[a.id]);assert.equal(count.n,5);assert.equal((await verifyAuditChain(db)).valid,true);
+  } finally { await db.close(); }
+});

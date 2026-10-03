@@ -1842,4 +1842,189 @@ export const migrations: Migration[] = [
       `alter table arbitration_cases add column demo_order_id uuid unique references skin_demo_orders(id)`,
     ],
   },
+  {
+    id: 29,
+    name: "recurring_pass_and_reward_fulfilment",
+    statements: [
+      `create table mission_preferences (user_id uuid primary key references users(id), game text not null default '', updated_at timestamptz not null default now())`,
+      `create table mission_assignments (
+        user_id uuid not null references users(id), mission text not null, window_start timestamptz not null, window_end timestamptz not null,
+        game text not null default '', target int not null check(target>0), coins int not null check(coins>=0), xp int not null check(xp>=0),
+        claimed_at timestamptz, primary key(user_id,mission,window_start), check(window_end>window_start)
+      )`,
+      `create table pass_rewards (
+        id uuid primary key default gen_random_uuid(), venue_id uuid not null references venues(id),
+        title text not null, description text not null, season text not null, tier int not null check(tier between 1 and 20),
+        quantity int not null check(quantity between 0 and 10000), active boolean not null default true,
+        created_by uuid not null references users(id), created_at timestamptz not null default now()
+      )`,
+      `create table pass_reward_claims (
+        id uuid primary key default gen_random_uuid(), reward_id uuid not null references pass_rewards(id), user_id uuid not null references users(id),
+        status text not null default 'reserved' check(status in ('reserved','collected','cancelled')),
+        collection_hash text not null, collection_sealed text not null, claimed_at timestamptz not null default now(),
+        collected_at timestamptz, collected_by uuid references users(id), unique(reward_id,user_id)
+      )`,
+      `create index pass_rewards_venue on pass_rewards(venue_id,season)`,
+    ],
+  },
+  {
+    id: 30,
+    name: "consensual_discovery_matches_and_safety",
+    statements: [
+      `create table social_profiles (
+        user_id uuid primary key references users(id), visible boolean not null default false, suspended boolean not null default false,
+        intent text not null check(intent in ('gaming','friendship','dating')), age int not null check(age between 18 and 100),
+        city text not null default '', game text not null default '', languages text not null default '',
+        gaming_preferences text not null default '', relationship_preferences text not null default '', bio text not null default '',
+        consent_version text not null, consented_at timestamptz not null default now(), updated_at timestamptz not null default now()
+      )`,
+      `create table social_likes (
+        sender_id uuid not null references users(id), recipient_id uuid not null references users(id), created_at timestamptz not null default now(),
+        primary key(sender_id,recipient_id), check(sender_id<>recipient_id)
+      )`,
+      `create table social_matches (
+        id uuid primary key default gen_random_uuid(), user_a uuid not null references users(id), user_b uuid not null references users(id),
+        status text not null default 'active' check(status in ('active','closed')), created_at timestamptz not null default now(),
+        read_a timestamptz, read_b timestamptz, unique(user_a,user_b), check(user_a<user_b)
+      )`,
+      `create table social_messages (
+        id bigint generated always as identity primary key, match_id uuid not null references social_matches(id) on delete cascade,
+        sender_id uuid not null references users(id), body text not null check(length(body) between 1 and 1000),
+        client_id uuid not null, created_at timestamptz not null default now(), unique(sender_id,client_id)
+      )`,
+      `create index social_messages_match on social_messages(match_id,id)`,
+      `create table social_blocks (
+        user_id uuid not null references users(id), subject_id uuid not null references users(id), created_at timestamptz not null default now(),
+        primary key(user_id,subject_id), check(user_id<>subject_id)
+      )`,
+      `create table social_reports (
+        id uuid primary key default gen_random_uuid(), reporter_id uuid not null references users(id), subject_id uuid not null references users(id),
+        reason text not null, message_id bigint references social_messages(id) on delete set null, excerpt text not null default '',
+        status text not null default 'open' check(status in ('open','resolved')), decision text not null default '',
+        decided_by uuid references users(id), created_at timestamptz not null default now(), decided_at timestamptz,
+        check(reporter_id<>subject_id)
+      )`,
+      `create index social_profiles_discovery on social_profiles(intent,game,city) where visible`,
+      `create index social_matches_b on social_matches(user_b,status)`,
+      `create index social_reports_queue on social_reports(status,created_at)`,
+    ],
+  },
+  {
+    id: 31,
+    name: "clubhouse_events_stations_and_offline_checkins",
+    statements: [
+      `create table clubhouse_settings (
+        venue_id uuid primary key references venues(id), time_zone text not null default 'UTC',
+        opens int not null check(opens between 0 and 1439), closes int not null check(closes between 1 and 1440),
+        weekdays int[] not null, check(closes>opens)
+      )`,
+      `create table club_stations (
+        id uuid primary key default gen_random_uuid(), venue_id uuid not null references venues(id),
+        name text not null, equipment text not null default '', active boolean not null default true, created_at timestamptz not null default now(), unique(venue_id,name)
+      )`,
+      `create table station_bookings (
+        id uuid primary key default gen_random_uuid(), station_id uuid not null references club_stations(id), user_id uuid not null references users(id),
+        starts_at timestamptz not null, ends_at timestamptz not null, status text not null default 'reserved' check(status in ('reserved','checked_in','completed','cancelled','no_show')),
+        created_at timestamptz not null default now(), check(ends_at>starts_at)
+      )`,
+      `create index station_bookings_overlap on station_bookings(station_id,starts_at,ends_at) where status in ('reserved','checked_in')`,
+      `create index station_bookings_user on station_bookings(user_id,starts_at)`,
+      `create table club_events (
+        id uuid primary key default gen_random_uuid(), venue_id uuid not null references venues(id),
+        title text not null, description text not null, game text not null default '', kind text not null check(kind in ('social','training','talent','competition')),
+        starts_at timestamptz not null, ends_at timestamptz not null, capacity int not null check(capacity between 1 and 5000),
+        status text not null default 'published' check(status in ('published','cancelled','completed')),
+        created_by uuid not null references users(id), created_at timestamptz not null default now(), check(ends_at>starts_at)
+      )`,
+      `create table club_rsvps (
+        id uuid primary key default gen_random_uuid(), event_id uuid not null references club_events(id), user_id uuid not null references users(id),
+        status text not null check(status in ('reserved','waitlisted','attended','cancelled')), created_at timestamptz not null default now(), unique(event_id,user_id)
+      )`,
+      `create index club_rsvp_queue on club_rsvps(event_id,status,created_at)`,
+      `alter table venue_passes add column club_rsvp_id uuid unique references club_rsvps(id)`,
+      `alter table venue_passes add column station_booking_id uuid unique references station_bookings(id)`,
+      `create table offline_manifests (
+        id uuid primary key default gen_random_uuid(), venue_id uuid not null references venues(id), staff_id uuid not null references users(id),
+        passes jsonb not null, created_at timestamptz not null default now(), expires_at timestamptz not null
+      )`,
+      `create table offline_scans (
+        id uuid primary key, manifest_id uuid not null references offline_manifests(id), pass_id uuid references venue_passes(id),
+        observed_at timestamptz not null, result text not null, synced_at timestamptz not null default now()
+      )`,
+    ],
+  },
+  {
+    id: 32,
+    name: "p2p_hosts_allocation_signalling_and_usage",
+    statements: [
+      `create table p2p_hosts (
+        id uuid primary key default gen_random_uuid(), owner_id uuid not null references users(id), name text not null, region text not null,
+        cpu text not null, gpu text not null, ram_gb int not null check(ram_gb between 2 and 2048), games text[] not null,
+        status text not null default 'pending' check(status in ('pending','approved','suspended')), review_note text not null default '',
+        reviewed_by uuid references users(id), reviewed_at timestamptz, online boolean not null default false, heartbeat_at timestamptz,
+        agent_key_hash text unique, created_at timestamptz not null default now()
+      )`,
+      `create table p2p_sessions (
+        id uuid primary key default gen_random_uuid(), host_id uuid not null references p2p_hosts(id), client_id uuid not null references users(id),
+        game text not null, status text not null default 'requested' check(status in ('requested','connecting','active','ended','failed','rejected')),
+        created_at timestamptz not null default now(), expires_at timestamptz not null, started_at timestamptz, ended_at timestamptz,
+        host_seen timestamptz, client_seen timestamptz, host_connected boolean not null default false, client_connected boolean not null default false,
+        host_confirmed boolean not null default false, client_confirmed boolean not null default false,
+        connected_seconds int not null default 0, metered_at timestamptz, rewarded boolean not null default false,
+        feedback int check(feedback between 1 and 5), problem text not null default ''
+      )`,
+      `create unique index p2p_host_one_active on p2p_sessions(host_id) where status in ('requested','connecting','active')`,
+      `create unique index p2p_client_one_active on p2p_sessions(client_id) where status in ('requested','connecting','active')`,
+      `create table p2p_signals (
+        id bigint generated always as identity primary key, session_id uuid not null references p2p_sessions(id) on delete cascade,
+        sender text not null check(sender in ('host','client')), kind text not null check(kind in ('offer','answer','ice')),
+        payload jsonb not null, client_id uuid not null, created_at timestamptz not null default now(), unique(session_id,sender,client_id)
+      )`,
+      `create index p2p_signals_cursor on p2p_signals(session_id,id)`,
+      `create index p2p_signals_expiry on p2p_signals(created_at)`,
+      `create index p2p_sessions_expiry on p2p_sessions(expires_at,created_at) where status in ('requested','connecting','active')`,
+      `create index p2p_hosts_available on p2p_hosts(region,heartbeat_at) where status='approved' and online`,
+    ],
+  },
+  {
+    id: 33,
+    name: "signed_statistics_links_and_verifiable_snapshots",
+    statements: [
+      `create table stats_sources (
+        id uuid primary key default gen_random_uuid(), org_id uuid not null references organizations(id), name text not null,
+        games text[] not null, public_key text not null, evidence_url text not null,
+        status text not null default 'pending' check(status in ('pending','approved','suspended')),
+        created_by uuid not null references users(id), reviewed_by uuid references users(id), review_note text not null default '',
+        created_at timestamptz not null default now(), reviewed_at timestamptz
+      )`,
+      `create table stats_links (
+        id uuid primary key default gen_random_uuid(), source_id uuid not null references stats_sources(id), user_id uuid not null references users(id),
+        game text not null, handle text not null, status text not null default 'pending' check(status in ('pending','verified','revoked')),
+        challenge_hash text not null, challenge_sealed text not null, expires_at timestamptz not null,
+        created_at timestamptz not null default now(), verified_at timestamptz, unique(source_id,user_id,game)
+      )`,
+      `create unique index stats_handle_link on stats_links(source_id,game,lower(handle)) where status<>'revoked'`,
+      `create table stats_observations (
+        id uuid primary key default gen_random_uuid(), source_id uuid not null references stats_sources(id), user_id uuid not null references users(id),
+        game text not null, match_ref text not null, played_at timestamptz not null, metrics jsonb not null, digest text not null,
+        signed_body text not null, signature text not null, public_key text not null, status text not null default 'pending' check(status in ('pending','confirmed','rejected')),
+        reviewed_by uuid references users(id), review_note text not null default '', created_at timestamptz not null default now(),
+        unique(source_id,user_id,game,match_ref)
+      )`,
+      `create index stats_observations_player on stats_observations(user_id,played_at)`,
+      `create table stats_receipts (
+        source_id uuid not null references stats_sources(id), nonce uuid not null, body_hash text not null,
+        observation_id uuid references stats_observations(id) on delete set null, received_at timestamptz not null default now(), primary key(source_id,nonce)
+      )`,
+      `create table stats_snapshots (
+        id uuid primary key, user_id uuid not null references users(id), root text not null, leaf_count int not null check(leaf_count>=0),
+        records jsonb not null, signature text, public_key text, shared boolean not null default false,
+        created_at timestamptz not null default now()
+      )`,
+      `create table stats_anchors (
+        snapshot_id uuid primary key references stats_snapshots(id) on delete cascade, chain_id text not null, contract_address text not null,
+        transaction_hash text not null, block_number bigint not null, recorded_by uuid not null references users(id), verified_at timestamptz not null default now()
+      )`,
+    ],
+  },
 ];

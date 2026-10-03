@@ -14,12 +14,13 @@ import {
   rankFor,
   REFERRAL,
   referralCode,
-  SEASON,
+  currentSeason,
   seasonXp,
   totalXp,
 } from "@/server/progression.ts";
 import { ActionForm, DbDown, Field, Flash, PageHead, type SearchParams } from "@/components/ui";
 import { LocalTime } from "@/components/time";
+import { PassMissions } from "@/components/pass-missions";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
   const { lang } = await params;
@@ -63,6 +64,7 @@ export default async function Progress({ params, searchParams }: { params: Promi
   if (!isLocale(lang)) notFound();
   const ru = lang === "ru";
   const T = (a: string, b: string) => (ru ? a : b);
+  const SEASON = currentSeason();
   const sp = await searchParams;
   const { db, user, dbError } = await viewer();
   if (dbError || !db)
@@ -130,6 +132,7 @@ export default async function Progress({ params, searchParams }: { params: Promi
         </div>
       </section>
 
+      <PassMissions db={db} userId={user.id} lang={lang} />
       <section className="section-tight" id="objectives">
         <h2 className="h3">{T("Цели", "Objectives")}</h2>
         <p className="small muted">{T("Проверяются по реальному состоянию аккаунта в момент получения и выплачиваются один раз.", "Checked against your real account state when claimed, and paid once.")}</p>

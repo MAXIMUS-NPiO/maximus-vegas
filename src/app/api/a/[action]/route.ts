@@ -1,4 +1,10 @@
 import * as marketplace from "@/server/marketplace.ts";
+import * as missions from "@/server/missions.ts";
+import * as social from "@/server/social.ts";
+import * as clubhouse from "@/server/clubhouse.ts";
+import * as p2p from "@/server/p2p.ts";
+import * as statistics from "@/server/statistics.ts";
+import { verifyAndRecordAnchor } from "@/server/stats-anchor.ts";
 import * as arbitration from "@/server/arbitration.ts";
 import { after } from "next/server";
 import * as auth from "@/server/auth.ts";
@@ -81,6 +87,7 @@ const signupDraft = (c: Ctx) => ({ email: c.form.email ?? "", username: c.form.u
 
 /** What an account under a suspension sanction may still do: read, appeal, manage its own access and data. */
 const RESTRICTED_OK = new Set(["arbitration.open", "arbitration.evidence", "arbitration.appeal", "marketplace.delete", "auth.signout", "conduct.appeal", "notifications.read", "account.session", "account.password", "account.delete", "account.accept_terms"]);
+for (const action of ["social.withdraw", "social.block", "social.close", "social.report", "stats.unlink", "stats.share", "reward.cancel", "club.rsvp_cancel", "club.booking_status"]) RESTRICTED_OK.add(action);
 const conductAdmin = (c: Ctx) => `/${c.lang}/admin?tab=conduct`;
 const venueForm = (c: Ctx) => ({
   name: c.form.name,
@@ -663,6 +670,48 @@ const handlers: Record<string, Handler> = {
   },
 
   // ---------- Progression ----------
+  "stats.source": async c => { await mfa.requireStaffMfa(c.db, u(c)); await statistics.createStatsSource(c.db, u(c), idOf(c.form.org), c.form, c.multi.games ?? []); return { ok: "saved" }; },
+  "stats.review": async c => { await statistics.reviewStatsSource(c.db, await staff(c, "system"), idOf(c.form.source), c.form.status, c.form.note); return { ok: "saved" }; },
+  "stats.rotate": async c => { await mfa.requireStaffMfa(c.db, u(c)); await statistics.rotateStatsKey(c.db, u(c), idOf(c.form.source), c.form.publicKey); return { ok: "saved" }; },
+  "stats.link": async c => { if (c.form.consent !== "on") fail("consent_required"); await statistics.linkStatsSource(c.db, u(c), idOf(c.form.source), c.form.game, c.form.handle); return { ok: "saved" }; },
+  "stats.unlink": async c => { await statistics.revokeStatsLink(c.db, u(c), idOf(c.form.link)); return { ok: "saved" }; },
+  "stats.record_review": async c => { await mfa.requireStaffMfa(c.db, u(c)); await statistics.reviewObservation(c.db, u(c), idOf(c.form.record), c.form.status, c.form.note); return { ok: "saved" }; },
+  "stats.snapshot": async c => { await statistics.createSnapshot(c.db, u(c), c.form.from, c.form.until); return { ok: "saved" }; },
+  "stats.share": async c => { await statistics.shareSnapshot(c.db, u(c), idOf(c.form.snapshot), c.form.shared === "true"); return { ok: "saved" }; },
+  "stats.anchor": async c => { await verifyAndRecordAnchor(c.db, u(c), idOf(c.form.snapshot), c.form.transaction); return { ok: "saved" }; },
+  "p2p.register": async c => { const id = await p2p.registerHost(c.db, u(c), c.form, c.multi.games ?? []); return `/${c.lang}/cloud-gaming/host/${id}`; },
+  "p2p.allocate": async c => { const id = await p2p.allocateHost(c.db, u(c), c.form.game, c.form.region, c.form.consent === "on"); return `/${c.lang}/cloud-gaming/session/${id}`; },
+  "p2p.review": async c => { await p2p.reviewHost(c.db, await staff(c, "system"), idOf(c.form.host), c.form.decision, c.form.note); return { ok: "saved" }; },
+  "club.hours": async c => {
+    const minutes = (s: string) => { if (!/^\d{2}:\d{2}$/.test(s)) return fail("invalid_input"); const [h,m] = s.split(":").map(Number); if (h>23 || m>59) return fail("invalid_input"); return h*60+m; };
+    await mfa.requireStaffMfa(c.db, u(c));
+    await clubhouse.setClubHours(c.db, u(c), idOf(c.form.venue), { ...c.form, opens: minutes(c.form.opensAt), closes: minutes(c.form.closesAt) || 1440 }, c.multi.weekdays ?? []); return { ok: "saved" };
+  },
+  "club.station": async c => { await mfa.requireStaffMfa(c.db, u(c)); await clubhouse.addStation(c.db, u(c), idOf(c.form.venue), c.form); return { ok: "saved" }; },
+  "club.station_status": async c => { await mfa.requireStaffMfa(c.db, u(c)); await clubhouse.setStationActive(c.db, u(c), idOf(c.form.station), c.form.active === "true"); return { ok: "saved" }; },
+  "club.book": async c => { await clubhouse.bookStation(c.db, u(c), idOf(c.form.station), c.form); return { ok: "saved" }; },
+  "club.booking_status": async c => { await mfa.requireStaffMfa(c.db, u(c)); await clubhouse.changeBooking(c.db, u(c), idOf(c.form.booking), c.form.status); return { ok: "saved" }; },
+  "club.event": async c => { await mfa.requireStaffMfa(c.db, u(c)); await clubhouse.createClubEvent(c.db, u(c), idOf(c.form.venue), c.form); return { ok: "saved" }; },
+  "club.event_status": async c => { await mfa.requireStaffMfa(c.db, u(c)); await clubhouse.changeClubEvent(c.db, u(c), idOf(c.form.event), c.form.status); return { ok: "saved" }; },
+  "club.rsvp": async c => { await clubhouse.rsvpEvent(c.db, u(c), idOf(c.form.event)); return { ok: "saved" }; },
+  "club.rsvp_cancel": async c => { await clubhouse.cancelRsvp(c.db, u(c), idOf(c.form.event)); return { ok: "saved" }; },
+  "mission.preference": async c => { await missions.setMissionPreference(c.db, u(c), c.form.game); return { ok: "saved" }; },
+  "mission.claim": async c => { await missions.claimMission(c.db, u(c), c.form.mission); return { ok: "reward_claimed" }; },
+  "reward.create": async c => { await mfa.requireStaffMfa(c.db, u(c)); await missions.createPassReward(c.db, u(c), idOf(c.form.venue), c.form); return { ok: "saved" }; },
+  "reward.availability": async c => { await mfa.requireStaffMfa(c.db, u(c)); await missions.setPassRewardActive(c.db, u(c), idOf(c.form.reward), c.form.active === "true"); return { ok: "saved" }; },
+  "reward.cancel": async c => { await mfa.requireStaffMfa(c.db, u(c)); await missions.cancelPassReward(c.db, u(c), idOf(c.form.claim)); return { ok: "saved" }; },
+  "reward.reserve": async c => { await missions.reservePassReward(c.db, u(c), idOf(c.form.reward)); return { ok: "saved" }; },
+  "reward.collect": async c => { await mfa.requireStaffMfa(c.db, u(c)); await missions.fulfilPassReward(c.db, u(c), idOf(c.form.claim), c.form.code); return { ok: "saved" }; },
+  "social.profile": async c => { await social.saveSocialProfile(c.db, u(c), c.form); return { ok: "saved" }; },
+  "social.withdraw": async c => { await social.withdrawSocialProfile(c.db, u(c)); return { ok: "saved" }; },
+  "social.like": async c => { const id = await social.likeProfile(c.db, u(c), idOf(c.form.user)); return id ? `/${c.lang}/dating/${id}` : { ok: "saved" }; },
+  "social.message": async c => { await social.sendSocialMessage(c.db, u(c), idOf(c.form.match), c.form.body, idOf(c.form.clientId)); return { ok: "saved" }; },
+  "social.close": async c => { await social.closeMatch(c.db, u(c), idOf(c.form.match)); return { ok: "saved" }; },
+  "social.block": async c => { await social.blockProfile(c.db, u(c), idOf(c.form.user)); return { ok: "saved" }; },
+  "social.unblock": async c => { await social.blockProfile(c.db, u(c), idOf(c.form.user), true); return { ok: "saved" }; },
+  "social.report": async c => { await social.reportSocialProfile(c.db, u(c), idOf(c.form.user), c.form.reason, c.form.message || ""); return { ok: "saved" }; },
+  "social.resolve": async c => { await social.resolveSocialReport(c.db, await staff(c, "conduct"), idOf(c.form.report), c.form.decision, c.form.hide === "on"); return { ok: "saved" }; },
+  "social.restore": async c => { await social.restoreSocialProfile(c.db, await staff(c, "conduct"), idOf(c.form.user), c.form.reason); return { ok: "saved" }; },
   "objective.claim": async (c) => {
     await progression.claimObjective(c.db, u(c), c.form.objective);
     return { ok: "reward_claimed" };

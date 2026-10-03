@@ -1,0 +1,14 @@
+{
+  "portal": "https://www.maximus.vegas",
+  "acceptSessions": false,
+  "width": 1280,
+  "height": 720,
+  "audio": true,
+  "games": {
+    "cs2": {
+      "directory": "/srv/maximus-games/cs2",
+      "command": ["/game/game/bin/linuxsteamrt64/cs2", "-windowed", "-w", "1280", "-h", "720"],
+      "network": false
+    }
+  }
+}
