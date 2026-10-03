@@ -15,6 +15,7 @@
  *   whether action was taken, not the sanction itself.
  */
 import { endSocialCalls } from "./social-calls.ts";
+import { clearNearby } from "./social-nearby.ts";
 import { createHash } from "node:crypto";
 import type { Database, Queryable } from "./db.ts";
 import type { SessionUser } from "./auth.ts";
@@ -244,7 +245,10 @@ export async function issueSanction(db: Database, staff: SessionUser, input: Iss
     } else if (report) {
       await q.query("update conduct_reports set status = 'reviewing', assigned_to = coalesce(assigned_to, $2) where id = $1", [report.id, staff.id]);
     }
-    if (kind === "suspension") await endSocialCalls(q, subject.id, undefined, "account_restricted");
+    if (kind === "suspension") {
+      await endSocialCalls(q, subject.id, undefined, "account_restricted");
+      await clearNearby(q, subject.id);
+    }
     await notify(q, [subject.id], "sanction_issued", { kind, protective: protective ? "1" : "", conduct: "1" });
     await audit(q, {
       actorId: staff.id,

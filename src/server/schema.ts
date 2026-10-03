@@ -2114,4 +2114,21 @@ export const migrations: Migration[] = [
       `create unique index social_call_description on social_call_signals(call_id,kind) where kind in ('offer','answer')`,
     ],
   },
+  {
+    id: 36,
+    name: "consented_coarse_nearby_discovery",
+    statements: [
+      `alter table social_profiles add column nearby_revision int not null default 0, add column nearby_updated_at timestamptz`,
+      `create table social_locations (
+        user_id uuid primary key references social_profiles(user_id) on delete cascade,
+        lat_cell smallint not null check(lat_cell between -900 and 900),
+        lng_cell smallint not null check(lng_cell between -1800 and 1799),
+        consent_version text not null, updated_at timestamptz not null default now(),
+        expires_at timestamptz not null default now()+interval '7 days',
+        check(abs(lat_cell)<>900 or lng_cell=0), check(expires_at>updated_at)
+      )`,
+      `create index social_locations_lat on social_locations(lat_cell)`,
+      `create index social_locations_expiry on social_locations(expires_at)`,
+    ],
+  },
 ];

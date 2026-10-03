@@ -7,6 +7,8 @@ import { fail } from "./errors.ts";
 import { audit } from "./audit.ts";
 import * as v from "./validate.ts";
 import { endSocialCalls } from "./social-calls.ts";
+import { clearNearby } from "./social-nearby.ts";
+import { NEARBY_CONSENT, NEARBY_RADII } from "../lib/nearby.ts";
 import { isGame } from "../lib/games.ts";
 
 export const SOCIAL_CONSENT = "MV-DISCOVERY-1";
@@ -47,6 +49,7 @@ export async function withdrawSocialProfile(db: Database, user: SessionUser) {
   await db.tx(async q => {
     await q.query("select id from users where id=$1 for update", [user.id]);
     await q.query("update social_profiles set visible=false,gaming_consent=false,gaming_consent_version=null,gaming_consented_at=null,updated_at=now() where user_id=$1", [user.id]);
+    await clearNearby(q, user.id);
     await q.query("delete from social_likes where sender_id=$1 or recipient_id=$1", [user.id]);
     await q.query("update social_matches set status='closed' where user_a=$1 or user_b=$1", [user.id]);
     await endSocialCalls(q, user.id);
@@ -58,6 +61,7 @@ export async function discover(q: Queryable, user: SessionUser, filters: Record<
   const me = await socialProfile(q, user.id);
   if (!me?.visible) return [];
   const minAge = v.intIn(filters.minAge || "18", 18, 100), maxAge = v.intIn(filters.maxAge || "100", minAge, 100);
+  const radius = filters.radius ? NEARBY_RADII.find(r => String(r) === filters.radius) ?? fail("invalid_input") : 0;
   return q.query<SocialProfile & { gaming_fit: GamingFit[]; gaming_points: number }>(`select p.user_id,p.intent,p.age,p.city,p.game,p.languages,p.gaming_preferences,p.relationship_preferences,p.bio,u.display_name,u.username,
     coalesce(fit.points,0)::int as gaming_points,coalesce(fit.games,'[]'::jsonb) as gaming_fit
     from social_profiles p join users u on u.id=p.user_id
@@ -70,13 +74,24 @@ export async function discover(q: Queryable, user: SessionUser, filters: Record<
           and exists(select 1 from social_profiles me where me.user_id=$1 and me.gaming_consent and me.visible)
         order by points desc,a.game limit 3) g
     ) fit on true
-    where p.visible and not p.suspended and u.status='active'
+    where p.visible and not p.suspended and u.status='active' and u.adult_confirmed_at is not null
       and not exists(select 1 from sanctions s where s.user_id=u.id and s.kind='suspension' and s.revoked_at is null and s.starts_at<=now() and (s.ends_at is null or s.ends_at>now())) and p.user_id<>$1 and p.intent=$2 and p.age between $3 and $4
       and ($5='' or p.city ilike $5) and ($6='' or p.game=$6)
       and not exists(select 1 from social_blocks b where (b.user_id=$1 and b.subject_id=p.user_id) or (b.subject_id=$1 and b.user_id=p.user_id))
       and not exists(select 1 from social_likes l where l.sender_id=$1 and l.recipient_id=p.user_id)
       and not exists(select 1 from social_matches m where m.status='active' and $1 in(m.user_a,m.user_b) and p.user_id in(m.user_a,m.user_b))
-    order by gaming_points desc,p.updated_at desc,p.user_id limit 40`, [user.id, me.intent, minAge, maxAge, v.oneLine(filters.city, 80), v.oneLine(filters.game, 40)]);
+      and ($7::int=0 or exists(
+        select 1 from social_locations own join social_locations other on other.user_id=p.user_id
+        join social_profiles owner on owner.user_id=own.user_id and owner.visible and not owner.suspended
+        where own.user_id=$1 and own.expires_at>now() and other.expires_at>now()
+          and own.consent_version=$8 and other.consent_version=$8
+          and other.lat_cell between own.lat_cell-ceil($7::numeric/11.1) and own.lat_cell+ceil($7::numeric/11.1)
+          and 12742*asin(sqrt(least(1.0,greatest(0.0,
+            power(sin(radians((other.lat_cell-own.lat_cell)/10.0)/2),2)
+            +cos(radians(own.lat_cell/10.0))*cos(radians(other.lat_cell/10.0))
+             *power(sin(radians((other.lng_cell-own.lng_cell)/10.0)/2),2))))) <= $7
+      ))
+    order by gaming_points desc,p.updated_at desc,p.user_id limit 40`, [user.id, me.intent, minAge, maxAge, v.oneLine(filters.city, 80), v.oneLine(filters.game, 40), radius, NEARBY_CONSENT]);
 }
 export async function likeProfile(db: Database, user: SessionUser, otherId: string) {
   return db.tx(async q => {
@@ -184,6 +199,7 @@ export async function resolveSocialReport(db: Database, user: SessionUser, repor
     await q.query("update social_reports set status='resolved',decision=$2,decided_by=$3,decided_at=now() where id=$1", [reportId, v.clean(decision, 1000), user.id]);
     if (hide) {
       await q.query("update social_profiles set visible=false,suspended=true where user_id=$1", [r.subject_id]);
+      await clearNearby(q, r.subject_id);
       await q.query("update social_matches set status='closed' where $1 in(user_a,user_b)", [r.subject_id]);
       await endSocialCalls(q, r.subject_id);
     }
@@ -204,6 +220,7 @@ export async function restoreSocialProfile(db: Database, user: SessionUser, subj
 export async function socialExport(q: Queryable, userId: string) {
   return {
     profile: await socialProfile(q, userId),
+    nearby: await q.query("select lat_cell,lng_cell,consent_version,updated_at,expires_at from social_locations where user_id=$1", [userId]),
     calls: await q.query("select id,match_id,mode,state,reason,created_at,accepted_at,ended_at from social_calls where $1 in(caller_id,callee_id) order by created_at", [userId]),
     likes: await q.query("select recipient_id,created_at from social_likes where sender_id=$1", [userId]),
     matches: await myMatches(q, userId),
