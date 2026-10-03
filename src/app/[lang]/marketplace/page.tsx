@@ -31,7 +31,7 @@ export default async function Marketplace({params,searchParams}:{params:Promise<
  <ActionForm action="marketplace.save" lang={lang} back={back} className="card form-card">
  <Field label={t("Игра","Game")}><select name="game">{Object.entries(SKIN_GAMES).map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></Field>
  <Field label={t("Название предмета","Item name")}><input name="title" required minLength={3} maxLength={150}/></Field>
- <Field label={t("Идентификатор предмета в инвентаре","Inventory item identifier")}><input name="asset" required maxLength={100} pattern="[a-zA-Z0-9:_-]+"/></Field>
+ <Field label={t("Идентификатор предмета в инвентаре","Inventory item identifier")}><input name="asset" required maxLength={100} pattern="(?:[a-zA-Z0-9:_]|-)+"/></Field>
  <div className="form-grid"><Field label={t("Желаемая цена","Asking price")}><input name="price" type="number" inputMode="decimal" min="0.01" max="1000000" step="0.01" required/></Field><Field label={t("Валюта","Currency")}><select name="currency">{MARKET_CURRENCIES.map(c=><option key={c}>{c}</option>)}</select></Field></div>
  <button className="btn btn-primary" disabled={Boolean(user.restricted)}>{t("Сохранить черновик","Save draft")}</button></ActionForm></section></>}
  </div>;

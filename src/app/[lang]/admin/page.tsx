@@ -657,7 +657,7 @@ async function OffersTab({ db, lang, back, admin, T }: Ctx) {
           <ActionForm action="offer.create" lang={lang} back={back} className="stack">
             <div className="form-grid">
               <Field label={T("Код", "Code")}>
-                <input name="code" required pattern="[a-z0-9-]{3,40}" defaultValue={latest?.code ?? "vegas-membership"} />
+                <input name="code" required pattern="(?:[a-z0-9]|-){3,40}" defaultValue={latest?.code ?? "vegas-membership"} />
               </Field>
               <Field label={T("Вид", "Kind")}>
                 <select name="kind" defaultValue={latest?.kind ?? "membership"}>

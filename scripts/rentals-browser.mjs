@@ -11,6 +11,7 @@ const pages={};let driver,control;
 const mark=s=>{checks.push(s);console.log(`PASS ${s}`);};
 async function go(p,path){const r=await p.goto(BASE+path);assert.ok(r&&r.status()<400,`${path}: ${r?.status()}`);await p.waitForLoadState("load");}
 async function submit(p,action,fields={},selector){
+  if(action==="rental.access"&&fields.username)selector="form[action^='/api/a/rental.access?']:has(select[name=role])";
   const form=selector?p.locator(selector):p.locator(`form[action^='/api/a/${action}?']`).first();assert.equal(await form.count(),1,`Missing ${action}`);
   const details=form.locator("xpath=ancestor::details");for(let i=0;i<await details.count();i++)if(await details.nth(i).getAttribute("open")===null)await details.nth(i).locator(":scope > summary").click();
   for(const [name,value] of Object.entries(fields)){const el=form.locator(`[name='${name}']`).first(),type=await el.getAttribute("type");if(type==="checkbox")await el.setChecked(Boolean(value));else if(type==="hidden")assert.ok(await el.inputValue()===String(value));else if(await el.evaluate(e=>e.tagName)==="SELECT")await el.selectOption(String(value));else await el.fill(String(value));}
@@ -53,7 +54,7 @@ try{
   await go(o,nodePath);await o.getByRole("button",{name:"Create or rotate key",exact:true}).click();await o.locator("input[type=password]").waitFor();const rotated=await o.locator("input[type=password]").inputValue();assert.ok(rotated!==key);await eventually(async()=>(await status()).status==="HTTPError","old key rejected");control.key=rotated;await saveControl();await eventually(async()=>(await status()).status==="connected","rotated key accepted");
   await o.getByRole("button",{name:"Revoke key",exact:true}).click();await eventually(async()=>(await status()).status==="HTTPError","revoked key rejected");assert.equal((await status()).running,0);mark("Credential rotation and revocation reject the old agent key over HTTP");
   await go(s,"/en/admin?tab=system");await submit(s,"rental.template_review",{decision:"suspended",note:"Local acceptance complete; fixture template disabled"});await submit(s,"rental.node_review",{decision:"suspended",note:"Local acceptance complete; fixture node disabled"},`form[action^='/api/a/rental.node_review?']:has(input[value='${nodeId}'])`);
-  const guest=await browser.newPage();await go(guest,"/ru/server-rentals");await guest.getByRole("link",{name:"Войти как игрок или оператор",exact:true}).click();assert.match(guest.url(),/\/ru\/signin/);await guest.close();
+  const guest=await browser.newPage();await go(guest,"/ru/server-rentals");await guest.getByRole("link",{name:"Войти как игрок или оператор",exact:true}).click();await guest.waitForURL("**/ru/signin?**");assert.match(guest.url(),/\/ru\/signin/);await guest.close();
   assert.deepEqual(errors,[]);mark("Review suspension, guest sign-in link, twenty populated RU/EN desktop/mobile screenshots without overflow or browser errors");
   await writeFile("artifacts/c25-browser-results.json",JSON.stringify({checks,errors,paths:{nodePath,leasePath,scheduledPath}},null,2));console.log(`PASS ${checks.length} complete browser scenarios`);
 }finally{driver?.kill("SIGTERM");await browser.close();}

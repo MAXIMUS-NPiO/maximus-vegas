@@ -244,7 +244,7 @@ class ControlTests(unittest.TestCase):
             watchdog(self.config, 12345)
         self.assertEqual(self.backend.kills, 1)
         (self.root / "contact.json").write_text(json.dumps({"pid": 12345, "at": time.time() - 100}))
-        with patch("agent.Podman", return_value=self.backend), patch("agent.os.kill"), patch("agent.time.sleep", side_effect=RuntimeError("stop fixture loop")):
+        with patch("agent.Podman", return_value=self.backend), patch("agent.os.kill"), patch("agent.time.monotonic", side_effect=[0, 41]), patch("agent.time.sleep", side_effect=RuntimeError("stop fixture loop")):
             with self.assertRaisesRegex(RuntimeError, "stop fixture loop"):
                 watchdog(self.config, 12345)
         self.assertEqual(self.backend.kills, 2)

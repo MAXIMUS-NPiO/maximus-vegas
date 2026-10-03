@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { openDatabase,type Database } from "../src/server/db.ts";
 import { signUp,sessionUser,type SessionUser } from "../src/server/auth.ts";
-import { verifyAuditChain } from "../src/server/audit.ts";
+import { createSnapshot } from "../src/server/statistics.ts";
+import { audit, verifyAuditChain } from "../src/server/audit.ts";
 import { registerRentalNode,reviewRentalNode,createRentalTemplate,reviewRentalTemplate,rotateRentalKey,setRentalNodeEnabled,synchronizeRentalNode,allocateRental,rentalCommand,rentalBackupJob } from "../src/server/rentals.ts";
 const url=process.env.RENTAL_PG_TEST_URL;
 if(url&&(!["localhost","127.0.0.1"].includes(new URL(url).hostname)||!new URL(url).pathname.startsWith("/c25_")))throw Error("Rental concurrency requires a local c25_ database");
@@ -27,4 +28,21 @@ test("PostgreSQL fences key rotation and serializes backup work against release"
   await assert.rejects(synchronizeRentalNode(db,n.key,{ready:true,templates:[fingerprint],reports:[]}));
   const [lease]=await db.query<{desired:string;revision:number;released_at:Date|null}>("select desired,revision,released_at from rental_leases where id=$1",[id]);assert.equal(lease.desired,"released");assert.equal(lease.revision,3);assert.equal(lease.released_at,null);
   const [job]=await db.query<{status:string}>("select status from rental_jobs where lease_id=$1",[id]);assert.equal(job.status,"cancelled");
+});
+
+test("A statistics snapshot reads a consistent dataset without branching the concurrent audit chain",{skip:!url,timeout:15000},async()=>{
+  const player=await account(),other=await account();
+  let reached!:()=>void,proceed!:()=>void;
+  const read=new Promise<void>(r=>{reached=r;}),resume=new Promise<void>(r=>{proceed=r;});
+  const wrapped:Database={...db,tx:fn=>db.tx(q=>fn({query:async(text,params)=>{
+    const rows=await q.query(text,params);
+    if(text.includes("o.signed_body")){reached();await resume;}
+    return rows as never;
+  }}))};
+  const pending=createSnapshot(wrapped,player);
+  try{
+    await read;
+    await db.tx(q=>audit(q,{actorId:other.id,action:"fixture.concurrent_event",entity:"fixture",entityId:randomUUID()}));
+  }finally{proceed();}
+  await pending;assert.equal((await verifyAuditChain(db)).valid,true);
 });

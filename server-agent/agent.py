@@ -221,12 +221,14 @@ class Podman:
 
     def usage(self, volume, limit):
         total, count = 0, 0
-        for root, _, files in os.walk(self.volume_path(volume), followlinks=False):
+        for root, directories, files in os.walk(self.volume_path(volume), followlinks=False):
+            count += len(directories) + len(files)
+            if count > 100000:
+                raise Invalid("game data exceeded its entry budget")
             for name in files:
                 item = os.lstat(Path(root) / name)
                 total += item.st_size
-                count += 1
-                if total > limit or count > 100000:
+                if total > limit:
                     raise Invalid("game data exceeded its monitored budget")
         return total
 
@@ -416,7 +418,9 @@ class Agent:
 def watchdog(config, parent=None):
     backend = Podman(config)
     path = config["dataDir"] / "contact.json"
-    last_version, last_seen = None, 0.0
+    # Startup already stops all managed containers. Allow the first validated contact
+    # without racing a watchdog kill against the first newly started game.
+    last_version, last_seen = None, time.monotonic()
     while True:
         alive = True
         if parent:

@@ -277,6 +277,7 @@ export async function eraseRentals(q: Queryable, userId: string) {
     await q.query("update rental_leases set desired='released',revision=revision+1,note='',logs='' where node_id=$1 and released_at is null and (user_id=$2 or exists(select 1 from rental_nodes where id=$1 and owner_id=$2))",[node.id,userId]);
   }
   await q.query("delete from rental_access where user_id=$1 or lease_id in(select id from rental_leases where user_id=$1)",[userId]);
+  await q.query("update rental_templates set name='Deleted template',evidence_url='',review_note='',status='suspended' where node_id in(select id from rental_nodes where owner_id=$1)",[userId]);
   await q.query("update rental_nodes set name='Deleted node',address='',region='',status='suspended',enabled=false,ready=false,review_note='' where owner_id=$1",[userId]);
   await q.query("update rental_leases set note='',logs='' where user_id=$1",[userId]);
   await q.query("update rental_jobs set note='',status=case when status in('pending','running') then 'cancelled' else status end where lease_id in(select l.id from rental_leases l join rental_nodes n on n.id=l.node_id where $1 in(l.user_id,n.owner_id))",[userId]);

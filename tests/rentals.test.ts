@@ -126,6 +126,9 @@ test("Account erasure ends allocations, drops team grants, and late telemetry ca
   await f.sync([{id,revision:p.leases[0].revision,status:"error",logs:"Must not reappear",note:"Private note"}]);
   const [row]=await db.query<{logs:string;note:string}>("select logs,note from rental_leases where id=$1",[id]);assert.equal(row.logs,"");assert.equal(row.note,"");
   assert.equal((await db.query("select 1 from rental_access where lease_id=$1",[id])).length,0);
+  await deleteAccount(db,f.owner,password);
+  const [template]=await db.query<{name:string;evidence_url:string;review_note:string}>("select name,evidence_url,review_note from rental_templates where id=$1",[f.template]);
+  assert.equal(template.name,"Deleted template");assert.equal(template.evidence_url,"");assert.equal(template.review_note,"");
 });
 test("Inactive operators lose team controls and template limits include backup staging capacity",async()=>{
   const f=await fixture(),id=await allocateRental(db,f.player,f.template,60,true);await setRentalAccess(db,f.player,id,f.other.username,"operator");
