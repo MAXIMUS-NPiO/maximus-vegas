@@ -5,7 +5,8 @@ import { randomUUID, sign } from "node:crypto";
 import { chromium } from "playwright-core";
 const BASE = process.env.BASE ?? "http://127.0.0.1:3100";
 if (!/^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(BASE)) throw new Error("Local fixture only");
-const f = JSON.parse(await readFile("artifacts/c24-fixture.json", "utf8")), errors = [], checks = [];
+const f = JSON.parse(await readFile("artifacts/c24-fixture.json", "utf8")), errors = [], checks = [], expectedOfflineFailures = [];
+let offlineWindow = false;
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, headless: true, args: ["--autoplay-policy=no-user-gesture-required"] });
 const pages = {};
 const mark = s => { checks.push(s); console.log(`PASS ${s}`); };
@@ -19,7 +20,8 @@ async function submit(p, action, fields = {}, selector) {
   for (const [name, value] of Object.entries(fields)) {
     if (Array.isArray(value)) { for (const v of value) await form.locator(`[name='${name}'][value='${v}']`).check(); continue; }
     const el = form.locator(`[name='${name}']`).first(), type = await el.getAttribute("type");
-    if (type === "checkbox") await el.setChecked(Boolean(value));
+    if (type === "hidden") assert.equal(await el.inputValue(), String(value));
+    else if (type === "checkbox") await el.setChecked(Boolean(value));
     else if (await el.evaluate(e => e.tagName) === "SELECT") await el.selectOption(String(value));
     else await el.fill(String(value));
   }
@@ -38,7 +40,7 @@ try {
     await context.addCookies([{ name:"mv_session", value:account.token, url:BASE, httpOnly:true, sameSite:"Lax" }]);
     const p = await context.newPage(); pages[name] = p;
     p.on("pageerror", e => errors.push(`${name}: ${e.message}`));
-    p.on("console", m => { if (m.type()==="error") errors.push(`${name}: ${m.text()}`); });
+    p.on("console", m => { if (m.type()==="error") { const line = `${name}: ${m.text()}`; if (name === "scanner" && offlineWindow && m.text().includes("net::ERR_INTERNET_DISCONNECTED")) expectedOfflineFailures.push(line); else errors.push(line); } });
     p.on("response", r => { if (r.status()>=500) errors.push(`${name}: ${r.status()} ${r.url()}`); });
   }
   const { alice:a, bob:b, owner:o, staff:s, scanner:scan } = pages;
@@ -66,15 +68,15 @@ try {
   await go(b,venue); assert.match(await b.locator("body").innerText(),/Reserved/); mark("Station creation → reservation/cancellation; event capacity → waitlist promotion");
   await go(scan,workspace); assert.ok(scan.url().endsWith("/scan"));
   await scan.getByRole("button",{name:"Load venue data",exact:true}).click(); await scan.getByText("Offline admission data loaded for 4 hours.",{exact:true}).waitFor();
-  await scan.context().setOffline(true); await scan.locator("input[name=token]").fill(f.pass.token); await scan.getByRole("button",{name:"Record provisional arrival",exact:true}).click();
-  await scan.getByText("Pending confirmation",{exact:false}).waitFor(); await scan.context().setOffline(false);
+  offlineWindow = true; await scan.context().setOffline(true); await scan.locator("input[name=token]").fill(f.pass.token); await scan.getByRole("button",{name:"Record provisional arrival",exact:true}).click();
+  await scan.getByText("Pending confirmation",{exact:false}).waitFor(); await scan.context().setOffline(false); offlineWindow = false;
   await scan.getByRole("button",{name:"Synchronise",exact:true}).click(); await scan.getByText("Queue checked against the server. Review results below.",{exact:true}).waitFor();
   assert.match(await scan.locator("ol").last().innerText(),/Confirmed/); await scan.getByRole("button",{name:"Clear device",exact:true}).click(); mark("Venue referee → cached manifest → offline scan → authoritative sync → clear device");
 
   await go(o,"/en/statistics/sources"); await submit(o,"stats.source",{org:f.org.id,name:"Browser signed source",evidence:"https://example.org/authorised-local-fixture",publicKey:f.publicKey,games:["cs2"]});
   const source = (await o.locator("code").last().innerText()).trim();
   await go(s,"/en/admin?tab=system"); await submit(s,"stats.review",{status:"approved",note:"Independent local fixture source review"});
-  await go(a,"/en/statistics"); await submit(a,"stats.link",{source,game:"cs2",handle:"browser-player",consent:true});
+  await go(a,"/en/statistics"); await submit(a,"stats.link",{source,game:"cs2",handle:"browser-player",consent:true},`form[action^='/api/a/stats.link?']:has(input[name=source][value='${source}'])`);
   const challenge=(await a.locator("code").first().innerText()).trim();
   await signed(source,{kind:"link",game:"cs2",handle:"browser-player",challenge});
   await signed(source,{kind:"match",game:"cs2",handle:"browser-player",matchRef:"browser-match",playedAt:new Date().toISOString(),metrics:{kills:7,deaths:2}});
@@ -102,8 +104,9 @@ try {
   await o.getByText("Connect a native host agent",{exact:true}).click(); await o.getByRole("button",{name:"Create or rotate key",exact:true}).click(); await o.locator("input[type=password]").waitFor(); await o.getByRole("button",{name:"Revoke key",exact:true}).click(); await o.getByText("Key revoked",{exact:true}).waitFor(); mark("P2P completion feedback and host-key create/revoke controls");
 
   await mkdir("artifacts/c24-screens",{recursive:true});
-  const screens=[[a,"/en/progress"],[a,"/en/dating"],[a,"/en/statistics"],[o,workspace],[a,venue],[o,"/en/cloud-gaming"],[o,"/en/statistics/sources"],[scan,`${workspace}/scan`]];
-  for(const [p,path] of screens) for(const width of [390,1440]) { await p.setViewportSize({width,height:900}); await go(p,path); const overflow=await p.evaluate(()=>document.documentElement.scrollWidth-innerWidth); assert.ok(overflow<=1,`${path} width ${width} overflow ${overflow}`); await p.screenshot({path:`artifacts/c24-screens/${path.split("/").slice(2).join("-")}-${width}.png`,fullPage:true}); }
-  mark("Eight populated screens at 390/1440 px, no horizontal overflow");
-  assert.deepEqual(errors,[]); await writeFile("artifacts/c24-browser-results.json",JSON.stringify({checks,errors},null,2)); console.log(`PASS ${checks.length} complete UI scenarios`);
+  const englishScreens=[[a,"/en/progress"],[a,"/en/dating"],[a,"/en/statistics"],[o,workspace],[a,venue],[o,"/en/cloud-gaming"],[o,"/en/statistics/sources"],[scan,`${workspace}/scan`]];
+  const screens = englishScreens.flatMap(([p,path]) => [[p,path],[p,path.replace("/en/","/ru/")]]);
+  for(const [p,path] of screens) for(const width of [390,1440]) { await p.setViewportSize({width,height:900}); await go(p,path); const overflow=await p.evaluate(()=>document.documentElement.scrollWidth-innerWidth); assert.ok(overflow<=1,`${path} width ${width} overflow ${overflow}`); await p.screenshot({path:`artifacts/c24-screens/${path.split("/").slice(1).join("-")}-${width}.png`,fullPage:true}); }
+  mark("Eight populated screens in RU/EN at 390/1440 px, no horizontal overflow");
+  assert.deepEqual(errors,[]); await writeFile("artifacts/c24-browser-results.json",JSON.stringify({checks,errors,expectedOfflineFailures},null,2)); console.log(`PASS ${checks.length} complete UI scenarios`);
 } finally { await browser.close(); }
