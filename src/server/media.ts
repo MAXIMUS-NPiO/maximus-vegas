@@ -37,8 +37,13 @@ export function sniffImage(bytes: Uint8Array): "image/png" | "image/jpeg" | "ima
 /** Returns null when no file was chosen; throws on anything invalid. */
 export async function storeUpload(q: Queryable, ownerId: string | null, kind: MediaKind, file: File | null | undefined): Promise<string | null> {
   if (!file || typeof file === "string" || file.size === 0) return null;
-  if (file.size > MEDIA_LIMITS[kind]) fail("file_too_large");
-  const bytes = new Uint8Array(await file.arrayBuffer());
+  const brand = kind !== "evidence";
+  if (file.size > (brand ? 20 * 1024 * 1024 : MEDIA_LIMITS[kind])) fail("file_too_large");
+  let bytes = new Uint8Array(await file.arrayBuffer());
+  if (brand) {
+    const { normalizeBrandImage } = await import("./normalize-image.ts");
+    bytes = new Uint8Array(await normalizeBrandImage(bytes, kind === "team_logo" || kind === "sponsor_logo", MEDIA_LIMITS[kind]));
+  }
   const type = sniffImage(bytes);
   if (!type) fail("invalid_file");
   if (ownerId) {

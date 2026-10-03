@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { isLocale } from "@/lib/i18n.ts";
-import { GAMES, gameBySlug } from "@/lib/games.ts";
+import { GameNames } from "@/components/game-names";
 import { countryName, countryOptions } from "@/lib/countries.ts";
 import { pageMeta } from "@/lib/meta.ts";
 import { viewer } from "@/server/viewer.ts";
@@ -40,7 +40,7 @@ export default async function Welcome({ params, searchParams }: { params: Promis
       "select country_code, email_verified_at, created_at from users where id = $1",
       [user.id],
     ),
-    db.query<{ game: string; handle: string }>("select game, handle from linked_game_accounts where user_id = $1 order by game", [user.id]),
+    db.query<{ game: string; handle: string }>("select game, handle from all_game_accounts where user_id = $1 order by game", [user.id]),
     db.query<{ slug: string; name: string }>(
       "select t.slug, t.name from team_members m join teams t on t.id = m.team_id where m.user_id = $1 order by m.joined_at limit 1",
       [user.id],
@@ -131,27 +131,7 @@ export default async function Welcome({ params, searchParams }: { params: Promis
               "Opponents and organisers see how to find you in the game. You enter the names yourself; they are marked unverified.",
             )}
           </p>
-          {accounts.length ? (
-            <ul className="list">
-              {accounts.map((a) => (
-                <li key={a.game}>
-                  <span className="grow">{gameBySlug(a.game)?.name ?? a.game}</span>
-                  <span className="mono">{a.handle}</span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          <ActionForm action="account.game" lang={lang} back={`${back}#step-games`} className="inline-form">
-            <select name="game" aria-label={T("Игра", "Game")}>
-              {GAMES.map((g) => (
-                <option key={g.slug} value={g.slug}>
-                  {g.name}
-                </option>
-              ))}
-            </select>
-            <input name="handle" required maxLength={60} placeholder={T("Ник в игре", "In-game name")} aria-label={T("Ник в игре", "In-game name")} />
-            <button className="btn btn-ghost btn-sm">{T("Добавить", "Add")}</button>
-          </ActionForm>
+          <GameNames lang={lang} back={`${back}#step-games`} accounts={accounts} />
         </li>
 
         <li className={steps[2].done ? "step-card is-done" : "step-card"} id="step-team">

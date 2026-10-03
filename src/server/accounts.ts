@@ -1,3 +1,4 @@
+import { checkReservedName, claimReservedName } from "./username-reservations.ts";
 /**
  * Email ownership, password recovery, consent records and the email-first sign-up mode.
  *
@@ -150,6 +151,7 @@ export async function signUpEmailFirst(db: Database, input: SignUpInput) {
       }
       return;
     }
+    const reservation = await checkReservedName(q, data.username, input.reservation);
     let userId: string;
     try {
       const [user] = await q.query<{ id: string }>(
@@ -162,6 +164,7 @@ export async function signUpEmailFirst(db: Database, input: SignUpInput) {
       if (isUniqueViolation(error, "users_username_key")) fail("username_taken");
       throw error;
     }
+    await claimReservedName(q, reservation, userId);
     await recordSignupConsents(q, userId, data.marketing);
     const raw = await issueToken(q, userId, "activate", data.email);
     await enqueueMail(q, { to: data.email, template: "activate_account", lang, userId, data: { url: link(`/${lang}/activate?token=${raw}`) } });

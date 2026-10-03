@@ -1,3 +1,6 @@
+import { AutoImageInput } from "@/components/auto-image-input";
+import { ShareInvitation } from "@/components/share-invitation";
+import { siteOrigin } from "@/lib/site.ts";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -43,6 +46,7 @@ export default async function TeamPage({ params, searchParams }: { params: Promi
   const isOwner = user?.id === team.owner_id;
   const isLeader = isOwner || user?.id === team.captain_id;
   const isMember = Boolean(user && members.some((m) => m.id === user.id));
+  const reservations = isLeader ? await db.query<{id:string;username:string;expires_at:Date}>("select id,username,expires_at from username_reservations where team_id=$1 and status='pending' and expires_at>now() order by created_at desc",[team.id]) : [];
   const back = `/${lang}/teams/${team.slug}`;
   const hidden = { team: team.id };
   const fx = finderText[lang];
@@ -135,15 +139,22 @@ export default async function TeamPage({ params, searchParams }: { params: Promi
               <h2 className="h3">{d.teams.invite}</h2>
               <ActionForm action="team.invite" lang={lang} back={back} hidden={hidden} className="inline-form">
                 <input name="username" required pattern="[A-Za-z0-9_]{3,24}" placeholder={d.teams.inviteUsername} aria-label={d.teams.inviteUsername} autoCapitalize="none" />
-                <button className="btn btn-primary btn-sm">{d.common.send}</button>
+                <button className="btn btn-primary btn-sm">{T("Пригласить / зарезервировать имя", "Invite / reserve username")}</button>
               </ActionForm>
+              <p className="small muted">{T("Если игрок уже зарегистрирован, приглашение появится в его хабе. Свободное имя резервируется на 7 дней: отправьте ссылку будущему игроку. До 20 действующих резервов на приглашающего.", "Existing players receive an invitation in their hub. An available username is reserved for 7 days: share the link with the future player. Up to 20 active reservations per inviter.")}</p>
+              {reservations.map(r => <div className="card stack-sm" key={r.id}>
+                <h3 className="h4">@{r.username} — {T("ожидает регистрации", "awaiting registration")}</h3>
+                <p className="small">{T("Резерв до", "Reserved until")} <LocalTime iso={r.expires_at} lang={lang} /></p>
+                <ShareInvitation url={`${siteOrigin() ?? "https://www.maximus.vegas"}/${lang}/signup?reservation=${r.id}`} username={r.username} team={team.name} ru={ru} />
+                <ActionForm action="team.reservation_revoke" lang={lang} back={back} hidden={{reservation:r.id}}><button className="btn btn-ghost btn-xs">{T("Отменить резерв", "Cancel reservation")}</button></ActionForm>
+              </div>)}
               {invites.length ? (
                 <>
                   <h3 className="h4">{d.teams.pendingInvites}</h3>
                   <ul className="list">
                     {invites.map((i) => (
                       <li key={i.id}>
-                        <span>@{i.username}</span>
+                        <span><Link href={`/${lang}/players/${i.username}`}>@{i.username}</Link> — {T("приглашён на сайте", "invited on the site")}</span>
                         <ActionForm action="team.revoke" lang={lang} back={back} hidden={{ invite: i.id }}>
                           <button className="btn btn-ghost btn-xs">{d.teams.revoke}</button>
                         </ActionForm>
@@ -158,11 +169,11 @@ export default async function TeamPage({ params, searchParams }: { params: Promi
             <details className="disclosure card">
               <summary>{T("Логотип и баннер", "Logo and banner")}</summary>
               <ActionForm action="team.media" lang={lang} back={back} hidden={hidden} className="stack-sm" multipart>
-                <Field label={T("Логотип — квадрат, PNG, JPEG или WebP, до 256 КБ", "Logo — square, PNG, JPEG or WebP, up to 256 KB")}>
-                  <input type="file" name="logo" accept="image/png,image/jpeg,image/webp" />
+                <Field label={T("Логотип — размер настроится автоматически", "Logo — automatically resized")}>
+                  <AutoImageInput name="logo" ru={ru} logo />
                 </Field>
-                <Field label={T("Баннер — широкий, до 1 МБ", "Banner — wide, up to 1 MB")}>
-                  <input type="file" name="banner" accept="image/png,image/jpeg,image/webp" />
+                <Field label={T("Баннер — размер настроится автоматически", "Banner — automatically resized")}>
+                  <AutoImageInput name="banner" ru={ru} />
                 </Field>
                 <button className="btn btn-primary btn-sm">{T("Загрузить", "Upload")}</button>
               </ActionForm>

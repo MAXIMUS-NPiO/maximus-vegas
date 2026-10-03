@@ -1,3 +1,4 @@
+import { reservationByToken } from "@/server/username-reservations.ts";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
@@ -13,7 +14,7 @@ import { DraftKeeper } from "@/components/draft-keeper";
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
   const { lang } = await params;
   if (!isLocale(lang)) return {};
-  return pageMeta(lang, "signup", dict(lang).auth.signUpTitle, dict(lang).auth.signUpLead);
+  return pageMeta(lang, "signup", dict(lang).auth.signUpTitle, dict(lang).auth.signUpLead, { noindex: true });
 }
 
 /** Which field an error code belongs to, so it is shown next to that field instead of only at the top. */
@@ -36,8 +37,10 @@ export default async function SignUp({ params, searchParams }: { params: Promise
   const ru = lang === "ru";
   const T = (a: string, b: string) => (ru ? a : b);
   const sp = await searchParams;
-  const { user, dbError } = await viewer();
+  const { user, db, dbError } = await viewer();
   if (user) redirect(`/${lang}/hub`);
+  const reservationToken = one(sp.reservation);
+  const reservation = db && reservationToken ? await reservationByToken(db, reservationToken) : null;
   const draft = readDraft((await cookies()).get(DRAFT_COOKIE)?.value);
   const code = one(sp.e);
   const field = FIELD_OF[code];
@@ -56,7 +59,8 @@ export default async function SignUp({ params, searchParams }: { params: Promise
         <Flash lang={lang} params={sp} />
       )}
       {dbError ? <DbDown lang={lang} /> : null}
-      <ActionForm action="auth.signup" lang={lang} back={`/${lang}/signup`} className="card form-card" pending={T("Создаём профиль…", "Creating your profile…")}>
+      {reservation ? <div className="notice">{T("Для вас зарезервировано имя", "Your reserved username is")} <strong>@{reservation.username}</strong>. {T("После регистрации вы сможете принять приглашение в команду", "After registration you can accept the invitation to team")} <strong>{reservation.name}</strong>.</div> : reservationToken ? <p role="alert">{T("Резерв истёк или отменён. Попросите новую ссылку или выберите другое имя.", "This reservation expired or was cancelled. Ask for a new link or choose another username.")}</p> : null}
+      <ActionForm action="auth.signup" lang={lang} hidden={reservation ? {reservation:reservation.id} : undefined} back={`/${lang}/signup${reservation ? "?reservation="+reservation.id : ""}`} className="card form-card" pending={T("Создаём профиль…", "Creating your profile…")}>
         <Field label={d.auth.email} error={err("email")} errorId="err-email">
           <input name="email" type="email" required autoComplete="email" maxLength={254} defaultValue={draft.email} autoFocus={field === "email"} {...aria("email")} />
         </Field>
@@ -70,7 +74,8 @@ export default async function SignUp({ params, searchParams }: { params: Promise
             autoComplete="username"
             autoCapitalize="none"
             spellCheck={false}
-            defaultValue={draft.username}
+            defaultValue={reservation?.username ?? draft.username}
+            readOnly={Boolean(reservation)}
             autoFocus={field === "username"}
             {...aria("username")}
           />
@@ -113,7 +118,7 @@ export default async function SignUp({ params, searchParams }: { params: Promise
         <button className="btn btn-primary" type="submit">
           {d.auth.signUp}
         </button>
-        <DraftKeeper formKey="signup" fields={["email", "username", "displayName", "marketing"]} />
+        <DraftKeeper formKey="signup" fields={reservation ? ["email", "displayName", "marketing"] : ["email", "username", "displayName", "marketing"]} />
       </ActionForm>
       <p className="muted center">
         {d.auth.haveAccount}{" "}
