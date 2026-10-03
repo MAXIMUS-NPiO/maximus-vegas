@@ -17,22 +17,32 @@ export function Header({ lang, nav, extra, common, user }: { lang: Locale; nav: 
   const [open, setOpen] = useState(false);
   const pathname = usePathname() || `/${lang}`;
   const navRef = useRef<HTMLElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
   const alternate = pathname.replace(/^\/(ru|en)(?=\/|$)/, lang === "ru" ? "/en" : "/ru");
 
   useEffect(() => {
     setOpen(false);
-    navRef.current?.querySelectorAll("details[open]").forEach((d) => d.removeAttribute("open"));
+    headerRef.current?.querySelectorAll("details[open]").forEach((d) => d.removeAttribute("open"));
   }, [pathname]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      const active = document.activeElement;
+      if (navRef.current?.contains(active) && menuButtonRef.current?.getClientRects().length) {
+        menuButtonRef.current.focus();
+      } else if (headerRef.current?.contains(active)) {
+        active?.closest("details[open]")?.querySelector("summary")?.focus();
+      }
       setOpen(false);
-      navRef.current?.querySelectorAll("details[open]").forEach((d) => d.removeAttribute("open"));
+      headerRef.current?.querySelectorAll("details[open]").forEach((d) => d.removeAttribute("open"));
     };
     const onClick = (e: MouseEvent) => {
-      if (!navRef.current?.contains(e.target as Node))
-        navRef.current?.querySelectorAll("details[open]").forEach((d) => d.removeAttribute("open"));
+      if (!headerRef.current?.contains(e.target as Node)) setOpen(false);
+      headerRef.current?.querySelectorAll("details[open]").forEach((d) => {
+        if (!d.contains(e.target as Node)) d.removeAttribute("open");
+      });
     };
     window.addEventListener("keydown", onKey);
     document.addEventListener("click", onClick);
@@ -44,13 +54,14 @@ export function Header({ lang, nav, extra, common, user }: { lang: Locale; nav: 
 
   const closeOthers = (target: HTMLDetailsElement) => {
     if (!target.open) return;
-    navRef.current?.querySelectorAll("details[open]").forEach((d) => {
+    if (target.classList.contains("account-menu")) setOpen(false);
+    headerRef.current?.querySelectorAll("details[open]").forEach((d) => {
       if (d !== target) d.removeAttribute("open");
     });
   };
 
   return (
-    <header className="site-header">
+    <header ref={headerRef} className="site-header">
       <div className="container header-inner">
         <Link href={`/${lang}`} className="brand-link" aria-label="MAXIMUS VEGAS">
           <Brand />
@@ -142,12 +153,16 @@ export function Header({ lang, nav, extra, common, user }: { lang: Locale; nav: 
             </>
           )}
           <button
+            ref={menuButtonRef}
             type="button"
             className="menu-toggle"
             aria-expanded={open}
             aria-controls="main-navigation"
             aria-label={open ? common.close : common.menu}
-            onClick={() => setOpen((v) => !v)}
+            onClick={() => {
+              headerRef.current?.querySelector(".account-menu[open]")?.removeAttribute("open");
+              setOpen((v) => !v);
+            }}
           >
             <span />
             <span />

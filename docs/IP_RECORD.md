@@ -168,3 +168,7 @@ Owner-requested automatic resizing and compression of team logos before upload, 
 MIPA internal implementation record: owner-directed skins marketplace preparation and platform-wide dispute workflow. Private drafts, party evidence history, independent review and separate appeal reviewer. Source and delivered boundaries: docs/MARKETPLACE_C22.md. This is an internal provenance entry; no external registration, exclusivity or novelty is asserted. Live trading and settlement remain unimplemented.
 
 C-22 owner correction: public catalogue and explicitly simulated transaction journey added; reserved-name invitations immediately open a recipient/channel step. MIPA record documents source and implementation provenance only. Fantasy-fashion storyboard remains a separate visual concept.
+
+## 3 October 2026 — C-23
+
+Internal implementation record for the owner's responsive-navigation and gaming-invitation requirements: a desktop navigation row, a scrollable mobile menu with mutually exclusive account controls, and a copy/open/confirm flow for reserved-name invitations through Discord and Steam. Copy failure leaves the complete invitation available for manual selection. The application does not send these messages or confirm delivery. Source requirements and unimplemented portions of the five scientific works are preserved in `docs/FIVE_WORKS_IMPLEMENTATION.md`. Attribution remains with the project owner as recorded above; no external registration or novelty is asserted.
