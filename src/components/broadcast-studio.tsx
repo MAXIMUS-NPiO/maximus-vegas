@@ -167,7 +167,7 @@ export function BroadcastStudio({ lang, initial }: { lang: Locale; initial: Stud
       }); }}>
         <h2 className="h3">{T("Настройки эфира", "Broadcast settings")}</h2>
         <label>{T("Название", "Title")}<input value={title} onChange={e => setTitle(e.target.value)} required maxLength={120} placeholder={T("Например, мой POV · CS2", "For example, my POV · CS2")} disabled={!!open || busy} /></label>
-        <label>{T("Режим", "Mode")}<select value={mode} onChange={e => setMode(e.target.value as BroadcastMode)} disabled={!!open || busy}>
+        <label>{T("Режим", "Mode")}<select aria-label={T("Режим", "Mode")} value={mode} onChange={e => setMode(e.target.value as BroadcastMode)} disabled={!!open || busy}>
           <option value="live_record">{T("Прямой эфир + запись POV", "Live + POV recording")}</option><option value="live">{T("Только прямой эфир", "Live only")}</option><option value="record">{T("Только запись POV", "POV recording only")}</option>
         </select></label>
         <label>{T("Длительность, минут", "Duration, minutes")}<input type="number" min={5} max={480} step={1} required value={minutes} onChange={e => setMinutes(Number(e.target.value))} disabled={!!open || busy} /></label>

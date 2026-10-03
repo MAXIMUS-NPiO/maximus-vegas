@@ -1,6 +1,6 @@
 /** Browser/API acceptance on disposable local data. Capture is a labelled synthetic canvas, not a provider stream. */
 import assert from "node:assert/strict";
-import { mkdir, writeFile, readFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { chromium } from "playwright-core";
 const BASE = "http://127.0.0.1:3109", dataDir = "/tmp/c29-browser-acceptance";

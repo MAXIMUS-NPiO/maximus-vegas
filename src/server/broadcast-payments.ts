@@ -157,6 +157,7 @@ export async function handleBroadcastPaymentWebhook(db: Database, raw: string, s
   if (!orderId && pi) {
     const [o] = await db.query<Order>("select * from broadcast_orders where payment_intent_id=$1", [pi]);
     orderId = o?.id;
+    if (!orderId && (await db.query("select 1 from payment_attempts where provider_payment_id=$1 limit 1", [pi])).length) return null;
     if (!orderId && ["charge.refunded", "charge.dispute.created"].includes(event.type)) {
       const intent = await p.retrievePaymentIntent(pi);
       if (intent.metadata.product === "native_broadcast") orderId = intent.metadata.orderId;

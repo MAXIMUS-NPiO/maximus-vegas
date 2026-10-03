@@ -50,15 +50,19 @@ export function liveBroadcastProvider(): BroadcastProvider {
     async recording(name, key) {
       const recordings = await egress.listEgress({ roomName: name });
       if (!recordings.length) return { status: "none" };
+      if (recordings.some(e => !terminal.has(e.status))) return { status: "pending" };
       if (recordings.length !== 1) return { status: "failed" };
       const e = recordings[0];
-      if (!terminal.has(e.status)) return { status: "pending", id: e.egressId };
       const file = e.fileResults.find(f => f.filename === key);
       if (e.status !== EgressStatus.EGRESS_COMPLETE || !file) return { status: "failed", id: e.egressId };
       const object = await s3.send(new HeadObjectCommand({ Bucket: c.bucket, Key: key }));
       return { status: "ready", id: e.egressId, bytes: object.ContentLength ?? Number(file.size) };
     },
-    async remove(key) { await s3.send(new DeleteObjectCommand({ Bucket: c.bucket, Key: key })); },
+    async remove(key) {
+      const current = await s3.send(new GetBucketVersioningCommand({ Bucket: c.bucket }));
+      if (current.Status) throw new Error("Versioned archive storage requires reconciliation");
+      await s3.send(new DeleteObjectCommand({ Bucket: c.bucket, Key: key }));
+    },
     async download(key, ttl) {
       return getSignedUrl(s3, new GetObjectCommand({ Bucket: c.bucket, Key: key, ResponseContentType: "video/mp4",
         ResponseContentDisposition: 'attachment; filename="maximus-pov.mp4"', ResponseCacheControl: "private, no-store" }), { expiresIn: ttl });
