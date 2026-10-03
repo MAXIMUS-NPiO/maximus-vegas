@@ -1,4 +1,5 @@
 import { arbitrationExport, eraseMarketData } from "./arbitration.ts";
+import { socialExport, eraseSocial } from "./social.ts";
 import { listingDrafts, myMarketOrders } from "./marketplace.ts";
 import { checkReservedName, claimReservedName } from "./username-reservations.ts";
 import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
@@ -379,6 +380,9 @@ export async function exportAccount(db: Database, user: SessionUser) {
     venuePasses: await passExport(db, user.id),
     portalMessages: await messageExport(db, user.id),
     academy: await academyExport(db, user.id),
+    connections: await socialExport(db, user.id),
+    recurringMissions: await q("select mission,window_start,window_end,game,target,coins,xp,claimed_at from mission_assignments where user_id=$1 order by window_start"),
+    venueGifts: await q("select id,reward_id,status,claimed_at,collected_at from pass_reward_claims where user_id=$1"),
     arbitration: await arbitrationExport(db,user.id),
     skinListingDrafts: await listingDrafts(db,user.id),
     skinDemoOrders: await myMarketOrders(db,user.id),
@@ -500,6 +504,9 @@ export async function deleteAccount(db: Database, user: SessionUser, confirmPass
     // Academy: the account's training records go; as a coach, open requests are cancelled and the profile goes.
     await eraseAcademyData(q, user.id);
     await eraseMarketData(q,user.id);
+    await eraseSocial(q, user.id);
+    await q.query("delete from mission_preferences where user_id=$1", [user.id]);
+    await q.query("update pass_reward_claims set status='cancelled',collection_sealed='' where user_id=$1 and status='reserved'", [user.id]);
     // Scouting: the account's filters and watchlist go, and it leaves every other watchlist.
     await q.query("delete from scout_filters where user_id = $1", [user.id]);
     await q.query("delete from scout_watch where user_id = $1 or player_id = $1", [user.id]);

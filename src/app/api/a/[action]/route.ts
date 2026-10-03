@@ -1,4 +1,6 @@
 import * as marketplace from "@/server/marketplace.ts";
+import * as missions from "@/server/missions.ts";
+import * as social from "@/server/social.ts";
 import * as arbitration from "@/server/arbitration.ts";
 import { after } from "next/server";
 import * as auth from "@/server/auth.ts";
@@ -81,6 +83,7 @@ const signupDraft = (c: Ctx) => ({ email: c.form.email ?? "", username: c.form.u
 
 /** What an account under a suspension sanction may still do: read, appeal, manage its own access and data. */
 const RESTRICTED_OK = new Set(["arbitration.open", "arbitration.evidence", "arbitration.appeal", "marketplace.delete", "auth.signout", "conduct.appeal", "notifications.read", "account.session", "account.password", "account.delete", "account.accept_terms"]);
+for (const action of ["social.withdraw", "social.block", "social.close", "social.report"]) RESTRICTED_OK.add(action);
 const conductAdmin = (c: Ctx) => `/${c.lang}/admin?tab=conduct`;
 const venueForm = (c: Ctx) => ({
   name: c.form.name,
@@ -663,6 +666,20 @@ const handlers: Record<string, Handler> = {
   },
 
   // ---------- Progression ----------
+  "mission.preference": async c => { await missions.setMissionPreference(c.db, u(c), c.form.game); return { ok: "saved" }; },
+  "mission.claim": async c => { await missions.claimMission(c.db, u(c), c.form.mission); return { ok: "reward_claimed" }; },
+  "reward.create": async c => { await missions.createPassReward(c.db, u(c), idOf(c.form.venue), c.form); return { ok: "saved" }; },
+  "reward.reserve": async c => { await missions.reservePassReward(c.db, u(c), idOf(c.form.reward)); return { ok: "saved" }; },
+  "reward.collect": async c => { await missions.fulfilPassReward(c.db, u(c), idOf(c.form.claim), c.form.code); return { ok: "saved" }; },
+  "social.profile": async c => { await social.saveSocialProfile(c.db, u(c), c.form); return { ok: "saved" }; },
+  "social.withdraw": async c => { await social.withdrawSocialProfile(c.db, u(c)); return { ok: "saved" }; },
+  "social.like": async c => { const id = await social.likeProfile(c.db, u(c), idOf(c.form.user)); return id ? `/${c.lang}/dating/${id}` : { ok: "saved" }; },
+  "social.message": async c => { await social.sendSocialMessage(c.db, u(c), idOf(c.form.match), c.form.body, idOf(c.form.clientId)); return { ok: "saved" }; },
+  "social.close": async c => { await social.closeMatch(c.db, u(c), idOf(c.form.match)); return { ok: "saved" }; },
+  "social.block": async c => { await social.blockProfile(c.db, u(c), idOf(c.form.user)); return { ok: "saved" }; },
+  "social.unblock": async c => { await social.blockProfile(c.db, u(c), idOf(c.form.user), true); return { ok: "saved" }; },
+  "social.report": async c => { await social.reportSocialProfile(c.db, u(c), idOf(c.form.user), c.form.reason, c.form.message || ""); return { ok: "saved" }; },
+  "social.resolve": async c => { await social.resolveSocialReport(c.db, await staff(c, "conduct"), idOf(c.form.report), c.form.decision, c.form.hide === "on"); return { ok: "saved" }; },
   "objective.claim": async (c) => {
     await progression.claimObjective(c.db, u(c), c.form.objective);
     return { ok: "reward_claimed" };

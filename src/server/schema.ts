@@ -1842,4 +1842,71 @@ export const migrations: Migration[] = [
       `alter table arbitration_cases add column demo_order_id uuid unique references skin_demo_orders(id)`,
     ],
   },
+  {
+    id: 29,
+    name: "recurring_pass_and_reward_fulfilment",
+    statements: [
+      `create table mission_preferences (user_id uuid primary key references users(id), game text not null default '', updated_at timestamptz not null default now())`,
+      `create table mission_assignments (
+        user_id uuid not null references users(id), mission text not null, window_start timestamptz not null, window_end timestamptz not null,
+        game text not null default '', target int not null check(target>0), coins int not null check(coins>=0), xp int not null check(xp>=0),
+        claimed_at timestamptz, primary key(user_id,mission,window_start), check(window_end>window_start)
+      )`,
+      `create table pass_rewards (
+        id uuid primary key default gen_random_uuid(), venue_id uuid not null references venues(id),
+        title text not null, description text not null, season text not null, tier int not null check(tier between 1 and 20),
+        quantity int not null check(quantity between 0 and 10000), active boolean not null default true,
+        created_by uuid not null references users(id), created_at timestamptz not null default now()
+      )`,
+      `create table pass_reward_claims (
+        id uuid primary key default gen_random_uuid(), reward_id uuid not null references pass_rewards(id), user_id uuid not null references users(id),
+        status text not null default 'reserved' check(status in ('reserved','collected','cancelled')),
+        collection_hash text not null, collection_sealed text not null, claimed_at timestamptz not null default now(),
+        collected_at timestamptz, collected_by uuid references users(id), unique(reward_id,user_id)
+      )`,
+      `create index pass_rewards_venue on pass_rewards(venue_id,season)`,
+    ],
+  },
+  {
+    id: 30,
+    name: "consensual_discovery_matches_and_safety",
+    statements: [
+      `create table social_profiles (
+        user_id uuid primary key references users(id), visible boolean not null default false, suspended boolean not null default false,
+        intent text not null check(intent in ('gaming','friendship','dating')), age int not null check(age between 18 and 100),
+        city text not null default '', game text not null default '', languages text not null default '',
+        gaming_preferences text not null default '', relationship_preferences text not null default '', bio text not null default '',
+        consent_version text not null, consented_at timestamptz not null default now(), updated_at timestamptz not null default now()
+      )`,
+      `create table social_likes (
+        sender_id uuid not null references users(id), recipient_id uuid not null references users(id), created_at timestamptz not null default now(),
+        primary key(sender_id,recipient_id), check(sender_id<>recipient_id)
+      )`,
+      `create table social_matches (
+        id uuid primary key default gen_random_uuid(), user_a uuid not null references users(id), user_b uuid not null references users(id),
+        status text not null default 'active' check(status in ('active','closed')), created_at timestamptz not null default now(),
+        read_a timestamptz, read_b timestamptz, unique(user_a,user_b), check(user_a<user_b)
+      )`,
+      `create table social_messages (
+        id bigint generated always as identity primary key, match_id uuid not null references social_matches(id) on delete cascade,
+        sender_id uuid not null references users(id), body text not null check(length(body) between 1 and 1000),
+        client_id uuid not null, created_at timestamptz not null default now(), unique(sender_id,client_id)
+      )`,
+      `create index social_messages_match on social_messages(match_id,id)`,
+      `create table social_blocks (
+        user_id uuid not null references users(id), subject_id uuid not null references users(id), created_at timestamptz not null default now(),
+        primary key(user_id,subject_id), check(user_id<>subject_id)
+      )`,
+      `create table social_reports (
+        id uuid primary key default gen_random_uuid(), reporter_id uuid not null references users(id), subject_id uuid not null references users(id),
+        reason text not null, message_id bigint references social_messages(id) on delete set null, excerpt text not null default '',
+        status text not null default 'open' check(status in ('open','resolved')), decision text not null default '',
+        decided_by uuid references users(id), created_at timestamptz not null default now(), decided_at timestamptz,
+        check(reporter_id<>subject_id)
+      )`,
+      `create index social_profiles_discovery on social_profiles(intent,game,city) where visible`,
+      `create index social_matches_b on social_matches(user_b,status)`,
+      `create index social_reports_queue on social_reports(status,created_at)`,
+    ],
+  },
 ];

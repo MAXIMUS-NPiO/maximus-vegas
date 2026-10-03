@@ -29,6 +29,7 @@ import type { SessionUser } from "@/server/auth.ts";
 import { ActionForm, Badge, DbDown, Empty, Field, Flash, one, type SearchParams } from "@/components/ui";
 import { LocalTime } from "@/components/time";
 import { ConductTab } from "@/components/conduct-admin";
+import { SocialAdmin } from "@/components/social-admin";
 import { MessagesTab } from "@/components/messages-admin";
 import { SystemTab } from "@/components/system-admin";
 import { sectionsFor, STAFF_ROLES } from "@/server/staff-roles.ts";
@@ -245,7 +246,7 @@ export default async function Admin({ params, searchParams }: { params: Promise<
       <Empty title={T("Спорных вызовов нет.", "No disputed challenges.")} />
     );
   } else if (tab === "conduct") {
-    body = <ConductTab db={db} user={user} lang={lang} back={back} />;
+    body = <><SocialAdmin db={db} user={user} lang={lang} back={back} /><ConductTab db={db} user={user} lang={lang} back={back} /></>;
   } else if (tab === "venues") {
     body = <VenuesTab db={db} lang={lang} back={back} />;
   } else if (tab === "academy") {
