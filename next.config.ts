@@ -22,6 +22,8 @@ const config: NextConfig = {
           },
         ],
       },
+      { source: "/:lang/clubhouse/:path*", headers: [{ key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=()" }] },
+      { source: "/:lang/cloud-gaming/session/:path*", headers: [{ key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), display-capture=(self)" }] },
       // Every page refuses to be framed, except the widgets made for other sites.
       { source: "/((?!embed/).*)", headers: [{ key: "X-Frame-Options", value: "DENY" }] },
       { source: "/embed/:path*", headers: [{ key: "Content-Security-Policy", value: "frame-ancestors *" }] },

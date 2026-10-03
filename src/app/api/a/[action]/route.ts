@@ -1,6 +1,8 @@
 import * as marketplace from "@/server/marketplace.ts";
 import * as missions from "@/server/missions.ts";
 import * as social from "@/server/social.ts";
+import * as clubhouse from "@/server/clubhouse.ts";
+import * as p2p from "@/server/p2p.ts";
 import * as arbitration from "@/server/arbitration.ts";
 import { after } from "next/server";
 import * as auth from "@/server/auth.ts";
@@ -666,6 +668,22 @@ const handlers: Record<string, Handler> = {
   },
 
   // ---------- Progression ----------
+  "p2p.register": async c => { const id = await p2p.registerHost(c.db, u(c), c.form, c.multi.games ?? []); return `/${c.lang}/cloud-gaming/host/${id}`; },
+  "p2p.allocate": async c => { const id = await p2p.allocateHost(c.db, u(c), c.form.game, c.form.region, c.form.consent === "on"); return `/${c.lang}/cloud-gaming/session/${id}`; },
+  "p2p.review": async c => { await p2p.reviewHost(c.db, await staff(c, "system"), idOf(c.form.host), c.form.decision, c.form.note); return { ok: "saved" }; },
+  "club.hours": async c => {
+    const minutes = (s: string) => { if (!/^\d{2}:\d{2}$/.test(s)) return fail("invalid_input"); const [h,m] = s.split(":").map(Number); if (h>23 || m>59) return fail("invalid_input"); return h*60+m; };
+    await mfa.requireStaffMfa(c.db, u(c));
+    await clubhouse.setClubHours(c.db, u(c), idOf(c.form.venue), { ...c.form, opens: minutes(c.form.opensAt), closes: minutes(c.form.closesAt) || 1440 }, c.multi.weekdays ?? []); return { ok: "saved" };
+  },
+  "club.station": async c => { await mfa.requireStaffMfa(c.db, u(c)); await clubhouse.addStation(c.db, u(c), idOf(c.form.venue), c.form); return { ok: "saved" }; },
+  "club.station_status": async c => { await mfa.requireStaffMfa(c.db, u(c)); await clubhouse.setStationActive(c.db, u(c), idOf(c.form.station), c.form.active === "true"); return { ok: "saved" }; },
+  "club.book": async c => { await clubhouse.bookStation(c.db, u(c), idOf(c.form.station), c.form); return { ok: "saved" }; },
+  "club.booking_status": async c => { await mfa.requireStaffMfa(c.db, u(c)); await clubhouse.changeBooking(c.db, u(c), idOf(c.form.booking), c.form.status); return { ok: "saved" }; },
+  "club.event": async c => { await mfa.requireStaffMfa(c.db, u(c)); await clubhouse.createClubEvent(c.db, u(c), idOf(c.form.venue), c.form); return { ok: "saved" }; },
+  "club.event_status": async c => { await mfa.requireStaffMfa(c.db, u(c)); await clubhouse.changeClubEvent(c.db, u(c), idOf(c.form.event), c.form.status); return { ok: "saved" }; },
+  "club.rsvp": async c => { await clubhouse.rsvpEvent(c.db, u(c), idOf(c.form.event)); return { ok: "saved" }; },
+  "club.rsvp_cancel": async c => { await clubhouse.cancelRsvp(c.db, u(c), idOf(c.form.event)); return { ok: "saved" }; },
   "mission.preference": async c => { await missions.setMissionPreference(c.db, u(c), c.form.game); return { ok: "saved" }; },
   "mission.claim": async c => { await missions.claimMission(c.db, u(c), c.form.mission); return { ok: "reward_claimed" }; },
   "reward.create": async c => { await missions.createPassReward(c.db, u(c), idOf(c.form.venue), c.form); return { ok: "saved" }; },

@@ -16,7 +16,7 @@ import { requireStepUp } from "./mfa.ts";
 import { fail } from "./errors.ts";
 import * as v from "./validate.ts";
 
-export const FEATURES = ["quick_match", "challenges", "finder", "scouting", "clans", "transfers", "venues", "integrations", "academy"] as const;
+export const FEATURES = ["quick_match", "challenges", "finder", "scouting", "clans", "transfers", "venues", "integrations", "academy", "connections", "cloud_gaming", "recurring_pass"] as const;
 export type Feature = (typeof FEATURES)[number];
 export const isFeature = (value: unknown): value is Feature => typeof value === "string" && (FEATURES as readonly string[]).includes(value);
 
@@ -28,9 +28,12 @@ const FEATURE_ACTIONS: Record<Feature, readonly string[]> = {
   scouting: ["scout.save", "scout.watch"],
   clans: ["clan.create", "clan.invite", "war.propose"],
   transfers: ["transfer.propose"],
-  venues: ["venue.create", "venue.submit", "pass.guest"],
+  venues: ["venue.create", "venue.submit", "pass.guest", "club.book", "club.rsvp", "club.event", "club.station"],
   integrations: ["integrations.key_create", "integrations.webhook_create", "integrations.webhook_test", "integrations.delivery_retry"],
   academy: ["coach.submit", "training.request"],
+  connections: ["social.profile", "social.like"],
+  cloud_gaming: ["p2p.register", "p2p.allocate"],
+  recurring_pass: ["reward.create", "reward.reserve"],
 };
 
 export const featureOf = (action: string): Feature | null => FEATURES.find((f) => FEATURE_ACTIONS[f].includes(action)) ?? null;

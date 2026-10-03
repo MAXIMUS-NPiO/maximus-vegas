@@ -1,5 +1,7 @@
 import { arbitrationExport, eraseMarketData } from "./arbitration.ts";
 import { socialExport, eraseSocial } from "./social.ts";
+import { eraseClubhouse } from "./clubhouse.ts";
+import { eraseP2p } from "./p2p.ts";
 import { listingDrafts, myMarketOrders } from "./marketplace.ts";
 import { checkReservedName, claimReservedName } from "./username-reservations.ts";
 import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
@@ -383,6 +385,10 @@ export async function exportAccount(db: Database, user: SessionUser) {
     connections: await socialExport(db, user.id),
     recurringMissions: await q("select mission,window_start,window_end,game,target,coins,xp,claimed_at from mission_assignments where user_id=$1 order by window_start"),
     venueGifts: await q("select id,reward_id,status,claimed_at,collected_at from pass_reward_claims where user_id=$1"),
+    stationBookings: await q("select id,station_id,starts_at,ends_at,status,created_at from station_bookings where user_id=$1 order by starts_at"),
+    clubhouseRsvps: await q("select event_id,status,created_at from club_rsvps where user_id=$1"),
+    p2pHosts: await q("select id,name,region,cpu,gpu,ram_gb,games,status,review_note,created_at from p2p_hosts where owner_id=$1"),
+    p2pSessions: await q("select s.id,s.host_id,s.game,s.status,s.created_at,s.started_at,s.ended_at,s.connected_seconds,s.feedback,s.problem,s.rewarded from p2p_sessions s join p2p_hosts h on h.id=s.host_id where $1 in(s.client_id,h.owner_id)"),
     arbitration: await arbitrationExport(db,user.id),
     skinListingDrafts: await listingDrafts(db,user.id),
     skinDemoOrders: await myMarketOrders(db,user.id),
@@ -505,6 +511,8 @@ export async function deleteAccount(db: Database, user: SessionUser, confirmPass
     await eraseAcademyData(q, user.id);
     await eraseMarketData(q,user.id);
     await eraseSocial(q, user.id);
+    await eraseClubhouse(q, user.id);
+    await eraseP2p(q, user.id);
     await q.query("delete from mission_preferences where user_id=$1", [user.id]);
     await q.query("update pass_reward_claims set status='cancelled',collection_sealed='' where user_id=$1 and status='reserved'", [user.id]);
     // Scouting: the account's filters and watchlist go, and it leaves every other watchlist.

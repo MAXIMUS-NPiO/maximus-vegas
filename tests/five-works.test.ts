@@ -7,6 +7,11 @@ import { DomainError } from "../src/server/errors.ts";
 import { grantXp, balance, currentSeason } from "../src/server/progression.ts";
 import { claimMission, missionWindow, missionStates, setMissionPreference } from "../src/server/missions.ts";
 import { saveSocialProfile, discover, likeProfile, conversation, sendSocialMessage, blockProfile, withdrawSocialProfile, reportSocialProfile, resolveSocialReport, socialProfile } from "../src/server/social.ts";
+import { createOrg } from "../src/server/teams.ts";
+import { createVenue, submitVenue, reviewVenue, issueGuestPass, myPasses, revokePass } from "../src/server/venues.ts";
+import { setClubHours, addStation, bookStation, changeBooking, createClubEvent, rsvpEvent, cancelRsvp, changeClubEvent, clubView, offlineManifest, syncOfflineScan } from "../src/server/clubhouse.ts";
+import { createPassReward, reservePassReward, fulfilPassReward, rewardCatalogue } from "../src/server/missions.ts";
+import { registerHost, reviewHost, hostHeartbeat, allocateHost, peerSession, answerSession, addSignal, pollSession, finishSession, rotateHostKey, authenticateHost, iceConfiguration, P2P_GAME } from "../src/server/p2p.ts";
 
 let db: Database, seq = 0;
 const password = "secure passphrase for test";
@@ -19,6 +24,18 @@ const reject = (p: Promise<unknown>, code: string) => assert.rejects(p, (e: unkn
 const profile = { intent: "gaming", age: 28, city: "Dubai", game: "cs2", languages: "English", bio: "Looking for friendly teammates", consent: "on" };
 test.before(async () => { db = await openDatabase({ embedded: true, dataDir: "memory://" }); });
 test.after(async () => { await db.close(); });
+async function verifiedVenue() {
+  const owner = await account(), staff = { ...(await account()), roles: ["support"] } as SessionUser;
+  const org = await createOrg(db, owner, { name: `Club ${seq}`, description: "" });
+  const venue = await createVenue(db, owner, org.id, { name: `Venue ${seq}`, kind: "clubhouse", city: "Dubai", country: "AE", address: "Example Road 100", description: "", website: "" });
+  await submitVenue(db, owner, venue.id); await reviewVenue(db, staff, venue.id, "confirm", "Confirmed for isolated tests");
+  await setClubHours(db, owner, venue.id, { timeZone: "UTC", opens: 0, closes: 1440 }, ["0", "1", "2", "3", "4", "5", "6"]);
+  return { owner, venue };
+}
+function tomorrow() {
+  const d = new Date(Date.now() + 86400_000); d.setUTCHours(12, 0, 0, 0);
+  return { startsAt: d.toISOString().slice(0, 16), endsAt: new Date(d.getTime() + 3600_000).toISOString().slice(0, 16), timeZone: "UTC" };
+}
 
 test("Pass periods cross UTC day, week and season boundaries without overlap", () => {
   assert.equal(missionWindow("week", new Date("2026-10-04T23:59:59Z")).start.toISOString(), "2026-09-28T00:00:00.000Z");
@@ -79,4 +96,94 @@ test("Dating reports disclose only messages addressed to the reporter; moderatio
   await deleteAccount(db, a, password);
   assert.equal((await conversation(db, b, match)).messages.length, 0);
   assert.equal((await db.query<{ excerpt: string }>("select excerpt from social_reports where id=$1", [report.id]))[0].excerpt, "");
+});
+test("Clubhouse serialises capacity and station reservations, revokes cancelled passes and promotes waiting members", async () => {
+  const { owner, venue } = await verifiedVenue(), a = await account(), b = await account();
+  await reject(addStation(db, a, venue.id, { name: "Unauthorised station" }), "forbidden");
+  const station = await addStation(db, owner, venue.id, { name: "Station 01", equipment: "RTX workstation" });
+  const slots = await Promise.allSettled([bookStation(db, a, station, tomorrow()), bookStation(db, b, station, tomorrow())]);
+  assert.equal(slots.filter(r => r.status === "fulfilled").length, 1);
+  const booking = (slots[0] as PromiseFulfilledResult<string>).value;
+  await reject(changeBooking(db, b, booking, "cancelled"), "forbidden");
+  await changeBooking(db, a, booking, "cancelled");
+  await bookStation(db, b, station, tomorrow());
+  assert.equal((await myPasses(db, a.id)).filter(p => p.status === "active").length, 0);
+  const event = await createClubEvent(db, owner, venue.id, { ...tomorrow(), title: "Talent session", description: "Free coaching and practice", capacity: 1, kind: "talent", game: "cs2", freeEntry: "on" });
+  assert.equal(await rsvpEvent(db, a, event), "reserved"); assert.equal(await rsvpEvent(db, b, event), "waitlisted");
+  await cancelRsvp(db, a, event);
+  assert.equal((await clubView(db, venue.id, b.id)).events.find(e => e.id === event)?.mine, "reserved");
+  await changeClubEvent(db, owner, event, "cancelled");
+  assert.equal((await clubView(db, venue.id, b.id)).events.find(e => e.id === event)?.mine, "cancelled");
+});
+test("Offline entry is scoped to staff and manifest, rejects revoked passes and deduplicates both retries and devices", async () => {
+  const { owner, venue } = await verifiedVenue(), a = await account();
+  const pass = await issueGuestPass(db, owner, venue.id, { username: a.username, from: new Date(Date.now() - 60_000).toISOString().slice(0, 16), until: new Date(Date.now() + 3600_000).toISOString().slice(0, 16), tz: "UTC", note: "" });
+  const token = (await myPasses(db, a.id)).find(p => p.id === pass.id)!.token!;
+  await reject(offlineManifest(db, a, venue.id), "forbidden");
+  const m = await offlineManifest(db, owner, venue.id), otherDevice = await offlineManifest(db, owner, venue.id);
+  const input = { id: randomUUID(), manifest: m.id, token, observedAt: new Date().toISOString() };
+  assert.equal(await syncOfflineScan(db, owner, input), "admitted");
+  assert.equal(await syncOfflineScan(db, owner, input), "admitted");
+  assert.equal(await syncOfflineScan(db, owner, { ...input, id: randomUUID(), manifest: otherDevice.id }), "used");
+  assert.equal((await db.query("select * from venue_checkins where pass_id=$1", [pass.id])).length, 2);
+  await reject(syncOfflineScan(db, a, input), "forbidden");
+  const second = await issueGuestPass(db, owner, venue.id, { username: a.username, from: new Date(Date.now() - 60_000).toISOString().slice(0, 16), until: new Date(Date.now() + 3600_000).toISOString().slice(0, 16), tz: "UTC", note: "" });
+  const token2 = (await myPasses(db, a.id)).find(p => p.id === second.id)!.token!;
+  const manifest2 = await offlineManifest(db, owner, venue.id);
+  await revokePass(db, owner, second.id);
+  assert.equal(await syncOfflineScan(db, owner, { id: randomUUID(), manifest: manifest2.id, token: token2, observedAt: new Date().toISOString() }), "revoked");
+});
+test("Physical gifts require confirmed inventory, qualifying XP and a holder's collection code", async () => {
+  const { owner, venue } = await verifiedVenue(), a = await account(), b = await account();
+  const reward = await createPassReward(db, owner, venue.id, { title: "Club gift", description: "Collect at reception this season", tier: 1, quantity: 1 });
+  await reject(reservePassReward(db, a, reward), "tier_locked");
+  for (const u of [a, b]) await grantXp(db, [u.id], 300, "match_win", "cs2", randomUUID(), randomUUID());
+  const results = await Promise.allSettled([reservePassReward(db, a, reward), reservePassReward(db, b, reward)]);
+  assert.equal(results.filter(r => r.status === "fulfilled").length, 1);
+  const claim = (await rewardCatalogue(db, a.id)).claims[0];
+  await reject(fulfilPassReward(db, owner, claim.id, "incorrect"), "token_invalid");
+  await reject(fulfilPassReward(db, b, claim.id, claim.code!), "forbidden");
+  await fulfilPassReward(db, owner, claim.id, claim.code!);
+  await reject(fulfilPassReward(db, owner, claim.id, claim.code!), "invalid_transition");
+  assert.equal((await rewardCatalogue(db, a.id)).claims[0].code, null);
+});
+test("P2P approves and allocates one live host once, scopes signalling and expires dead leases", async () => {
+  const host = await account(), client = await account(), other = await account(), staff = { ...(await account()), roles: ["infrastructure"] } as SessionUser;
+  const id = await registerHost(db, host, { name: "Test host", cpu: "Test CPU", gpu: "Test GPU", ram: 16, region: "Local", consent: "on" }, [P2P_GAME]);
+  await reject(hostHeartbeat(db, host, id, true), "feature_disabled");
+  await reviewHost(db, staff, id, "approved", "Verified isolated test machine");
+  await hostHeartbeat(db, host, id, true);
+  await reject(allocateHost(db, host, P2P_GAME, "", true), "offer_unavailable");
+  const leases = await Promise.allSettled([allocateHost(db, client, P2P_GAME, "Local", true), allocateHost(db, other, P2P_GAME, "Local", true)]);
+  assert.equal(leases.filter(r => r.status === "fulfilled").length, 1);
+  const session = (leases[0] as PromiseFulfilledResult<string>).value;
+  await reject(peerSession(db, other, session), "not_found");
+  await reject(answerSession(db, client, session, true), "forbidden");
+  await answerSession(db, host, session, true);
+  const key = randomUUID(), offer = { type: "offer", sdp: "v=0\r\n" };
+  await reject(addSignal(db, client, session, "offer", offer, key), "forbidden");
+  await addSignal(db, host, session, "offer", offer, key); await addSignal(db, host, session, "offer", offer, key);
+  const incoming = await pollSession(db, client, session, 0, true); assert.equal(incoming.signals.length, 1);
+  assert.equal((await pollSession(db, host, session, 0, true)).signals.length, 0);
+  assert.equal((await peerSession(db, client, session)).status, "active");
+  await db.query("update p2p_sessions set client_seen=now()-interval '2 minutes' where id=$1", [session]);
+  assert.equal((await pollSession(db, host, session, 0, true)).session.status, "failed");
+  await reject(addSignal(db, host, session, "offer", offer, randomUUID()), "request_state");
+  const token = await rotateHostKey(db, host, id); assert.equal((await authenticateHost(db, token!)).host.id, id);
+  await rotateHostKey(db, host, id, true); await reject(authenticateHost(db, token!), "unauthorized");
+});
+test("P2P contribution requires both confirmations and sufficient metered time; retries cannot double credit", async () => {
+  const host = await account(), client = await account(), staff = { ...(await account()), roles: ["infrastructure"] } as SessionUser;
+  const id = await registerHost(db, host, { name: "Delivery host", cpu: "Test CPU", gpu: "Test GPU", ram: 8, region: "Local", consent: true }, [P2P_GAME]);
+  await reviewHost(db, staff, id, "approved", "Approved isolated fixture host"); await hostHeartbeat(db, host, id, true);
+  const session = await allocateHost(db, client, P2P_GAME, "", true); await answerSession(db, host, session, true);
+  await db.query("update p2p_sessions set connected_seconds=310,status='active',started_at=now()-interval '6 minutes' where id=$1", [session]);
+  await finishSession(db, host, session, true); assert.equal(await balance(db, host.id), 0);
+  await finishSession(db, client, session, true); await finishSession(db, client, session, true);
+  assert.equal(await balance(db, host.id), 5);
+  const oldSecret = process.env.MV_TURN_SECRET, oldUrls = process.env.MV_TURN_URLS;
+  process.env.MV_TURN_SECRET = "test-secret-not-for-production-0123456789"; process.env.MV_TURN_URLS = "turn:relay.example.test:3478";
+  const config = iceConfiguration(client.id, 1000000); assert.ok(config.iceServers?.some(s => s.username?.endsWith(client.id) && s.credential));
+  if (oldSecret === undefined) delete process.env.MV_TURN_SECRET; else process.env.MV_TURN_SECRET = oldSecret;
+  if (oldUrls === undefined) delete process.env.MV_TURN_URLS; else process.env.MV_TURN_URLS = oldUrls;
 });

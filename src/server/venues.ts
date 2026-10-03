@@ -377,6 +377,11 @@ export async function passState(q: Queryable, p: Pass, now = Date.now()): Promis
   if (now < new Date(p.valid_from).getTime()) return "not_yet";
   if (now > new Date(p.valid_until).getTime()) return "expired";
   if (p.tournament_id && !(await inEvent(q, p.tournament_id, p.user_id))) return "withdrawn";
+  const [available] = await q.query(`select 1 from venue_passes p join venues v on v.id=p.venue_id join users u on u.id=p.user_id
+    where p.id=$1 and v.status='confirmed' and u.status='active'
+      and (p.club_rsvp_id is null or exists(select 1 from club_rsvps r join club_events e on e.id=r.event_id where r.id=p.club_rsvp_id and r.status='reserved' and e.status='published'))
+      and (p.station_booking_id is null or exists(select 1 from station_bookings b join club_stations s on s.id=b.station_id where b.id=p.station_booking_id and b.status='reserved' and s.active))`, [p.id]);
+  if (!available) return "withdrawn";
   return "admitted";
 }
 
@@ -394,7 +399,11 @@ export async function admitPass(db: Database, staff: SessionUser, token: unknown
     if (!p) fail("pass_unknown");
     if (!(await isVenueStaff(q, p.org_id, staff))) fail("forbidden");
     const result = await passState(q, p);
-    if (result === "admitted") await q.query("update venue_passes set status = 'used', used_at = now(), used_by = $2 where id = $1", [p.id, staff.id]);
+    if (result === "admitted") {
+      await q.query("update venue_passes set status = 'used', used_at = now(), used_by = $2 where id = $1", [p.id, staff.id]);
+      await q.query("update club_rsvps set status='attended' where id=(select club_rsvp_id from venue_passes where id=$1) and status='reserved'", [p.id]);
+      await q.query("update station_bookings set status='checked_in' where id=(select station_booking_id from venue_passes where id=$1) and status='reserved'", [p.id]);
+    }
     await q.query("insert into venue_checkins (venue_id, pass_id, staff_id, result) values ($1, $2, $3, $4)", [p.venue_id, p.id, staff.id, result]);
     await audit(q, { actorId: staff.id, action: "pass.scanned", entity: "venue", entityId: p.venue_id, data: { pass: p.id, result } });
     return { result, passId: p.id };

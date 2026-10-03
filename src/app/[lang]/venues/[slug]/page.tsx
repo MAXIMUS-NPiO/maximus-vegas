@@ -10,6 +10,7 @@ import { viewer } from "@/server/viewer.ts";
 import { venueTournaments, venueView } from "@/server/venues.ts";
 import { Badge, DbDown, Flash, type SearchParams } from "@/components/ui";
 import { LocalTime } from "@/components/time";
+import { ClubhousePublic } from "@/components/clubhouse-public";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string; slug: string }> }): Promise<Metadata> {
   const { lang, slug } = await params;
@@ -68,6 +69,7 @@ export default async function VenuePage({ params, searchParams }: { params: Prom
         ) : null}
       </p>
       {venue.description ? <p className="prewrap">{venue.description}</p> : null}
+      {venue.status === "confirmed" && <ClubhousePublic db={db} venueId={venue.id} slug={slug} userId={user?.id} manager={manager} lang={lang} />}
       <section className="section-tight">
         <h2 className="h3">{x.events}</h2>
         {events.length ? (

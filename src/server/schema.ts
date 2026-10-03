@@ -1909,4 +1909,79 @@ export const migrations: Migration[] = [
       `create index social_reports_queue on social_reports(status,created_at)`,
     ],
   },
+  {
+    id: 31,
+    name: "clubhouse_events_stations_and_offline_checkins",
+    statements: [
+      `create table clubhouse_settings (
+        venue_id uuid primary key references venues(id), time_zone text not null default 'UTC',
+        opens int not null check(opens between 0 and 1439), closes int not null check(closes between 1 and 1440),
+        weekdays int[] not null, check(closes>opens)
+      )`,
+      `create table club_stations (
+        id uuid primary key default gen_random_uuid(), venue_id uuid not null references venues(id),
+        name text not null, equipment text not null default '', active boolean not null default true, created_at timestamptz not null default now(), unique(venue_id,name)
+      )`,
+      `create table station_bookings (
+        id uuid primary key default gen_random_uuid(), station_id uuid not null references club_stations(id), user_id uuid not null references users(id),
+        starts_at timestamptz not null, ends_at timestamptz not null, status text not null default 'reserved' check(status in ('reserved','checked_in','completed','cancelled','no_show')),
+        created_at timestamptz not null default now(), check(ends_at>starts_at)
+      )`,
+      `create index station_bookings_overlap on station_bookings(station_id,starts_at,ends_at) where status in ('reserved','checked_in')`,
+      `create index station_bookings_user on station_bookings(user_id,starts_at)`,
+      `create table club_events (
+        id uuid primary key default gen_random_uuid(), venue_id uuid not null references venues(id),
+        title text not null, description text not null, game text not null default '', kind text not null check(kind in ('social','training','talent','competition')),
+        starts_at timestamptz not null, ends_at timestamptz not null, capacity int not null check(capacity between 1 and 5000),
+        status text not null default 'published' check(status in ('published','cancelled','completed')),
+        created_by uuid not null references users(id), created_at timestamptz not null default now(), check(ends_at>starts_at)
+      )`,
+      `create table club_rsvps (
+        id uuid primary key default gen_random_uuid(), event_id uuid not null references club_events(id), user_id uuid not null references users(id),
+        status text not null check(status in ('reserved','waitlisted','attended','cancelled')), created_at timestamptz not null default now(), unique(event_id,user_id)
+      )`,
+      `create index club_rsvp_queue on club_rsvps(event_id,status,created_at)`,
+      `alter table venue_passes add column club_rsvp_id uuid unique references club_rsvps(id)`,
+      `alter table venue_passes add column station_booking_id uuid unique references station_bookings(id)`,
+      `create table offline_manifests (
+        id uuid primary key default gen_random_uuid(), venue_id uuid not null references venues(id), staff_id uuid not null references users(id),
+        passes jsonb not null, created_at timestamptz not null default now(), expires_at timestamptz not null
+      )`,
+      `create table offline_scans (
+        id uuid primary key, manifest_id uuid not null references offline_manifests(id), pass_id uuid references venue_passes(id),
+        observed_at timestamptz not null, result text not null, synced_at timestamptz not null default now()
+      )`,
+    ],
+  },
+  {
+    id: 32,
+    name: "p2p_hosts_allocation_signalling_and_usage",
+    statements: [
+      `create table p2p_hosts (
+        id uuid primary key default gen_random_uuid(), owner_id uuid not null references users(id), name text not null, region text not null,
+        cpu text not null, gpu text not null, ram_gb int not null check(ram_gb between 2 and 2048), games text[] not null,
+        status text not null default 'pending' check(status in ('pending','approved','suspended')), review_note text not null default '',
+        reviewed_by uuid references users(id), reviewed_at timestamptz, online boolean not null default false, heartbeat_at timestamptz,
+        agent_key_hash text unique, created_at timestamptz not null default now()
+      )`,
+      `create table p2p_sessions (
+        id uuid primary key default gen_random_uuid(), host_id uuid not null references p2p_hosts(id), client_id uuid not null references users(id),
+        game text not null, status text not null default 'requested' check(status in ('requested','connecting','active','ended','failed','rejected')),
+        created_at timestamptz not null default now(), expires_at timestamptz not null, started_at timestamptz, ended_at timestamptz,
+        host_seen timestamptz, client_seen timestamptz, host_connected boolean not null default false, client_connected boolean not null default false,
+        host_confirmed boolean not null default false, client_confirmed boolean not null default false,
+        connected_seconds int not null default 0, metered_at timestamptz, rewarded boolean not null default false,
+        feedback int check(feedback between 1 and 5), problem text not null default ''
+      )`,
+      `create unique index p2p_host_one_active on p2p_sessions(host_id) where status in ('requested','connecting','active')`,
+      `create unique index p2p_client_one_active on p2p_sessions(client_id) where status in ('requested','connecting','active')`,
+      `create table p2p_signals (
+        id bigint generated always as identity primary key, session_id uuid not null references p2p_sessions(id) on delete cascade,
+        sender text not null check(sender in ('host','client')), kind text not null check(kind in ('offer','answer','ice')),
+        payload jsonb not null, client_id uuid not null, created_at timestamptz not null default now(), unique(session_id,sender,client_id)
+      )`,
+      `create index p2p_signals_cursor on p2p_signals(session_id,id)`,
+      `create index p2p_hosts_available on p2p_hosts(region,heartbeat_at) where status='approved' and online`,
+    ],
+  },
 ];
