@@ -29,7 +29,7 @@ const FEATURE_ACTIONS: Record<Feature, readonly string[]> = {
   clans: ["clan.create", "clan.invite", "war.propose"],
   transfers: ["transfer.propose"],
   venues: ["venue.create", "venue.submit", "pass.guest", "club.book", "club.rsvp", "club.event", "club.station"],
-  integrations: ["integrations.key_create", "integrations.webhook_create", "integrations.webhook_test", "integrations.delivery_retry"],
+  integrations: ["integrations.key_create", "integrations.webhook_create", "integrations.webhook_test", "integrations.delivery_retry", "stats.source", "stats.link", "stats.intake"],
   academy: ["coach.submit", "training.request"],
   connections: ["social.profile", "social.like"],
   cloud_gaming: ["p2p.register", "p2p.allocate"],

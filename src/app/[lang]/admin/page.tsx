@@ -31,6 +31,7 @@ import { LocalTime } from "@/components/time";
 import { ConductTab } from "@/components/conduct-admin";
 import { SocialAdmin } from "@/components/social-admin";
 import { P2pAdmin } from "@/components/p2p-admin";
+import { StatsAdmin } from "@/components/stats-admin";
 import { MessagesTab } from "@/components/messages-admin";
 import { SystemTab } from "@/components/system-admin";
 import { sectionsFor, STAFF_ROLES } from "@/server/staff-roles.ts";
@@ -301,7 +302,7 @@ export default async function Admin({ params, searchParams }: { params: Promise<
   } else if (tab === "messages") {
     body = <MessagesTab db={db} user={user} lang={lang} back={back} />;
   } else if (tab === "system") {
-    body = <><P2pAdmin db={db} lang={lang} back={back} /><SystemTab db={db} user={user} lang={lang} back={back} /></>;
+    body = <><P2pAdmin db={db} lang={lang} back={back} /><StatsAdmin db={db} lang={lang} back={back} /><SystemTab db={db} user={user} lang={lang} back={back} /></>;
   } else if (tab === "security") {
     body = await SecurityTab(ctx);
   } else if (tab === "audit") {

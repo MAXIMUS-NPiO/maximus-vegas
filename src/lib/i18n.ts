@@ -81,6 +81,9 @@ const ru = {
         label: "Сообщество",
         items: [
           ["players", "Игроки", "Профили и игровая история"],
+          ["dating", "Знакомства 18+", "Совместная игра, дружба и отношения по взаимному согласию"],
+          ["progress", "MAXIMUS Pass", "Сезоны, задания и награды"],
+          ["statistics", "Моя статистика", "Проверяемые записи и экспорт достижений"],
           ["teams", "Команды", "Составы, приглашения и результаты"],
           ["finder", "Поиск команды", "Вакансии в составах, LFT и LFG"],
           ["scouting", "Скаутинг", "Игроки по игре, рейтингу и стране; списки наблюдения"],
@@ -922,6 +925,9 @@ const en: BaseDict = {
         label: "Community",
         items: [
           ["players", "Players", "Profiles and match history"],
+          ["dating", "Connections 18+", "Gaming, friendship and relationships with mutual consent"],
+          ["progress", "MAXIMUS Pass", "Seasons, missions and rewards"],
+          ["statistics", "My statistics", "Verifiable records and achievement exports"],
           ["teams", "Teams", "Rosters, invitations and results"],
           ["finder", "Team finder", "Roster vacancies, LFT and LFG"],
           ["scouting", "Scouting", "Players by game, rating and country; watchlists"],

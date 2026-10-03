@@ -151,6 +151,8 @@ class GameBox:
         self.directory.cleanup()
 
 async def serve_session(portal, config, session, configuration):
+    if configuration.get("iceTransportPolicy") == "relay":
+        raise RuntimeError("Relay-only policy requires a host transport with enforced relay support; this adapter cannot start the session.")
     session_id = session["id"]; box = GameBox(config, session["game"])
     servers = [RTCIceServer(**s) for s in configuration.get("iceServers", [])]
     peer = RTCPeerConnection(RTCConfiguration(iceServers=servers)); ever_connected = False

@@ -158,6 +158,9 @@ export async function socialReports(q: Queryable, user: SessionUser) {
 export async function resolveSocialReport(db: Database, user: SessionUser, reportId: string, decision: string, hide: boolean) {
   requireSection(user, "conduct"); if (decision.trim().length < 10) fail("invalid_input");
   await db.tx(async q => {
+    const [subject] = await q.query<{ subject_id: string }>("select subject_id from social_reports where id=$1", [reportId]);
+    if (!subject) fail("not_found");
+    await q.query("select id from users where id=$1 for update", [subject.subject_id]);
     const [r] = await q.query<{ subject_id: string; reporter_id: string; status: string }>("select subject_id,reporter_id,status from social_reports where id=$1 for update", [reportId]);
     if (!r || r.status !== "open") fail("request_state");
     if ([r.subject_id, r.reporter_id].includes(user.id)) fail("forbidden");
@@ -167,6 +170,17 @@ export async function resolveSocialReport(db: Database, user: SessionUser, repor
       await q.query("update social_matches set status='closed' where $1 in(user_a,user_b)", [r.subject_id]);
     }
     await audit(q, { actorId: user.id, action: "social.report_resolved", entity: "social_report", entityId: reportId, data: { hidden: hide } });
+  });
+}
+export async function restoreSocialProfile(db: Database, user: SessionUser, subjectId: string, reason: string) {
+  requireSection(user, "conduct");
+  if (subjectId === user.id) fail("cannot_modify_self");
+  if (reason.trim().length < 10) fail("invalid_input");
+  await db.tx(async q => {
+    await q.query("select id from users where id=$1 for update", [subjectId]);
+    const rows = await q.query("update social_profiles set suspended=false,visible=false where user_id=$1 and suspended returning user_id", [subjectId]);
+    if (!rows.length) fail("request_state");
+    await audit(q, { actorId: user.id, action: "social.profile_restored", entity: "user", entityId: subjectId, data: { reason: v.clean(reason, 1000) } });
   });
 }
 export async function socialExport(q: Queryable, userId: string) {

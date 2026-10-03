@@ -51,6 +51,7 @@ export async function rotateHostKey(db: Database, user: SessionUser, hostId: str
   await db.tx(async q => {
     await activeAccount(q, user); await ownedHost(q, user, hostId);
     await q.query("update p2p_hosts set agent_key_hash=$2,online=false where id=$1", [hostId, revoke ? null : createHash("sha256").update(token).digest("hex")]);
+    await q.query("update p2p_sessions set status='failed',ended_at=now() where host_id=$1 and status in('requested','connecting','active')", [hostId]);
     await audit(q, { actorId: user.id, action: "p2p.host_key_rotated", entity: "p2p_host", entityId: hostId });
   });
   return revoke ? null : token;
@@ -125,11 +126,14 @@ export async function pollSession(db: Database, user: SessionUser, id: string, c
   return db.tx(async q => {
     await activeAccount(q, user); await expireSessions(q); let s = await peerSession(q, user, id, true);
     if (live(s.status)) {
+      // Preserve fractional seconds between polls; rounding every heartbeat would inflate usage.
+      const eligible = "status='active' and host_connected and client_connected and $2 and host_seen>now()-interval '20 seconds' and client_seen>now()-interval '20 seconds'";
+      const elapsed = "least(20,greatest(0,floor(extract(epoch from now()-coalesce(metered_at,now())))::int))";
+      await q.query(`update p2p_sessions set connected_seconds=connected_seconds+case when ${eligible} then ${elapsed} else 0 end,
+        metered_at=case when ${eligible} then greatest(coalesce(metered_at,now()),now()-interval '20 seconds')+make_interval(secs=>${elapsed}) else now() end where id=$1`, [id, connected]);
       await q.query(`update p2p_sessions set ${s.role}_seen=now(),${s.role}_connected=$2 where id=$1`, [id, connected]);
       if (s.role === "host") await q.query("update p2p_hosts set heartbeat_at=now() where id=$1", [s.host_id]);
-      await q.query(`update p2p_sessions set connected_seconds=connected_seconds+case when status='active' and host_connected and client_connected
-        and host_seen>now()-interval '20 seconds' and client_seen>now()-interval '20 seconds' then least(20,greatest(0,extract(epoch from now()-coalesce(metered_at,now()))::int)) else 0 end,
-        metered_at=now(),status=case when host_connected and client_connected and status='connecting' then 'active' else status end,
+      await q.query(`update p2p_sessions set status=case when host_connected and client_connected and status='connecting' then 'active' else status end,
         started_at=case when host_connected and client_connected then coalesce(started_at,now()) else started_at end where id=$1`, [id]);
       s = await peerSession(q, user, id);
     }

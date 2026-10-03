@@ -2,6 +2,7 @@ import { arbitrationExport, eraseMarketData } from "./arbitration.ts";
 import { socialExport, eraseSocial } from "./social.ts";
 import { eraseClubhouse } from "./clubhouse.ts";
 import { eraseP2p } from "./p2p.ts";
+import { statisticsExport, eraseStatistics } from "./statistics.ts";
 import { listingDrafts, myMarketOrders } from "./marketplace.ts";
 import { checkReservedName, claimReservedName } from "./username-reservations.ts";
 import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
@@ -383,6 +384,7 @@ export async function exportAccount(db: Database, user: SessionUser) {
     portalMessages: await messageExport(db, user.id),
     academy: await academyExport(db, user.id),
     connections: await socialExport(db, user.id),
+    statistics: await statisticsExport(db, user.id),
     recurringMissions: await q("select mission,window_start,window_end,game,target,coins,xp,claimed_at from mission_assignments where user_id=$1 order by window_start"),
     venueGifts: await q("select id,reward_id,status,claimed_at,collected_at from pass_reward_claims where user_id=$1"),
     stationBookings: await q("select id,station_id,starts_at,ends_at,status,created_at from station_bookings where user_id=$1 order by starts_at"),
@@ -513,6 +515,7 @@ export async function deleteAccount(db: Database, user: SessionUser, confirmPass
     await eraseSocial(q, user.id);
     await eraseClubhouse(q, user.id);
     await eraseP2p(q, user.id);
+    await eraseStatistics(q, user.id);
     await q.query("delete from mission_preferences where user_id=$1", [user.id]);
     await q.query("update pass_reward_claims set status='cancelled',collection_sealed='' where user_id=$1 and status='reserved'", [user.id]);
     // Scouting: the account's filters and watchlist go, and it leaves every other watchlist.

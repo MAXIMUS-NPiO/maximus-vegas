@@ -1981,7 +1981,50 @@ export const migrations: Migration[] = [
         payload jsonb not null, client_id uuid not null, created_at timestamptz not null default now(), unique(session_id,sender,client_id)
       )`,
       `create index p2p_signals_cursor on p2p_signals(session_id,id)`,
+      `create index p2p_signals_expiry on p2p_signals(created_at)`,
+      `create index p2p_sessions_expiry on p2p_sessions(expires_at,created_at) where status in ('requested','connecting','active')`,
       `create index p2p_hosts_available on p2p_hosts(region,heartbeat_at) where status='approved' and online`,
+    ],
+  },
+  {
+    id: 33,
+    name: "signed_statistics_links_and_verifiable_snapshots",
+    statements: [
+      `create table stats_sources (
+        id uuid primary key default gen_random_uuid(), org_id uuid not null references organizations(id), name text not null,
+        games text[] not null, public_key text not null, evidence_url text not null,
+        status text not null default 'pending' check(status in ('pending','approved','suspended')),
+        created_by uuid not null references users(id), reviewed_by uuid references users(id), review_note text not null default '',
+        created_at timestamptz not null default now(), reviewed_at timestamptz
+      )`,
+      `create table stats_links (
+        id uuid primary key default gen_random_uuid(), source_id uuid not null references stats_sources(id), user_id uuid not null references users(id),
+        game text not null, handle text not null, status text not null default 'pending' check(status in ('pending','verified','revoked')),
+        challenge_hash text not null, challenge_sealed text not null, expires_at timestamptz not null,
+        created_at timestamptz not null default now(), verified_at timestamptz, unique(source_id,user_id,game)
+      )`,
+      `create unique index stats_handle_link on stats_links(source_id,game,lower(handle)) where status<>'revoked'`,
+      `create table stats_observations (
+        id uuid primary key default gen_random_uuid(), source_id uuid not null references stats_sources(id), user_id uuid not null references users(id),
+        game text not null, match_ref text not null, played_at timestamptz not null, metrics jsonb not null, digest text not null,
+        signed_body text not null, signature text not null, public_key text not null, status text not null default 'pending' check(status in ('pending','confirmed','rejected')),
+        reviewed_by uuid references users(id), review_note text not null default '', created_at timestamptz not null default now(),
+        unique(source_id,user_id,game,match_ref)
+      )`,
+      `create index stats_observations_player on stats_observations(user_id,played_at)`,
+      `create table stats_receipts (
+        source_id uuid not null references stats_sources(id), nonce uuid not null, body_hash text not null,
+        observation_id uuid references stats_observations(id) on delete set null, received_at timestamptz not null default now(), primary key(source_id,nonce)
+      )`,
+      `create table stats_snapshots (
+        id uuid primary key, user_id uuid not null references users(id), root text not null, leaf_count int not null check(leaf_count>=0),
+        records jsonb not null, signature text, public_key text, shared boolean not null default false,
+        created_at timestamptz not null default now()
+      )`,
+      `create table stats_anchors (
+        snapshot_id uuid primary key references stats_snapshots(id) on delete cascade, chain_id text not null, contract_address text not null,
+        transaction_hash text not null, block_number bigint not null, recorded_by uuid not null references users(id), verified_at timestamptz not null default now()
+      )`,
     ],
   },
 ];

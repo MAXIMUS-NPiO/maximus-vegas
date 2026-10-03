@@ -109,6 +109,26 @@ export async function fulfilPassReward(db: Database, user: SessionUser, claimId:
     await audit(q, { actorId: user.id, action: "pass.reward_collected", entity: "pass_reward_claim", entityId: claimId });
   });
 }
+export async function setPassRewardActive(db: Database, user: SessionUser, rewardId: string, active: boolean) {
+  await db.tx(async q => {
+    const [reward] = await q.query<{ venue_id: string }>("select venue_id from pass_rewards where id=$1 for update", [rewardId]);
+    if (!reward) fail("not_found");
+    await activeAccount(q, user); await manageVenue(q, user, reward.venue_id, active);
+    await q.query("update pass_rewards set active=$2 where id=$1", [rewardId, active]);
+    await audit(q, { actorId: user.id, action: "pass.reward_availability", entity: "pass_reward", entityId: rewardId, data: { active } });
+  });
+}
+export async function cancelPassReward(db: Database, user: SessionUser, claimId: string) {
+  await db.tx(async q => {
+    const [claim] = await q.query<{ user_id: string; venue_id: string; status: string }>("select c.user_id,r.venue_id,c.status from pass_reward_claims c join pass_rewards r on r.id=c.reward_id where c.id=$1 for update of c", [claimId]);
+    if (!claim) fail("not_found");
+    if (claim.user_id !== user.id) await manageVenue(q, user, claim.venue_id);
+    if (claim.status === "cancelled") return;
+    if (claim.status !== "reserved") fail("invalid_transition");
+    await q.query("update pass_reward_claims set status='cancelled',collection_sealed='' where id=$1", [claimId]);
+    await audit(q, { actorId: user.id, action: "pass.reward_cancelled", entity: "pass_reward_claim", entityId: claimId });
+  });
+}
 export async function rewardCatalogue(q: Queryable, userId: string) {
   const rewards = await q.query<{ id: string; title: string; description: string; tier: number; venue: string; slug: string; city: string; remaining: number }>(`select r.id,r.title,r.description,r.tier,v.name as venue,v.slug,v.city,
     (r.quantity-(select count(*) from pass_reward_claims c where c.reward_id=r.id and c.status<>'cancelled'))::int as remaining

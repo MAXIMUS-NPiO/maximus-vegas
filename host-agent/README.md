@@ -30,7 +30,7 @@ A host accepts one session at a time. Leases are bounded to an hour. Stale reque
 
 The portal supports `MV_STUN_URLS`, `MV_TURN_URLS`, `MV_TURN_SECRET` (32+ characters), and `MV_RELAY_ONLY=1`. TURN URLs are comma separated and the server uses temporary credentials derived from the shared secret, compatible with the TURN REST authentication convention. Keep the shared secret on the portal and TURN server only. Production relay bandwidth, reachable ports, certificate trust and capacity must be verified before advertising public service. No paid relay is provisioned by this repository.
 
-The current Python adapter gathers the full ICE offer before sending it. Browser trickle candidates are queued until the answer is applied. The browser honours relay-only mode; this adapter must be placed behind network-level relay-only controls if that privacy policy is required, because the Python library does not expose the same transport-policy setting.
+The current Python adapter gathers the full ICE offer before sending it. Browser trickle candidates are queued until the answer is applied. The browser honours relay-only mode; this adapter refuses to start in relay-only mode, because the Python library does not expose the same transport-policy setting. Use the browser transport for relay-only sessions until a native transport with enforced relay support is available.
 
 ## Checks
 
