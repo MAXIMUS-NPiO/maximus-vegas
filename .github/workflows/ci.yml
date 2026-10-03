@@ -31,3 +31,16 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: python3 -m unittest discover -s server-agent -v
+      - name: Install acceptance browser
+        run: node node_modules/playwright-core/cli.js install --with-deps chromium
+      - name: Studio browser acceptance
+        run: node scripts/broadcasts-browser.mjs
+      - name: Studio acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: studio-acceptance
+          path: |
+            artifacts/c29-screens
+            artifacts/c29-browser-report.json
+            artifacts/c29-server.log

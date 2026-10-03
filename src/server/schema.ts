@@ -2142,4 +2142,46 @@ export const migrations: Migration[] = [
       `create index venues_discovery_city on venues(lower(city),lower(name),id) where status='confirmed'`,
     ],
   },
+  {
+    id: 38,
+    name: "paid_native_broadcasts_and_private_archives",
+    statements: [
+      `create table native_broadcasts (
+        id uuid primary key, owner_id uuid not null references users(id), title text not null,
+        mode text not null check(mode in ('live','record','live_record')),
+        minutes int not null check(minutes between 5 and 480), max_viewers int not null check(max_viewers between 0 and 100),
+        retention_days int not null check(retention_days between 0 and 3650),
+        state text not null default 'unpaid' check(state in ('unpaid','paid','starting','live','stopping','ended','deleting','deleted')),
+        room_name text not null unique, room_sid text, started_at timestamptz, expires_at timestamptz, ended_at timestamptz,
+        heartbeat_at timestamptz, cleanup_until timestamptz, delete_requested_at timestamptz,
+        archive_state text not null default 'none' check(archive_state in ('none','pending','ready','failed','deleted')),
+        archive_key text not null unique, archive_bytes bigint, retain_until timestamptz,
+        egress_id text, failure text not null default '', created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
+        check((mode='live' and retention_days=0) or (mode<>'live' and retention_days>0))
+      )`,
+      `create unique index native_one_open on native_broadcasts(owner_id) where state in ('unpaid','paid','starting','live','stopping')`,
+      `create index native_broadcast_owner on native_broadcasts(owner_id,created_at desc)`,
+      `create index native_broadcast_cleanup on native_broadcasts(state,retain_until)`,
+      `create table broadcast_orders (
+        id uuid primary key, broadcast_id uuid not null unique references native_broadcasts(id), user_id uuid not null references users(id),
+        state text not null default 'pending' check(state in ('pending','paid','expired','revoked')),
+        amount_minor int not null check(amount_minor>0), currency text not null, tariff jsonb not null,
+        mode text not null check(mode in ('test','live')), session_id text unique, payment_intent_id text unique,
+        checkout_expires_at timestamptz not null, checkout_request jsonb not null, paid_at timestamptz, created_at timestamptz not null default now()
+      )`,
+      `create table broadcast_payment_events (
+        id text primary key, payload_hash text not null, created_at timestamptz not null default now()
+      )`,
+      `create table broadcast_worker (id boolean primary key default true check(id), lease_until timestamptz not null default now())`,
+      `insert into broadcast_worker(id) values(true)`,
+      `create table broadcast_seats (
+        broadcast_id uuid not null references native_broadcasts(id), slot int not null check(slot between 1 and 100),
+        user_id uuid not null references users(id), hold_until timestamptz not null, primary key(broadcast_id,slot), unique(broadcast_id,user_id)
+      )`,
+      `create table broadcast_api_limits (
+        user_id uuid not null references users(id), action text not null, window_at timestamptz not null default now(), hits int not null default 1,
+        primary key(user_id,action)
+      )`,
+    ],
+  },
 ];

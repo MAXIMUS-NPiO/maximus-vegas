@@ -1,5 +1,6 @@
 import { getDb } from "@/server/db.ts";
 import { handleProviderWebhook } from "@/server/billing.ts";
+import { handleBroadcastPaymentWebhook } from "@/server/broadcast-payments.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,7 +15,8 @@ export async function POST(request: Request) {
   if (raw.length > 512 * 1024) return new Response("payload too large", { status: 413 });
   try {
     const db = await getDb();
-    const result = await handleProviderWebhook(db, raw, request.headers.get("stripe-signature"));
+    const result = await handleBroadcastPaymentWebhook(db, raw, request.headers.get("stripe-signature"))
+      ?? await handleProviderWebhook(db, raw, request.headers.get("stripe-signature"));
     return new Response(result.body, { status: result.status, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("[webhook]", (error as Error).message);
