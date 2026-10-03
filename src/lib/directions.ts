@@ -106,14 +106,14 @@ const DIRECTION_DEFINITIONS: Direction[] = [
   {
     slug: "server-rentals",
     kind: "server_rental",
-    state: "dev",
+    state: "connect",
     title: { ru: "Аренда серверов", en: "Server rentals" },
     lead: { ru: "Выделенные игровые серверы: игра, регион, ресурсы, расписание, резервные копии и логи.", en: "Dedicated game servers: game, region, resources, schedule, backups and logs." },
     scope: {
       ru: ["Запуск и остановка по расписанию", "Резервные копии и журналы", "Доступ по ролям команды"],
       en: ["Scheduled start and stop", "Backups and logs", "Role-based team access"],
     },
-    now: { ru: "Серверная инфраструктура не подключена. Оставьте заявку с игрой, регионом и требованиями.", en: "Server infrastructure is not connected. Submit a request with the game, region and requirements." },
+    now: { ru: "Доступны регистрация и проверка узлов, расписание запуска, резервирование ресурсов, команды, роли команды и локальные копии. Для доступных конфигураций нужен подключённый и проверенный сервер оператора. Платная аренда не включена.", en: "Node review, scheduling, resource reservation, controls, team roles and local backups are available. Configurations require a connected and reviewed operator server. Paid rentals are disabled." },
   },
   {
     slug: "shop",

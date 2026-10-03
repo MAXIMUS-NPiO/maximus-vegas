@@ -2027,4 +2027,59 @@ export const migrations: Migration[] = [
       )`,
     ],
   },
+  {
+    id: 34,
+    name: "dedicated_game_server_nodes_leases_and_backups",
+    statements: [
+      `create table rental_nodes (
+        id uuid primary key default gen_random_uuid(), owner_id uuid not null references users(id),
+        name text not null, region text not null, address text not null,
+        cpu_millis int not null check(cpu_millis between 1000 and 256000), memory_mb int not null check(memory_mb between 512 and 1048576),
+        storage_mb int not null check(storage_mb between 1024 and 16777216), port_start int not null check(port_start between 1024 and 65000),
+        port_end int not null check(port_end between port_start and 65535),
+        status text not null default 'pending' check(status in ('pending','approved','suspended')),
+        enabled boolean not null default false, ready boolean not null default false, ready_templates text[] not null default '{}',
+        heartbeat_at timestamptz, key_hash text unique, key_epoch int not null default 0,
+        review_note text not null default '', reviewed_by uuid references users(id), reviewed_at timestamptz,
+        created_at timestamptz not null default now()
+      )`,
+      `create table rental_templates (
+        id uuid primary key default gen_random_uuid(), node_id uuid not null references rental_nodes(id),
+        name text not null, game text not null, local_key text not null, fingerprint text not null,
+        cpu_millis int not null check(cpu_millis between 250 and 128000), memory_mb int not null check(memory_mb between 256 and 524288),
+        disk_mb int not null check(disk_mb between 256 and 4194304), ports jsonb not null, evidence_url text not null,
+        status text not null default 'pending' check(status in ('pending','approved','suspended')),
+        review_note text not null default '', reviewed_by uuid references users(id), reviewed_at timestamptz,
+        created_at timestamptz not null default now(), unique(node_id,local_key)
+      )`,
+      `create table rental_leases (
+        id uuid primary key default gen_random_uuid(), node_id uuid not null references rental_nodes(id),
+        template_id uuid not null references rental_templates(id), user_id uuid not null references users(id),
+        revision int not null default 1, desired text not null default 'running' check(desired in ('running','stopped','released')),
+        observed text not null default 'pending' check(observed in ('pending','starting','running','stopped','error')),
+        cpu_millis int not null, memory_mb int not null, disk_mb int not null, ports jsonb not null,
+        created_at timestamptz not null default now(), starts_at timestamptz not null default now(), expires_at timestamptz not null check(expires_at>starts_at),
+        observed_at timestamptz, released_at timestamptz, note text not null default '', logs text not null default '',
+        last_command_at timestamptz
+      )`,
+      `create unique index rental_one_reservation on rental_leases(user_id) where released_at is null`,
+      `create index rental_node_reservations on rental_leases(node_id) where released_at is null`,
+      `create table rental_access (
+        lease_id uuid not null references rental_leases(id), user_id uuid not null references users(id),
+        role text not null check(role in ('viewer','operator')), created_at timestamptz not null default now(), primary key(lease_id,user_id)
+      )`,
+      `create index rental_access_user on rental_access(user_id)`,
+      `create table rental_jobs (
+        id uuid primary key default gen_random_uuid(), lease_id uuid not null references rental_leases(id), revision int not null,
+        kind text not null check(kind in ('backup','restore')), status text not null default 'pending' check(status in ('pending','running','succeeded','failed','cancelled')),
+        backup_id uuid, note text not null default '', created_at timestamptz not null default now(), finished_at timestamptz
+      )`,
+      `create unique index rental_one_job on rental_jobs(lease_id) where status in ('pending','running')`,
+      `create table rental_backups (
+        id uuid primary key references rental_jobs(id), lease_id uuid not null references rental_leases(id),
+        digest text not null, bytes bigint not null check(bytes>=0), created_at timestamptz not null default now(), deleted_at timestamptz
+      )`,
+      `alter table rental_jobs add constraint rental_job_backup_fk foreign key(backup_id) references rental_backups(id)`,
+    ],
+  },
 ];

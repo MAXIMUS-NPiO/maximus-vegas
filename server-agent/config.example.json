@@ -1,0 +1,25 @@
+{
+  "portal": "https://www.maximus.vegas",
+  "nodeId": "00000000-0000-0000-0000-000000000000",
+  "dataDir": "/srv/mv-games/agent",
+  "cpuMillis": 4000,
+  "memoryMb": 8192,
+  "storageMb": 32768,
+  "portStart": 27015,
+  "portEnd": 27030,
+  "templates": [
+    {
+      "localKey": "licensed-game-v1",
+      "name": "Replace with your licensed server build",
+      "game": "cs2",
+      "image": "registry.example.org/your-server@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "command": ["/game/server", "--data-dir", "/data"],
+      "cpuMillis": 2000,
+      "memoryMb": 4096,
+      "diskMb": 4096,
+      "ports": [{"name": "game", "container": 27015, "protocol": "udp"}],
+      "env": {},
+      "secretEnv": {}
+    }
+  ]
+}

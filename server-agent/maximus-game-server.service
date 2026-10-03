@@ -1,0 +1,23 @@
+# Install as a systemd user service for the dedicated, unprivileged operator account.
+[Unit]
+Description=MAXIMUS dedicated game-server agent
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/maximus-server/agent.env
+WorkingDirectory=%h/maximus-server-agent
+ExecStart=/usr/bin/python3 %h/maximus-server-agent/agent.py --config %h/.config/maximus-server/config.json
+ExecStopPost=/usr/bin/python3 %h/maximus-server-agent/agent.py --config %h/.config/maximus-server/config.json --stop-all
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillMode=mixed
+Delegate=yes
+UMask=0077
+
+[Install]
+WantedBy=default.target
