@@ -6,6 +6,7 @@ export type Game = {
   platforms: Platform[];
   /** Duel brackets (1v1 or team vs team) are supported by the release-1 tournament engine. */
   bracket: boolean;
+  scoring?: "racing";
   genre: { ru: string; en: string };
   /** Publisher/API facts that restrict automation. Only confirmed constraints are listed. */
   apiNote?: { ru: string; en: string };
@@ -25,7 +26,7 @@ export const GAMES: Game[] = [
   { slug: "smite2", name: "SMITE 2", teamSize: 5, platforms: ["pc", "console"], bracket: true, genre: { ru: "MOBA", en: "MOBA" } },
   { slug: "deadlock", name: "Deadlock", teamSize: 6, platforms: ["pc"], bracket: true, genre: { ru: "Командный шутер", en: "Team shooter" } },
   { slug: "tf2", name: "Team Fortress 2", teamSize: 6, platforms: ["pc"], bracket: true, genre: { ru: "Командный шутер", en: "Team shooter" } },
-  { slug: "trackmania", name: "Trackmania", teamSize: 1, platforms: ["pc", "console"], bracket: false, genre: { ru: "Гонки", en: "Racing" } },
+  { slug: "trackmania", name: "Trackmania", scoring: "racing", teamSize: 1, platforms: ["pc", "console"], bracket: false, genre: { ru: "Гонки", en: "Racing" } },
   { slug: "brawl-stars", name: "Brawl Stars", teamSize: 3, platforms: ["mobile"], bracket: true, genre: { ru: "Мобильный экшен", en: "Mobile action" } },
   { slug: "cs16", name: "Counter-Strike 1.6", teamSize: 5, platforms: ["pc"], bracket: true, legacy: true, genre: { ru: "Классический шутер", en: "Classic shooter" } },
   { slug: "css", name: "Counter-Strike: Source", teamSize: 5, platforms: ["pc"], bracket: true, legacy: true, genre: { ru: "Классический шутер", en: "Classic shooter" } },

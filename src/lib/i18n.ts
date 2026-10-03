@@ -232,6 +232,9 @@ const ru = {
     solo: "соло",
     squads: "отряды по {n}",
     formatBracket: "Турниры на выбывание доступны",
+    formatRacing: "Гоночные лобби: очки за места",
+    verificationRacing: "Судья вручную вносит места по записи или скриншоту. Для гоночного события используется таблица очков за места; остальные показатели общего FFA-формата должны оставаться нулевыми. Автоматический хронометраж и импорт времени круга не подключены. Участник может оспорить результат.",
+    matrixRacing: [["Результаты", "Места, внесённые судьёй, и очки по таблице события"], ["Хронометраж", "Автоматический учёт времени круга не подключён"], ["Доказательства", "Ссылка на запись или скриншот; спор рассматривает судья"], ["Лобби", "Создаётся вручную; автоматическая интеграция с игрой не подключена"]] as Array<[string, string]>,
     formatFfa: "Турниры FFA: лобби с очками за места и убийства",
     verificationTitle: "Как проверяется результат",
     verificationManual:
@@ -735,22 +738,7 @@ const ru = {
     lead:
       "Организаторы, клубы, школы, сообщества и бренды получают собственное пространство: сотрудники с ролями, турниры, проверка результатов, журнал решений и отчёт.",
     now: "Работает сейчас",
-    nowItems: [
-      "Пространство организатора с ролями владельца, администратора и судьи",
-      "Турниры single и double elimination с посевом, check-in, листом ожидания и проходами без игры",
-      "Круговая и швейцарская системы с тай-брейками Бухгольца, медианного Бухгольца и Зоннеборна-Бергера",
-      "Серии и сезоны: накопительные очки, квалификация, дивизионы с повышением и понижением",
-      "Отчёт участника, подтверждение соперника, споры и решения судьи",
-      "Исправления с версиями и журнал с hash-цепочкой",
-      "Отчёт по событию: заявки, check-in, матчи, споры, неявки",
-    ],
     next: "Требует подключения или в разработке",
-    nextItems: [
-      "Собственный домен и оформление (white-label)",
-      "API, подписанные webhooks и встраиваемые виджеты сетки и регистрации",
-      "Кабинет спонсора с методикой атрибуции",
-      "Форматы: группы с плей-офф, лиги, gauntlet, FFA и многоэтапные турниры",
-    ],
     scenarios: [
       ["Организаторы и федерации", "Серии соревнований с прозрачным судейством и историей решений."],
       ["Клубы и площадки", "Турниры для своей аудитории и связь онлайн-результатов с офлайн-событиями."],
@@ -1084,6 +1072,9 @@ const en: BaseDict = {
     solo: "solo",
     squads: "squads of {n}",
     formatBracket: "Knockout tournaments available",
+    formatRacing: "Racing lobbies: placement points",
+    verificationRacing: "A referee manually enters placements from a recording or screenshot. Racing events use a placement-points table; other fields in the shared FFA format must remain zero. Automatic timing and lap-time import are not connected. An entrant may dispute the result.",
+    matrixRacing: [["Results", "Referee-entered placements and the event’s placement-points table"], ["Timing", "Automatic lap timing is not connected"], ["Evidence", "A recording or screenshot link; disputes are reviewed by a referee"], ["Lobby", "Created manually; automatic game integration is not connected"]],
     formatFfa: "FFA tournaments: lobbies with placement and kill points",
     verificationTitle: "How results are verified",
     verificationManual:
@@ -1587,22 +1578,7 @@ const en: BaseDict = {
     lead:
       "Organisers, clubs, schools, communities and brands get their own space: staff with roles, tournaments, result verification, a decision log and reporting.",
     now: "Works today",
-    nowItems: [
-      "Organiser space with owner, administrator and referee roles",
-      "Single- and double-elimination tournaments with seeding, check-in, waitlist and byes",
-      "Round robin and Swiss with Buchholz, Median Buchholz and Sonneborn-Berger tie-breaks",
-      "Circuits and seasons: cumulative points, qualification, divisions with promotion and relegation",
-      "Participant reports, opponent confirmation, disputes and referee decisions",
-      "Versioned corrections and a hash-chained log",
-      "Event report: entries, check-ins, matches, disputes, no-shows",
-    ],
     next: "Requires connection or in development",
-    nextItems: [
-      "Own domain and branding (white-label)",
-      "API, signed webhooks and embeddable bracket and registration widgets",
-      "Sponsor workspace with an attribution methodology",
-      "Formats: groups with playoffs, leagues, gauntlet, FFA and multi-stage events",
-    ],
     scenarios: [
       ["Organisers and federations", "Competition series with transparent refereeing and a decision history."],
       ["Clubs and venues", "Tournaments for your audience and a link between online results and on-site events."],

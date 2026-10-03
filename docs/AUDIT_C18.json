@@ -1,0 +1,252 @@
+{
+  "title": "MAXIMUS VEGAS audit corrections C-18",
+  "status": "VERIFIED LOCALLY; PUBLICATION AUTHORIZED BUT BLOCKED BY GITHUB WRITE ACCESS",
+  "version": "1.0",
+  "date": "2026-10-03",
+  "base_commit": "6657387",
+  "branch": "core/C-18-audit-corrections",
+  "requirements": {
+    "VQA-007": "Final placed solo/team participants included without matches; public-profile restrictions retained; all 16 games selectable.",
+    "VQA-006": "Racing-specific catalogue and details in RU/EN, no kill metrics or automated timing claims. Shared FFA non-placement fields must remain zero for racing.",
+    "VQA-005": "Partner lists and implemented home direction states reuse component registry; unfinished media, venues and sponsor extensions retained separately.",
+    "VQA-004": "Language switch preserves query parameters; verified RU/EN round trips for search, tournament filters and rankings."
+  },
+  "verification": {
+    "typecheck": "PASS",
+    "tests": {
+      "total": 247,
+      "passed": 238,
+      "failed": 0,
+      "skipped_postgresql_only": 9
+    },
+    "build": "PASS",
+    "browser": {
+      "pages": 24,
+      "errors": [],
+      "results": [
+        {
+          "lang": "ru",
+          "path": "",
+          "width": 390,
+          "status": 200
+        },
+        {
+          "lang": "ru",
+          "path": "/games/trackmania",
+          "width": 390,
+          "status": 200
+        },
+        {
+          "lang": "ru",
+          "path": "/games/pubg",
+          "width": 390,
+          "status": 200
+        },
+        {
+          "lang": "ru",
+          "path": "/rankings?game=trackmania",
+          "width": 390,
+          "status": 200
+        },
+        {
+          "lang": "ru",
+          "path": "/partners",
+          "width": 390,
+          "status": 200
+        },
+        {
+          "lang": "ru",
+          "path": "/status",
+          "width": 390,
+          "status": 200
+        },
+        {
+          "lang": "en",
+          "path": "",
+          "width": 390,
+          "status": 200
+        },
+        {
+          "lang": "en",
+          "path": "/games/trackmania",
+          "width": 390,
+          "status": 200
+        },
+        {
+          "lang": "en",
+          "path": "/games/pubg",
+          "width": 390,
+          "status": 200
+        },
+        {
+          "lang": "en",
+          "path": "/rankings?game=trackmania",
+          "width": 390,
+          "status": 200
+        },
+        {
+          "lang": "en",
+          "path": "/partners",
+          "width": 390,
+          "status": 200
+        },
+        {
+          "lang": "en",
+          "path": "/status",
+          "width": 390,
+          "status": 200
+        },
+        {
+          "lang": "ru",
+          "path": "",
+          "width": 1440,
+          "status": 200
+        },
+        {
+          "lang": "ru",
+          "path": "/games/trackmania",
+          "width": 1440,
+          "status": 200
+        },
+        {
+          "lang": "ru",
+          "path": "/games/pubg",
+          "width": 1440,
+          "status": 200
+        },
+        {
+          "lang": "ru",
+          "path": "/rankings?game=trackmania",
+          "width": 1440,
+          "status": 200
+        },
+        {
+          "lang": "ru",
+          "path": "/partners",
+          "width": 1440,
+          "status": 200
+        },
+        {
+          "lang": "ru",
+          "path": "/status",
+          "width": 1440,
+          "status": 200
+        },
+        {
+          "lang": "en",
+          "path": "",
+          "width": 1440,
+          "status": 200
+        },
+        {
+          "lang": "en",
+          "path": "/games/trackmania",
+          "width": 1440,
+          "status": 200
+        },
+        {
+          "lang": "en",
+          "path": "/games/pubg",
+          "width": 1440,
+          "status": 200
+        },
+        {
+          "lang": "en",
+          "path": "/rankings?game=trackmania",
+          "width": 1440,
+          "status": 200
+        },
+        {
+          "lang": "en",
+          "path": "/partners",
+          "width": 1440,
+          "status": 200
+        },
+        {
+          "lang": "en",
+          "path": "/status",
+          "width": 1440,
+          "status": 200
+        }
+      ]
+    },
+    "diff_check": "PASS"
+  },
+  "limits": [
+    "Independent cross-provider review unavailable under existing autonomous-call cost lock.",
+    "No production database operations or full signed-in browser journey in this change.",
+    "No mail provider or publisher connection changed.",
+    "Site remains unchanged; publication authorized but blocked by repository write access."
+  ],
+  "difc_mipa": {
+    "legal_entities": "No changes to entity roles, legal texts or jurisdiction.",
+    "mipa": "Internal source record only; registration number NOT PROVIDED."
+  },
+  "risk_log": [
+    {
+      "change": "Ranking coverage",
+      "risk": "Zero-match placed entrants appear with zero wins/draws/losses. Titles remain tied to completed/archived final first place.",
+      "control": "PGlite regression with solo/team placements, mixed matches, privacy, corrections and unfinished events."
+    },
+    {
+      "change": "Capability labels",
+      "risk": "Implemented components do not mean all roadmap extensions or external integrations are working.",
+      "control": "Separate registry rows and preserved boundaries."
+    }
+  ],
+  "source_sha256": {
+    "docs/COORDINATION.md": "4e564f48b9a57a006af1ad596a448c642c6a60ce22b6339f9a1460d68fa59ff5",
+    "docs/IP_RECORD.md": "a4c2e492cfe85d9695857cb74f70d2852a053e9782ff4ccdcd44621f8bcec844",
+    "docs/MODULES.md": "e91ec692892f1a328c866d800c678c3ada82a30449366a161ae98441375099cf",
+    "src/app/[lang]/games/[slug]/page.tsx": "5a5c4ae3c0b1d38e54ac5d884b06db66210b307fb424e2a07697dc74e86e031a",
+    "src/app/[lang]/games/page.tsx": "97262dbb98b259692258b9176466f2fe34e7209fbc253023f453ff6d3e7be80a",
+    "src/app/[lang]/partners/page.tsx": "4ebb6a8810a431fb090bf948cc73e34120f2053b5c871ac032a419a9946f650a",
+    "src/app/[lang]/rankings/page.tsx": "6a2ca232032f2bdbf89f5dbc8823923664d13e5c921fb1d90d9e988396f28b6b",
+    "src/lib/directions.ts": "bcda2991b0bfd527401b8163e73c528c52a993df28bf0aff4186199de558cb98",
+    "src/lib/games.ts": "0ccb5eb83440e1e77f41a3b090fc649496f8da739a2147f4e099f7019186f86b",
+    "src/lib/i18n.ts": "e689de7ce2839430fb77e9237076df226764490ff3fd56c0a02433f54778228a",
+    "src/server/queries.ts": "62fe335acc05ba3298877e8721921d14843ca70f77213738332d7061cb2b4b24",
+    "tests/rankings-audit.test.ts": "799756a099cd42fcef1d9289a5661b2c3f9d0ca57cac5269377a9f29c9167836",
+    "scripts/audit-c18-browser.mjs": "2ff17e29b82f7f453a927466fa3c2c188b0a56fd832a8c616d55c158495eab10",
+    "src/components/header.tsx": "0b3f68a7573dd5da08fd01bf7ccfbae1cf72d12d0be9c781252c255df085664a",
+    "scripts/audit-c18-language.mjs": "1ab8bb839f9fdf8186c27a6c7f2c191f2c5cca68219878add0f2a985fbe7aa03",
+    "scripts/audit-public-controls.mjs": "9402455cf4fcc283e4dfb12f81e038b52674bf4e8a8261dd20cabef7a7f1d47a"
+  },
+  "followup_20261003": {
+    "authorization": "Owner requested publication and site checks; no additional permission for the same publication is needed.",
+    "publication_blockers": [
+      "HTTPS git has no authenticated credential on this device.",
+      "Connected repository integration returned 403 Resource not accessible by integration for create-tree.",
+      "Existing SSH key identifies a different repository and was not used to write this repository."
+    ],
+    "production_audit": {
+      "time": "2026-10-03T03:58:03.487Z",
+      "routes": 136,
+      "http_failures": 0,
+      "page_errors": 0,
+      "mobile_overflow": 0,
+      "placeholder_hash_links": 0,
+      "pending_discovered_routes": 0
+    },
+    "public_controls": {
+      "passed": 12,
+      "results": [
+        "ru: mobile menu opens/closes",
+        "ru: sound preference persists",
+        "ru: all game selectors update match target",
+        "ru: reaction button responds",
+        "ru: search form submits",
+        "ru: tournament filter submits",
+        "en: mobile menu opens/closes",
+        "en: sound preference persists",
+        "en: all game selectors update match target",
+        "en: reaction button responds",
+        "en: search form submits",
+        "en: tournament filter submits"
+      ]
+    },
+    "local_authenticated_smoke": "PASS: scripts/browser-smoke.mjs on local embedded database, registration through account deletion.",
+    "language_switch": "PASS: scripts/audit-c18-language.mjs; typecheck and production build passed after header correction.",
+    "limits": "Public route checks include sign-in redirects, not access to private cabinets. Public forms creating applications or sending messages were not submitted. No actual payments, email delivery, publisher APIs or full staff-role matrix verified."
+  }
+}

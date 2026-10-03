@@ -1,12 +1,17 @@
 "use client";
 import Link from "next/link";
 import { SoundToggle } from "./arena-sound";
-import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { Bell, Brand, Chevron, Search } from "./icons";
 import type { Dict, Locale } from "@/lib/i18n";
 
 type NavUser = { username: string; displayName: string; admin: boolean; unread: number } | null;
+
+function LanguageSwitch({ alternate, lang, label }: { alternate: string; lang: Locale; label: string }) {
+  const query = useSearchParams().toString();
+  return <Link className="lang-switch" href={alternate + (query ? `?${query}` : "")} hrefLang={lang === "ru" ? "en" : "ru"} aria-label={label}>{lang === "ru" ? "EN" : "RU"}</Link>;
+}
 
 export function Header({ lang, nav, extra, common, user }: { lang: Locale; nav: Dict["nav"]; extra: Dict["x"]["nav"]; common: Dict["common"]; user: NavUser }) {
   const [open, setOpen] = useState(false);
@@ -85,9 +90,9 @@ export function Header({ lang, nav, extra, common, user }: { lang: Locale; nav: 
           <Link href={`/${lang}/search`} className="icon-btn hide-mobile" aria-label={common.search}>
             <Search />
           </Link>
-          <Link className="lang-switch" href={alternate} hrefLang={lang === "ru" ? "en" : "ru"} aria-label={nav.language}>
-            {lang === "ru" ? "EN" : "RU"}
-          </Link>
+          <Suspense fallback={<Link className="lang-switch" href={alternate} hrefLang={lang === "ru" ? "en" : "ru"} aria-label={nav.language}>{lang === "ru" ? "EN" : "RU"}</Link>}>
+            <LanguageSwitch alternate={alternate} lang={lang} label={nav.language} />
+          </Suspense>
           {user ? (
             <>
               <Link href={`/${lang}/notifications`} className="icon-btn" aria-label={`${nav.notifications}${user.unread ? ` (${user.unread})` : ""}`}>

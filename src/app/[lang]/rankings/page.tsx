@@ -59,7 +59,7 @@ export default async function Rankings({ params, searchParams }: { params: Promi
     <div className="container page">
       <PageHead title={d.rankings.title} lead={d.rankings.lead} />
       <nav className="chips" aria-label={d.tournaments.game}>
-        {GAMES.filter((g) => g.bracket).map((g) => (
+        {GAMES.map((g) => (
           <Link key={g.slug} href={`/${lang}/rankings?game=${g.slug}`} className={g.slug === game ? "chip is-active" : "chip"}>
             {g.name}
           </Link>

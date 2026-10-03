@@ -32,12 +32,12 @@ export default async function GamePage({ params }: { params: Promise<{ lang: str
   return (
     <div className="container page">
       <PageHead eyebrow={`${game.genre[lang]} · ${game.platforms.map((p) => d.games.platforms[p]).join(" · ")}`} title={game.name}>
-        <span className="badge badge-ok">{game.bracket ? d.games.formatBracket : d.games.formatFfa}</span>
+        <span className="badge badge-ok">{game.scoring === "racing" ? d.games.formatRacing : game.bracket ? d.games.formatBracket : d.games.formatFfa}</span>
       </PageHead>
       <div className="split">
         <section>
           <h2 className="h3">{d.games.verificationTitle}</h2>
-          <p>{game.bracket ? d.games.verificationManual : d.games.verificationFfa}</p>
+          <p>{game.scoring === "racing" ? d.games.verificationRacing : game.bracket ? d.games.verificationManual : d.games.verificationFfa}</p>
           {game.apiNote ? (
             <div className="notice">
               <strong>{d.games.apiTitle}</strong>
@@ -48,7 +48,7 @@ export default async function GamePage({ params }: { params: Promise<{ lang: str
         <section>
           <h2 className="h3">{d.games.matrixTitle}</h2>
           <dl className="kv">
-            {(game.bracket ? d.games.matrix : d.games.matrixFfa).map(([k, v]) => (
+            {(game.scoring === "racing" ? d.games.matrixRacing : game.bracket ? d.games.matrix : d.games.matrixFfa).map(([k, v]) => (
               <div key={k}>
                 <dt>{k}</dt>
                 <dd>{v}</dd>
