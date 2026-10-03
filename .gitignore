@@ -11,3 +11,5 @@ artifacts/
 .vercel
 
 .data/
+
+__pycache__/

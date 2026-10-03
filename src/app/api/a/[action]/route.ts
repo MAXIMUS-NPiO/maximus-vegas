@@ -3,6 +3,7 @@ import * as missions from "@/server/missions.ts";
 import * as social from "@/server/social.ts";
 import * as clubhouse from "@/server/clubhouse.ts";
 import * as p2p from "@/server/p2p.ts";
+import * as rentals from "@/server/rentals.ts";
 import * as statistics from "@/server/statistics.ts";
 import { verifyAndRecordAnchor } from "@/server/stats-anchor.ts";
 import * as arbitration from "@/server/arbitration.ts";
@@ -88,6 +89,7 @@ const signupDraft = (c: Ctx) => ({ email: c.form.email ?? "", username: c.form.u
 /** What an account under a suspension sanction may still do: read, appeal, manage its own access and data. */
 const RESTRICTED_OK = new Set(["arbitration.open", "arbitration.evidence", "arbitration.appeal", "marketplace.delete", "auth.signout", "conduct.appeal", "notifications.read", "account.session", "account.password", "account.delete", "account.accept_terms"]);
 for (const action of ["social.withdraw", "social.block", "social.close", "social.report", "stats.unlink", "stats.share", "reward.cancel", "club.rsvp_cancel", "club.booking_status"]) RESTRICTED_OK.add(action);
+for (const action of ["rental.stop", "rental.release"]) RESTRICTED_OK.add(action);
 const conductAdmin = (c: Ctx) => `/${c.lang}/admin?tab=conduct`;
 const venueForm = (c: Ctx) => ({
   name: c.form.name,
@@ -680,6 +682,19 @@ const handlers: Record<string, Handler> = {
   "stats.share": async c => { await statistics.shareSnapshot(c.db, u(c), idOf(c.form.snapshot), c.form.shared === "true"); return { ok: "saved" }; },
   "stats.anchor": async c => { await verifyAndRecordAnchor(c.db, u(c), idOf(c.form.snapshot), c.form.transaction); return { ok: "saved" }; },
   "p2p.register": async c => { const id = await p2p.registerHost(c.db, u(c), c.form, c.multi.games ?? []); return `/${c.lang}/cloud-gaming/host/${id}`; },
+  "rental.node": async c => { await mfa.requireStaffMfa(c.db,u(c)); const id=await rentals.registerRentalNode(c.db,u(c),c.form); return `/${c.lang}/server-rentals/nodes/${id}`; },
+  "rental.node_review": async c => { await rentals.reviewRentalNode(c.db,await staff(c,"system"),idOf(c.form.node),c.form.decision,c.form.note);return {ok:"saved"}; },
+  "rental.enabled": async c => { await mfa.requireStaffMfa(c.db,u(c));await rentals.setRentalNodeEnabled(c.db,u(c),idOf(c.form.node),c.form.enabled==="true");return {ok:"saved"}; },
+  "rental.template": async c => { await mfa.requireStaffMfa(c.db,u(c));await rentals.createRentalTemplate(c.db,u(c),idOf(c.form.node),c.form);return {ok:"saved"}; },
+  "rental.template_review": async c => { await rentals.reviewRentalTemplate(c.db,await staff(c,"system"),idOf(c.form.template),c.form.decision,c.form.note);return {ok:"saved"}; },
+  "rental.allocate": async c => { const id=await rentals.allocateRental(c.db,u(c),idOf(c.form.template),c.form.minutes,c.form.consent==="on",c.form.delayMinutes??0);return `/${c.lang}/server-rentals/sessions/${id}`; },
+  "rental.start": async c => { await rentals.rentalCommand(c.db,u(c),idOf(c.form.lease),"start");return {ok:"saved"}; },
+  "rental.stop": async c => { await rentals.rentalCommand(c.db,u(c),idOf(c.form.lease),"stop");return {ok:"saved"}; },
+  "rental.restart": async c => { await rentals.rentalCommand(c.db,u(c),idOf(c.form.lease),"restart");return {ok:"saved"}; },
+  "rental.release": async c => { await rentals.rentalCommand(c.db,u(c),idOf(c.form.lease),"release");return {ok:"saved"}; },
+  "rental.access": async c => { await rentals.setRentalAccess(c.db,u(c),idOf(c.form.lease),c.form.username,c.form.role);return {ok:"saved"}; },
+  "rental.backup": async c => { await rentals.rentalBackupJob(c.db,u(c),idOf(c.form.lease),"backup");return {ok:"saved"}; },
+  "rental.restore": async c => { await rentals.rentalBackupJob(c.db,u(c),idOf(c.form.lease),"restore",idOf(c.form.backup));return {ok:"saved"}; },
   "p2p.allocate": async c => { const id = await p2p.allocateHost(c.db, u(c), c.form.game, c.form.region, c.form.consent === "on"); return `/${c.lang}/cloud-gaming/session/${id}`; },
   "p2p.review": async c => { await p2p.reviewHost(c.db, await staff(c, "system"), idOf(c.form.host), c.form.decision, c.form.note); return { ok: "saved" }; },
   "club.hours": async c => {

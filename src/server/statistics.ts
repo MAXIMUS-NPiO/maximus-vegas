@@ -123,15 +123,28 @@ export async function createSnapshot(db: Database, user: SessionUser, fromInput?
   if (!Number.isFinite(from.getTime()) || !Number.isFinite(until.getTime()) || until <= from) fail("invalid_date");
   for (let attempt = 0; attempt < 3; attempt++) {
     try { return await db.tx(async q => {
-    await q.query("set transaction isolation level serializable");
+    // Read every source in one statement for a consistent MVCC snapshot. Keep READ COMMITTED
+    // so the later audit append sees commits made while it waited for the audit lock.
+    await q.query("set transaction isolation level read committed");
     await activeAccount(q, user); await q.query("select id from users where id=$1 for update", [user.id]);
     const [n] = await q.query<{ n: number }>("select count(*)::int as n from stats_snapshots where user_id=$1 and created_at>now()-interval '1 day'", [user.id]); if (n.n >= 5) fail("request_limit");
-    const source = await q.query("select o.id,o.source_id,s.name as source,o.game,o.match_ref,o.played_at,o.metrics,o.signed_body,o.signature,o.public_key,o.review_note from stats_observations o join stats_sources s on s.id=o.source_id where o.user_id=$1 and o.status='confirmed' and o.played_at >= $2 and o.played_at < $3 order by o.id limit 5001", [user.id, from, until]);
-    const xp = await q.query("select id,amount,reason,game,ref,created_at from xp_events where user_id=$1 and created_at >= $2 and created_at < $3 order by id limit 5001", [user.id, from, until]);
-    const coins = await q.query("select id,delta,reason,ref,balance_after,created_at from coin_ledger where user_id=$1 and created_at >= $2 and created_at < $3 order by id limit 5001", [user.id, from, until]);
-    const payments = await q.query(`select i.id,i.number,i.status,i.amount_minor::text,i.currency,i.exponent,i.refunded_minor::text,i.paid_at,
-      (select count(*)::int from payment_attempts a where a.invoice_id=i.id and a.mode='live' and a.status='succeeded') as successful_live_provider_attempts
-      from invoices i where i.user_id=$1 and i.paid_at >= $2 and i.paid_at < $3 order by i.id limit 5001`, [user.id, from, until]);
+    const [snapshot] = await q.query<{ source_records: Record<string, unknown>[]; xp_records: Record<string, unknown>[]; coin_records: Record<string, unknown>[]; payment_records: Record<string, unknown>[] }>(`select
+      coalesce((select jsonb_agg(r order by r.id) from (
+        select o.id,o.source_id,s.name as source,o.game,o.match_ref,o.played_at,o.metrics,o.signed_body,o.signature,o.public_key,o.review_note
+        from stats_observations o join stats_sources s on s.id=o.source_id where o.user_id=$1 and o.status='confirmed' and o.played_at >= $2 and o.played_at < $3 order by o.id limit 5001
+      ) r),'[]'::jsonb) as source_records,
+      coalesce((select jsonb_agg(r order by r.id) from (
+        select id,amount,reason,game,ref,created_at from xp_events where user_id=$1 and created_at >= $2 and created_at < $3 order by id limit 5001
+      ) r),'[]'::jsonb) as xp_records,
+      coalesce((select jsonb_agg(r order by r.id) from (
+        select id,delta,reason,ref,balance_after,created_at from coin_ledger where user_id=$1 and created_at >= $2 and created_at < $3 order by id limit 5001
+      ) r),'[]'::jsonb) as coin_records,
+      coalesce((select jsonb_agg(r order by r.id) from (
+        select i.id,i.number,i.status,i.amount_minor::text,i.currency,i.exponent,i.refunded_minor::text,i.paid_at,
+          (select count(*)::int from payment_attempts a where a.invoice_id=i.id and a.mode='live' and a.status='succeeded') as successful_live_provider_attempts
+        from invoices i where i.user_id=$1 and i.paid_at >= $2 and i.paid_at < $3 order by i.id limit 5001
+      ) r),'[]'::jsonb) as payment_records`, [user.id, from, until]);
+    const { source_records: source, xp_records: xp, coin_records: coins, payment_records: payments } = snapshot;
     if ([source, xp, coins, payments].some(rows => rows.length > 5000)) fail("too_many_entries");
     const encoded = JSON.stringify([{ type: "scope", from, until, coinsHaveMonetaryValue: false }, ...source.map(r => ({ type: "source_statistic", ...r })), ...xp.map(r => ({ type: "confirmed_activity", ...r })), ...coins.map(r => ({ type: "internal_coin_ledger", ...r })), ...payments.map(r => ({ type: "invoice_record", ...r }))]);
     if (Buffer.byteLength(encoded) > 1500_000) fail("too_many_entries");

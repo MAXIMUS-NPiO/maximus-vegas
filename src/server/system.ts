@@ -16,7 +16,7 @@ import { requireStepUp } from "./mfa.ts";
 import { fail } from "./errors.ts";
 import * as v from "./validate.ts";
 
-export const FEATURES = ["quick_match", "challenges", "finder", "scouting", "clans", "transfers", "venues", "integrations", "academy", "connections", "cloud_gaming", "recurring_pass"] as const;
+export const FEATURES = ["quick_match", "challenges", "finder", "scouting", "clans", "transfers", "venues", "integrations", "academy", "connections", "cloud_gaming", "recurring_pass", "server_hosting"] as const;
 export type Feature = (typeof FEATURES)[number];
 export const isFeature = (value: unknown): value is Feature => typeof value === "string" && (FEATURES as readonly string[]).includes(value);
 
@@ -34,12 +34,13 @@ const FEATURE_ACTIONS: Record<Feature, readonly string[]> = {
   connections: ["social.profile", "social.like"],
   cloud_gaming: ["p2p.register", "p2p.allocate"],
   recurring_pass: ["reward.create", "reward.reserve"],
+  server_hosting: ["rental.node", "rental.template", "rental.allocate", "rental.start", "rental.restart", "rental.backup", "rental.restore"],
 };
 
 export const featureOf = (action: string): Feature | null => FEATURES.find((f) => FEATURE_ACTIONS[f].includes(action)) ?? null;
 
 /** Open to everyone during maintenance: staff must be able to sign in and confirm their second factor. */
-const MAINTENANCE_OK = new Set(["auth.signin", "auth.signout", "mfa.verify"]);
+const MAINTENANCE_OK = new Set(["auth.signin", "auth.signout", "mfa.verify", "rental.stop", "rental.release"]);
 
 type Flag = {
   key: string;

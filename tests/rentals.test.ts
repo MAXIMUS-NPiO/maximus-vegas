@@ -1,0 +1,141 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { openDatabase, type Database } from "../src/server/db.ts";
+import { signUp, sessionUser, exportAccount, deleteAccount, type SessionUser } from "../src/server/auth.ts";
+import { DomainError } from "../src/server/errors.ts";
+import { verifyAuditChain } from "../src/server/audit.ts";
+import { registerRentalNode, reviewRentalNode, setRentalNodeEnabled, rotateRentalKey, createRentalTemplate, reviewRentalTemplate, allocateRental, rentalCommand, rentalBackupJob, synchronizeRentalNode, rentalOverview, rentalLeaseDetail, rentalNodeDetail, rentalPorts, setRentalAccess } from "../src/server/rentals.ts";
+let db:Database,seq=0;
+const password="isolated server rental password", fingerprint="a".repeat(64), ports=[{name:"game",container:27015,protocol:"udp"}];
+const reject=(p:Promise<unknown>,code:string)=>assert.rejects(p,(e:unknown)=>e instanceof DomainError&&e.code===code);
+async function user(roles:SessionUser["roles"]=[]){const name=`rental${++seq}`;const s=await signUp(db,{username:name,email:`${name}@example.com`,displayName:name,password,adult:"on",terms:"on"});return {...(await sessionUser(db,s.token))!,roles};}
+async function fixture(capacity=1){
+  const owner=await user(),staff=await user(["admin"]),player=await user(),other=await user();
+  const node=await registerRentalNode(db,owner,{name:`Node ${seq}`,region:`Region ${seq}`,address:"games.example.org",cpuMillis:1000*capacity,memoryMb:1024*capacity,storageMb:5120*capacity,portStart:27015,portEnd:27014+capacity,consent:true});
+  await reviewRentalNode(db,staff,node,"approved","Capacity and control checked in isolated fixture");
+  const template=await createRentalTemplate(db,owner,node,{name:"Approved game",game:"cs2",localKey:"test-game",fingerprint,cpuMillis:1000,memoryMb:512,diskMb:1024,ports,evidence:"https://example.org/rights"});
+  await reviewRentalTemplate(db,staff,template,"approved","Pinned manifest and rights checked in fixture");
+  const key=(await rotateRentalKey(db,owner,node))!;
+  await setRentalNodeEnabled(db,owner,node,true);
+  const sync=(reports:unknown[]=[],extra:Record<string,unknown>={})=>synchronizeRentalNode(db,key,{ready:true,templates:[fingerprint],reports,...extra});
+  await sync();return {owner,staff,player,other,node,template,key,sync};
+}
+test.before(async()=>{db=await openDatabase({embedded:true,dataDir:"memory://"});});
+test.after(async()=>{assert.equal((await verifyAuditChain(db)).valid,true);await db.close();});
+test("Rental registration requires review, separate reviewer, bounded ports and consent",async()=>{
+  const f=await fixture();
+  await reject(reviewRentalNode(db,{...f.owner,roles:["admin"]},f.node,"approved","Attempted self approval"),"cannot_modify_self");
+  await reject(reviewRentalTemplate(db,{...f.owner,roles:["admin"]},f.template,"approved","Attempted self approval"),"cannot_modify_self");
+  await reject(allocateRental(db,f.player,f.template,60,false),"consent_required");
+  await reject(allocateRental(db,f.owner,f.template,60,true),"offer_unavailable");
+  assert.throws(()=>rentalPorts([{name:"bad",container:22,protocol:"tcp"}]));
+  assert.throws(()=>rentalPorts([ports[0],ports[0]]));
+  await reject(createRentalTemplate(db,f.owner,f.node,{name:"Traversal",game:"cs2",localKey:"../bad",fingerprint,cpuMillis:1000,memoryMb:512,diskMb:1024,ports,evidence:"https://example.org"}),"invalid_input");
+  await reviewRentalTemplate(db,f.staff,f.template,"suspended","Fixture deliberately pauses this template");
+  await reject(allocateRental(db,f.player,f.template,60,true),"offer_unavailable");
+});
+test("Rental reservations hold capacity and ports until matching cleanup acknowledgement",async()=>{
+  const f=await fixture(),id=await allocateRental(db,f.player,f.template,60,true);
+  assert.equal((await rentalOverview(db)).offers.some(t=>t.id===f.template),false);
+  await reject(allocateRental(db,f.other,f.template,60,true),"offer_unavailable");
+  await reject(allocateRental(db,f.player,f.template,60,true),"request_exists");
+  let p=await f.sync();assert.equal(p.leases[0].ports[0].host,27015);
+  await f.sync([{id,revision:1,status:"running",logs:"password=do-not-persist Bearer hidden"}]);
+  assert.match((await rentalLeaseDetail(db,f.player,id)).lease.logs,/redacted/);
+  await rentalCommand(db,f.player,id,"release");
+  await f.sync([{id,revision:1,status:"stopped",cleaned:true}]);
+  await reject(allocateRental(db,f.other,f.template,60,true),"offer_unavailable");
+  await f.sync([{id,revision:2,status:"stopped"}]);
+  await reject(allocateRental(db,f.other,f.template,60,true),"offer_unavailable");
+  p=await f.sync([{id,revision:2,status:"stopped",cleaned:true,logs:"should be erased"}]);assert.equal(p.leases.length,0);
+  const detail=await rentalLeaseDetail(db,f.player,id);assert.ok(detail.lease.released_at);assert.equal(detail.lease.logs,"");
+  assert.ok(await allocateRental(db,f.other,f.template,60,true));
+});
+test("Scheduled rentals cannot report running early; expiry requires cleanup",async()=>{
+  const f=await fixture(),id=await allocateRental(db,f.player,f.template,30,true,60);
+  let p=await f.sync();assert.equal(new Date(p.leases[0].expiresAt).getTime()-new Date(p.leases[0].startsAt).getTime(),1800000);
+  await f.sync([{id,revision:1,status:"running"}]);assert.equal((await rentalLeaseDetail(db,f.player,id)).lease.observed,"pending");
+  await db.query("update rental_leases set starts_at=now()-interval '2 hours',expires_at=now()-interval '1 hour' where id=$1",[id]);
+  p=await f.sync();assert.equal(p.leases[0].desired,"released");assert.equal(p.leases[0].revision,2);
+  await reject(rentalCommand(db,f.player,id,"start"),"request_state");
+  await reject(allocateRental(db,f.other,f.template,30,true),"offer_unavailable");
+  await f.sync([{id,revision:2,status:"stopped",cleaned:true}]);assert.ok((await rentalLeaseDetail(db,f.player,id)).lease.released_at);
+});
+test("Team roles limit controls, owner-only sharing and release; revocation applies immediately",async()=>{
+  const f=await fixture(),id=await allocateRental(db,f.player,f.template,60,true);
+  await reject(rentalLeaseDetail(db,f.other,id),"not_found");
+  await reject(rentalNodeDetail(db,f.player,f.node),"not_found");
+  await setRentalAccess(db,f.player,id,f.other.username,"viewer");
+  assert.equal((await rentalLeaseDetail(db,f.other,id)).role,"viewer");
+  await reject(rentalCommand(db,f.other,id,"stop"),"forbidden");
+  await setRentalAccess(db,f.player,id,f.other.username,"operator");
+  await rentalCommand(db,f.other,id,"stop");
+  await reject(rentalCommand(db,f.other,id,"release"),"forbidden");
+  await reject(setRentalAccess(db,f.other,id,f.staff.username,"operator"),"forbidden");
+  await setRentalAccess(db,f.player,id,f.other.username,"remove");
+  await reject(rentalLeaseDetail(db,f.other,id),"not_found");
+  await reject(rentalCommand(db,f.other,id,"start"),"not_found");
+});
+test("Backup creation and restore require a confirmed stop; reports are idempotent and lease-scoped",async()=>{
+  const f=await fixture(2),id=await allocateRental(db,f.player,f.template,60,true),other=await allocateRental(db,f.other,f.template,60,true);
+  await reject(rentalBackupJob(db,f.player,id,"backup"),"request_state");
+  await rentalCommand(db,f.player,id,"stop");
+  await reject(rentalBackupJob(db,f.player,id,"backup"),"request_state");
+  await f.sync([{id,revision:2,status:"stopped"}]);
+  const backup=await rentalBackupJob(db,f.player,id,"backup");
+  await reject(rentalCommand(db,f.player,id,"start"),"request_state");
+  await reject(rentalBackupJob(db,f.player,id,"backup"),"request_exists");
+  assert.equal((await f.sync()).jobs[0].id,backup);
+  await reject(f.sync([{id,revision:2,status:"stopped",job:{id:backup,status:"succeeded",digest:fingerprint,bytes:2**32}}]),"invalid_input");
+  const receipt={id,revision:2,status:"stopped",job:{id:backup,status:"succeeded",digest:fingerprint,bytes:10240}};
+  await f.sync([receipt]);await f.sync([receipt]);assert.equal((await rentalLeaseDetail(db,f.player,id)).backups.length,1);
+  await rentalCommand(db,f.other,other,"stop");await f.sync([{id:other,revision:2,status:"stopped"}]);
+  await reject(rentalBackupJob(db,f.other,other,"restore",backup),"not_found");
+  const restore=await rentalBackupJob(db,f.player,id,"restore",backup);const response=await f.sync();assert.equal(response.jobs[0].digest,fingerprint);
+  await f.sync([{id,revision:2,status:"stopped",job:{id:restore,status:"succeeded"}}]);
+  await rentalCommand(db,f.player,id,"start");assert.equal((await rentalLeaseDetail(db,f.player,id)).lease.desired,"running");
+});
+test("Restore cannot survive a released lease or replay a stale revision",async()=>{
+  const f=await fixture(),id=await allocateRental(db,f.player,f.template,60,true);await rentalCommand(db,f.player,id,"stop");await f.sync([{id,revision:2,status:"stopped"}]);
+  const job=await rentalBackupJob(db,f.player,id,"backup");await f.sync();await rentalCommand(db,f.player,id,"release");
+  const next=await f.sync([{id,revision:2,status:"stopped",job:{id:job,status:"succeeded",digest:fingerprint,bytes:10240}}]);assert.equal(next.jobs.length,0);
+  const detail=await rentalLeaseDetail(db,f.player,id);assert.equal(detail.backups.length,0);assert.equal(detail.jobs[0].status,"cancelled");
+});
+test("Node credentials are scoped, rotated keys stop reservations, and secrets are excluded from exports",async()=>{
+  const f=await fixture(),g=await fixture(),id=await allocateRental(db,f.player,f.template,60,true);
+  await reject(g.sync([{id,revision:1,status:"running"}]),"forbidden");
+  const key=(await rotateRentalKey(db,f.owner,f.node))!;
+  await reject(f.sync(),"unauthorized");
+  const p=await synchronizeRentalNode(db,key,{ready:true,templates:[fingerprint],reports:[]});assert.equal(p.leases[0].desired,"released");
+  const exported=JSON.stringify(await exportAccount(db,f.owner));assert.ok(!exported.includes(key));assert.ok(!exported.includes("key_hash"));
+  await reject(allocateRental(db,f.other,f.template,60,true),"offer_unavailable");
+});
+test("Stale heartbeats, paused availability and node/template suspension prevent allocation",async()=>{
+  const f=await fixture();await db.query("update rental_nodes set heartbeat_at=now()-interval '2 minutes' where id=$1",[f.node]);await reject(allocateRental(db,f.player,f.template,60,true),"offer_unavailable");
+  await f.sync();await setRentalNodeEnabled(db,f.owner,f.node,false);await reject(allocateRental(db,f.player,f.template,60,true),"offer_unavailable");
+  await setRentalNodeEnabled(db,f.owner,f.node,true);const id=await allocateRental(db,f.player,f.template,60,true);
+  await reviewRentalNode(db,f.staff,f.node,"suspended","Node removed from service in isolated fixture");assert.equal((await f.sync()).leases[0].desired,"released");
+  await reject(rentalCommand(db,f.player,id,"restart"),"request_state");
+});
+test("Account erasure ends allocations, drops team grants, and late telemetry cannot restore private logs",async()=>{
+  const f=await fixture(),id=await allocateRental(db,f.player,f.template,60,true);await setRentalAccess(db,f.player,id,f.other.username,"viewer");
+  await f.sync([{id,revision:1,status:"running",logs:"Private fixture log"}]);
+  await deleteAccount(db,f.player,password);
+  const p=await f.sync();assert.equal(p.leases[0].desired,"released");
+  await f.sync([{id,revision:p.leases[0].revision,status:"error",logs:"Must not reappear",note:"Private note"}]);
+  const [row]=await db.query<{logs:string;note:string}>("select logs,note from rental_leases where id=$1",[id]);assert.equal(row.logs,"");assert.equal(row.note,"");
+  assert.equal((await db.query("select 1 from rental_access where lease_id=$1",[id])).length,0);
+  await deleteAccount(db,f.owner,password);
+  const [template]=await db.query<{name:string;evidence_url:string;review_note:string}>("select name,evidence_url,review_note from rental_templates where id=$1",[f.template]);
+  assert.equal(template.name,"Deleted template");assert.equal(template.evidence_url,"");assert.equal(template.review_note,"");
+});
+test("Inactive operators lose team controls and template limits include backup staging capacity",async()=>{
+  const f=await fixture(),id=await allocateRental(db,f.player,f.template,60,true);await setRentalAccess(db,f.player,id,f.other.username,"operator");
+  await db.query("update users set status='suspended' where id=$1",[f.other.id]);
+  await reject(rentalCommand(db,f.other,id,"stop"),"account_restricted");await reject(rentalLeaseDetail(db,f.other,id),"not_found");
+  await reject(createRentalTemplate(db,f.owner,f.node,{name:"Too much disk",game:"cs2",localKey:"large-game",fingerprint,cpuMillis:1000,memoryMb:512,diskMb:1200,ports,evidence:"https://example.org/rights"}),"invalid_input");
+  await reject(allocateRental(db,await user(),f.template,60,true,1441),"invalid_input");
+  await reject(f.sync([], {reports:Array.from({length:17},()=>({}))}),"invalid_input");
+  await reject(f.sync([{id:randomUUID(),revision:1,status:"stopped"}]),"forbidden");
+});

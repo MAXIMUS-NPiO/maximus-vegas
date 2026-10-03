@@ -2,6 +2,7 @@ import { arbitrationExport, eraseMarketData } from "./arbitration.ts";
 import { socialExport, eraseSocial } from "./social.ts";
 import { eraseClubhouse } from "./clubhouse.ts";
 import { eraseP2p } from "./p2p.ts";
+import { eraseRentals } from "./rentals.ts";
 import { statisticsExport, eraseStatistics } from "./statistics.ts";
 import { listingDrafts, myMarketOrders } from "./marketplace.ts";
 import { checkReservedName, claimReservedName } from "./username-reservations.ts";
@@ -390,6 +391,12 @@ export async function exportAccount(db: Database, user: SessionUser) {
     stationBookings: await q("select id,station_id,starts_at,ends_at,status,created_at from station_bookings where user_id=$1 order by starts_at"),
     clubhouseRsvps: await q("select event_id,status,created_at from club_rsvps where user_id=$1"),
     p2pHosts: await q("select id,name,region,cpu,gpu,ram_gb,games,status,review_note,created_at from p2p_hosts where owner_id=$1"),
+    rentalNodes: await q("select id,name,region,address,cpu_millis,memory_mb,storage_mb,port_start,port_end,status,enabled,review_note,created_at from rental_nodes where owner_id=$1"),
+    rentalTemplates: await q("select t.* from rental_templates t join rental_nodes n on n.id=t.node_id where n.owner_id=$1"),
+    rentalLeases: await q("select id,node_id,template_id,revision,desired,observed,cpu_millis,memory_mb,disk_mb,ports,created_at,starts_at,expires_at,released_at,note,logs from rental_leases where user_id=$1"),
+    rentalAccess: await q("select * from rental_access where user_id=$1 or lease_id in(select id from rental_leases where user_id=$1)"),
+    rentalJobs: await q("select j.* from rental_jobs j join rental_leases l on l.id=j.lease_id where l.user_id=$1"),
+    rentalBackups: await q("select b.* from rental_backups b join rental_leases l on l.id=b.lease_id where l.user_id=$1"),
     p2pSessions: await q("select s.id,s.host_id,s.game,s.status,s.created_at,s.started_at,s.ended_at,s.connected_seconds,s.feedback,s.problem,s.rewarded from p2p_sessions s join p2p_hosts h on h.id=s.host_id where $1 in(s.client_id,h.owner_id)"),
     arbitration: await arbitrationExport(db,user.id),
     skinListingDrafts: await listingDrafts(db,user.id),
@@ -515,6 +522,7 @@ export async function deleteAccount(db: Database, user: SessionUser, confirmPass
     await eraseSocial(q, user.id);
     await eraseClubhouse(q, user.id);
     await eraseP2p(q, user.id);
+    await eraseRentals(q, user.id);
     await eraseStatistics(q, user.id);
     await q.query("delete from mission_preferences where user_id=$1", [user.id]);
     await q.query("update pass_reward_claims set status='cancelled',collection_sealed='' where user_id=$1 and status='reserved'", [user.id]);
