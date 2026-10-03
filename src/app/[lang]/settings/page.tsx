@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { dict, isLocale } from "@/lib/i18n.ts";
-import { GAMES, gameBySlug } from "@/lib/games.ts";
+import { GameNames } from "@/components/game-names";
 import { countryOptions } from "@/lib/countries.ts";
 import { LEGAL_VERSIONS } from "@/lib/legal.ts";
 import { pageMeta } from "@/lib/meta.ts";
@@ -49,7 +49,7 @@ export default async function Settings({ params, searchParams }: { params: Promi
       "select display_name, country, country_code, bio, profile_public, email, email_verified_at, marketing_opt_in_at from users where id = $1",
       [user.id],
     ),
-    db.query<{ game: string; handle: string }>("select game, handle from linked_game_accounts where user_id = $1 order by game", [user.id]),
+    db.query<{ game: string; handle: string }>("select game, handle from all_game_accounts where user_id = $1 order by game", [user.id]),
     sessionsFor(db, user.id),
     latestConsents(db, user.id),
   ]);
@@ -147,30 +147,7 @@ export default async function Settings({ params, searchParams }: { params: Promi
       <section className="section-tight">
         <h2 className="h3">{d.settings.games}</h2>
         <p className="small muted">{d.settings.gamesNote}</p>
-        {accounts.length ? (
-          <ul className="list">
-            {accounts.map((a) => (
-              <li key={a.game}>
-                <span className="grow">{gameBySlug(a.game)?.name ?? a.game}</span>
-                <span className="mono">{a.handle}</span>
-                <ActionForm action="account.game" lang={lang} back={back} hidden={{ game: a.game, handle: "" }}>
-                  <button className="btn btn-ghost btn-xs">{d.organizer.remove}</button>
-                </ActionForm>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        <ActionForm action="account.game" lang={lang} back={back} className="inline-form">
-          <select name="game" aria-label={d.teams.game}>
-            {GAMES.map((g) => (
-              <option key={g.slug} value={g.slug}>
-                {g.name}
-              </option>
-            ))}
-          </select>
-          <input name="handle" required maxLength={60} placeholder={d.settings.handle} aria-label={d.settings.handle} />
-          <button className="btn btn-ghost btn-sm">{d.common.save}</button>
-        </ActionForm>
+          <GameNames lang={lang} back={back} accounts={accounts} />
       </section>
 
       <section className="section-tight">

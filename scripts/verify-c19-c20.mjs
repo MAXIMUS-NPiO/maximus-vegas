@@ -1,0 +1,64 @@
+import sharp from "sharp";
+import { randomFillSync } from "node:crypto";
+import assert from "node:assert/strict";
+import { chromium } from "playwright-core";
+const BASE="http://127.0.0.1:3221";
+const browser=await chromium.launch({headless:true,executablePath:"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"});
+const run=Date.now().toString(36), password="Test-password-12345", errors=[];
+async function submit(page,action,fields={},specific){
+ const f=specific??page.locator(`form[action^="/api/a/${action}?"]`).first();
+ for(const [name,value] of Object.entries(fields)){const el=f.locator(`[name="${name}"]`);if(await el.getAttribute("type")==="checkbox")await el.check();else if(await el.evaluate(e=>e.tagName)==="SELECT")await el.selectOption(value);else await el.fill(value);}
+ await Promise.all([page.waitForNavigation(),f.locator("button").last().click()]);
+ assert.ok(!new URL(page.url()).searchParams.has("e"),page.url());
+}
+try {
+const ctx=await browser.newContext({viewport:{width:390,height:844}});const p=await ctx.newPage();p.on("pageerror",e=>errors.push(e.message));
+await p.goto(BASE+"/ru/signup");
+await submit(p,"auth.signup",{email:run+"@example.com",username:"lead"+run,displayName:"Leader",password,adult:true,terms:true});
+await p.goto(BASE+"/ru/welcome");
+let form=()=>p.locator('form[action^="/api/a/account.game?"]:has(input[name="handle"])');
+const games=await form().locator('select[name="game"] option').evaluateAll(es=>es.map(e=>e.value));
+for(const game of games){await submit(p,"account.game",{game,handle:"Name-"+game},form());assert.equal(await form().locator(`select[name="game"] option[value="${game}"]`).count(),game===games.at(-1)?1:0);}
+assert.equal(await form().locator('select[aria-label="Что добавить"] option').count(),1);
+await submit(p,"account.game",{game:games[0],handle:"Second-name"},form());
+assert.ok((await p.locator("#step-games").innerText()).includes("Name-"+games[0]));
+assert.ok((await p.locator("#step-games").innerText()).includes("Second-name"));
+await form().locator('input[name="handle"]').fill("Second-name");
+assert.equal(await form().locator('button').count(),0);
+await form().locator('input[name="handle"]').fill("Different-name");
+assert.equal(await form().locator('button').count(),1);
+await p.goto(BASE+"/en/settings");
+assert.equal(await form().locator('select[aria-label="What to add"] option').count(),1);
+const del=p.locator('form[action^="/api/a/account.game?"]:has(input[name="removeHandle"][value="Name-'+games[1]+'"])');
+await submit(p,"account.game",{},del);
+assert.equal(await form().locator('select[name="game"] option').count(),1);
+assert.equal(await form().locator('select[name="game"]').inputValue(),games[1]);
+await p.goto(BASE+"/ru/teams/new");
+await submit(p,"team.create",{name:"Reserve "+run,tag:"RSV",game:"cs2"});
+const teamUrl=p.url();
+await p.locator('details:has(input[name="logo"]) summary').click();
+const largeLogo=await sharp(randomFillSync(Buffer.alloc(1800*1200*3)),{raw:{width:1800,height:1200,channels:3}}).png().toBuffer();
+assert.ok(largeLogo.length>4.5*1024*1024);
+await p.locator('input[name="logo"]').setInputFiles({name:"large-logo.png",mimeType:"image/png",buffer:largeLogo});
+await p.getByText("Изображение готово к загрузке",{exact:true}).waitFor();
+assert.ok(await p.locator('input[name="logo"]').evaluate(e=>e.files[0].size)<=256*1024);
+await submit(p,"team.media",{},p.locator('form[action^="/api/a/team.media?"]:has(input[name="logo"])'));
+const logo=await p.locator('img.team-logo').getAttribute("src");
+assert.ok(logo);
+const logoBytes=await (await p.request.get(BASE+logo)).body();
+const meta=await sharp(logoBytes).metadata();assert.equal(meta.width,512);assert.equal(meta.height,512);
+await submit(p,"team.invite",{username:"storm"+run});
+assert.ok((await p.locator("body").innerText()).includes("ожидает регистрации"));
+const url=await p.locator('input[aria-label="Персональная ссылка"]').inputValue();
+assert.ok(await p.locator('a[href^="mailto:"]').count());assert.ok(await p.locator('a[href^="https://wa.me/"]').count());assert.ok(await p.locator('a[href^="https://t.me/share/"]').count());
+const ctx2=await browser.newContext();const p2=await ctx2.newPage();p2.on("pageerror",e=>errors.push(e.message));
+await p2.goto(BASE+new URL(url).pathname+new URL(url).search);
+assert.equal(await p2.locator('input[name="username"]').inputValue(),"storm"+run);
+await submit(p2,"auth.signup",{email:"storm"+run+"@example.com",displayName:"Storm",password,adult:true,terms:true});
+await p2.goto(BASE+"/ru/hub");
+await submit(p2,"team.respond",{},p2.locator('form[action^="/api/a/team.respond?"]:has(input[name="accept"][value="1"])'));
+assert.ok((await p2.locator("body").innerText()).includes("@storm"+run));
+await p.goto(teamUrl);assert.equal(await p.locator('input[aria-label="Персональная ссылка"]').count(),0);
+assert.deepEqual(errors,[]);
+console.log("PASS: all games filled, separate extra name retained, last-name removal restores game, RU/EN; reserve -> share links -> register -> accept team; no browser errors; duplicate name action hidden; large logo automatically compressed and uploaded.");
+} finally {await browser.close();}

@@ -272,7 +272,7 @@ export default async function Player({ params }: { params: Promise<{ lang: strin
             <>
               <ul className="list">
                 {p.accounts.map((a) => (
-                  <li key={a.game}>
+                  <li key={JSON.stringify([a.game, a.handle])}>
                     <span>{gameBySlug(a.game)?.name ?? a.game}</span>
                     <span className="mono">{a.handle}</span>
                   </li>

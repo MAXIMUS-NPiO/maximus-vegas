@@ -154,3 +154,11 @@ Status: INTERNAL EVIDENCE RECORDED IN REPOSITORY; registry number: NOT PROVIDED.
 Owner-requested corrections based on main 6657387: final-placement participant coverage in rankings, all-game selector, racing-specific catalogue text, shared partner/component status bindings and regression fixtures. Internal component record only; MIPA registration number: NOT PROVIDED. Rights holder and author remain as recorded above; no new attribution or external registration is asserted. Version and source hashes are recorded in docs/AUDIT_C18.json.
 
 C-18 follow-up: language-switch query preservation, public control checks and deployment-access evidence recorded on 3 October 2026 in docs/AUDIT_C18.json. No external registration asserted.
+
+## 3 October 2026 — Reserved player identity and personal team invitation
+Origin: direct instruction from the project owner in the voice session on 3 October 2026: reserve the future player's username when the captain invites them, and share a personal invitation through email, WhatsApp, phone/SMS or Telegram.
+Authorial concept attribution: the project owner. Implementation record: a time-limited username reservation, unique registration link, explicit distinction between an existing-player invitation and a pre-registration reservation, voluntary team acceptance after registration, and channel-specific sharing.
+The owner requested recording this as a "work of science". This entry preserves the concept, attribution and implementation history. It is an internal provenance record, not evidence of official registration, scientific novelty or a legal determination. Registration number: not provided.
+
+## 3 October 2026 — Automatic team image preparation
+Owner-requested automatic resizing and compression of team logos before upload, with server validation and full artwork preserved on a transparent square. Large-image browser upload verified locally.

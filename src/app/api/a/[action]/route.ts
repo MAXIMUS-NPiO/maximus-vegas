@@ -104,6 +104,7 @@ const handlers: Record<string, Handler> = {
   // ---------- Accounts ----------
   "auth.signup": async (c) => {
     const input = {
+      reservation: c.form.reservation,
       email: c.form.email,
       username: c.form.username,
       displayName: c.form.displayName,
@@ -181,7 +182,8 @@ const handlers: Record<string, Handler> = {
     const game = c.form.game;
     const { isGame } = await import("@/lib/games.ts");
     if (!isGame(game)) fail("invalid_game");
-    await auth.setGameAccount(c.db, u(c), game, c.form.handle);
+    const { changeGameName } = await import("@/server/game-names.ts");
+    await changeGameName(c.db, u(c).id, game, c.form.handle, c.form.removeHandle);
     return { ok: "saved" };
   },
   "account.password": async (c) => {
@@ -239,12 +241,18 @@ const handlers: Record<string, Handler> = {
     return { to: `/${c.lang}/teams/${t.slug}`, ok: "team_created" };
   },
   "team.invite": async (c) => {
-    await teams.inviteToTeam(c.db, u(c), idOf(c.form.team), c.form.username);
-    return { ok: "invite_sent" };
+    const { reserveOrInvite } = await import("@/server/username-reservations.ts");
+    const result = await reserveOrInvite(c.db, u(c), idOf(c.form.team), c.form.username);
+    return { ok: result === "reserved" ? "username_reserved" : "invite_sent" };
   },
   "team.respond": async (c) => {
     const team = await teams.respondToInvite(c.db, u(c), idOf(c.form.invite), c.form.accept === "1");
     return c.form.accept === "1" ? { to: `/${c.lang}/teams/${team.slug}`, ok: "joined_team" } : { ok: "invite_declined" };
+  },
+  "team.reservation_revoke": async (c) => {
+    const { revokeReservation } = await import("@/server/username-reservations.ts");
+    await revokeReservation(c.db, u(c), idOf(c.form.reservation));
+    return { ok: "saved" };
   },
   "team.revoke": async (c) => {
     await teams.revokeInvite(c.db, u(c), idOf(c.form.invite));

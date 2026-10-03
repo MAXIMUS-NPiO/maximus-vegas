@@ -356,7 +356,7 @@ export async function playerProfile(db: Queryable, username: string, viewer: Ses
     [u.id],
   );
   const accounts = await db.query<{ game: string; handle: string; verified: boolean }>(
-    "select game, handle, verified from linked_game_accounts where user_id = $1 order by game",
+    "select game, handle, verified from all_game_accounts where user_id = $1 order by game",
     [u.id],
   );
   const tournaments = await db.query<{ slug: string; name: string; game: string; status: string; placement: number | null; team_name: string | null; starts_at: Date }>(

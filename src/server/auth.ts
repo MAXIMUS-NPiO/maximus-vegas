@@ -1,3 +1,4 @@
+import { checkReservedName, claimReservedName } from "./username-reservations.ts";
 import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import type { Database, Queryable } from "./db.ts";
@@ -82,6 +83,7 @@ async function limited(q: Queryable, keys: string[]): Promise<boolean> {
 }
 
 export type SignUpInput = {
+  reservation?: unknown;
   email: unknown;
   username: unknown;
   displayName: unknown;
@@ -123,11 +125,13 @@ export async function signUp(db: Database, input: SignUpInput) {
   const passwordHash = await hashPassword(data.password);
   try {
     return await db.tx(async (q) => {
+      const reservation = await checkReservedName(q, data.username, input.reservation);
       const [user] = await q.query<{ id: string }>(
         `insert into users (email, username, display_name, password_hash, adult_confirmed_at)
          values ($1, $2, $3, $4, now()) returning id`,
         [data.email, data.username, data.displayName, passwordHash],
       );
+      await claimReservedName(q, reservation, user.id);
       await recordSignupConsents(q, user.id, data.marketing);
       await audit(q, { actorId: user.id, action: "user.signup", entity: "user", entityId: user.id, data: { username: data.username } });
       const session = await createSession(q, user.id, input.userAgent ?? "");
@@ -327,7 +331,8 @@ export async function exportAccount(db: Database, user: SessionUser) {
     roles: user.roles,
     consents: await q("select kind, version, granted, source, created_at from consents where user_id = $1 order by id"),
     secondFactor: { enrolled: Boolean(mfa?.enrolled) },
-    gameAccounts: await q("select game, handle, verified, created_at from linked_game_accounts where user_id = $1"),
+    usernameReservations: await q("select username, team_id, status, created_at, expires_at from username_reservations where invited_by = $1 or claimed_by = $1"),
+    gameAccounts: await q("select game, handle, verified, created_at from all_game_accounts where user_id = $1"),
     teams: await q("select t.slug, t.name, t.game, tm.joined_at from team_members tm join teams t on t.id = tm.team_id where tm.user_id = $1"),
     registrations: await q(
       `select t.slug as tournament, r.status, r.placement, r.created_at, case when r.registered_by = $1 then r.answers end as answers,
@@ -448,6 +453,8 @@ export async function deleteAccount(db: Database, user: SessionUser, confirmPass
         where id = $1`,
       [user.id, `deleted+${user.id}@invalid.local`, `deleted_${tag}`, `deleted$${randomBytes(16).toString("hex")}`],
     );
+    await q.query("delete from username_reservations where invited_by = $1 or claimed_by = $1", [user.id]);
+    await q.query("delete from additional_game_accounts where user_id = $1", [user.id]);
     await q.query("delete from linked_game_accounts where user_id = $1", [user.id]);
     // Registration answers may hold contact details: erased with the account that gave them.
     await q.query("update registrations set answers = null where registered_by = $1 and answers is not null", [user.id]);

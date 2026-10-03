@@ -1757,4 +1757,39 @@ export const migrations: Migration[] = [
       `alter table stage_entries add constraint stage_entries_stage_check check (stage between 2 and 8)`,
     ],
   },
+  {
+    id: 25,
+    name: "multiple_game_names",
+    statements: [
+      `create table additional_game_accounts (
+        user_id uuid not null references users(id) on delete cascade,
+        game text not null,
+        handle text not null,
+        verified boolean not null default false,
+        created_at timestamptz not null default now(),
+        primary key (user_id, game, handle)
+      )`,
+      `create view all_game_accounts as
+       select user_id, game, handle, verified, created_at from linked_game_accounts
+       union select user_id, game, handle, verified, created_at from additional_game_accounts`,
+    ],
+  },
+  {
+    id: 26,
+    name: "reserved_team_invitations",
+    statements: [
+      `create table username_reservations (
+        id uuid primary key,
+        username text not null,
+        team_id uuid not null references teams(id) on delete cascade,
+        invited_by uuid not null references users(id) on delete cascade,
+        claimed_by uuid references users(id) on delete set null,
+        status text not null default 'pending' check(status in ('pending','claimed','revoked','expired')),
+        created_at timestamptz not null default now(),
+        expires_at timestamptz not null default now() + interval '7 days'
+      )`,
+      `create unique index username_reservations_pending on username_reservations(username) where status='pending'`,
+      `create index username_reservations_team on username_reservations(team_id)`,
+    ],
+  },
 ];
