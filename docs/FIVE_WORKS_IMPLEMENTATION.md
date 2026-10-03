@@ -2,7 +2,7 @@
 
 Reviewed 3 October 2026 against portal main `a15cc7fa507b9bec0799f5d2e330c26d15d48e07` and the owner-supplied documents. C-23 changes navigation and invitation sharing; it does not change the server modules assessed below. All five works are available. Their presence, registration identifiers and described architecture do not establish that every described product is deployed.
 
-## Requirements and current implementation
+## Source assessment before C-24
 
 | Work and source | Preserved requirement | Existing portal basis | Remaining implementation |
 |---|---|---|---|
@@ -18,8 +18,18 @@ The supplied `technical-en.pdf` (local indexed filename `01-technical-en.pdf`) d
 
 No Gitea URL or accessible archive of those separate implementations was found in the reviewed documents, repository or relevant local project folders. Reuse of them needs a concrete repository URL with read access, or an exported source archive. This does not block work within the present portal. Existing runtime email, payment and publisher credentials were not established by this source review; absence from code must not be presented as proof that deployed credentials are missing.
 
-## Next independent increment
+## Implementation delivered by C-24
 
-Implement recurring Pass missions from confirmed matches and venue attendance using explicit daily/weekly time windows, exactly-once reward records and visible mission history. Keep the existing non-cash reward model. Preserve season and personalization requirements for subsequent increments. Physical rewards require confirmed partners and fulfilment rules. This is a proposed next increment, not a delivered feature.
+The source assessment above is retained as the baseline. C-24 replaces its software gaps with the following implementation; external operations are stated separately rather than inferred from code.
+
+| Work | Code and user flow | Validation | Remaining external boundary |
+|---|---|---|---|
+| 004170 — Dating | `social.ts`, `/dating`: separate consent and preferences; discovery, reciprocal matches, private messages, blocking, withdrawal, moderation and restoration; export/erasure | Domain tests for consent, participant access, replay, reports, blocking and erasure; browser matching and messages | Needs real member adoption and operating moderation; no invented members or school integration |
+| 004171 — Pass | `missions.ts`, `progression.ts`, `/progress`: daily/weekly/90-day seasons, frozen game preference, confirmed activity, exactly-once claims, history, verified-venue stock and gift reservation/collection/cancellation | Boundary, replay, inventory and collection-code tests; browser missions and gifts | Physical gifts require confirmed partner stock and real handover; no coin redemption or sale |
+| 004172 — Statistics/Web3 | `statistics.ts`, `/statistics`, signed-source intake, account consent/challenge, independent source approval, organiser record review, private snapshots, SHA-256 Merkle proofs and optional Ed25519 portal signature. `StatisticsAnchor.sol` plus read-only receipt/runtime/chain verification and unsigned calldata tooling | Signature/scope/replay/privacy/key-rotation tests, browser signed intake and proof verification, pinned contract compilation | Publisher-specific credentials/access are not supplied. Contract is not deployed; no chain/RPC is configured here. No spending key or transaction is issued. Paid coin packages, cash transfers and paid game entries from the source remain gated by the approved product boundary |
+| 004173 — P2P | `p2p.ts`, `/cloud-gaming`: reviewed fleet, live availability, exclusive allocation, bounded leases, participant signalling, WebRTC video and remote Arena input, connection metering, bounded non-cash contribution credit, scoped/revocable agent keys. `host-agent/`: isolated Linux game process/display, audio/video/input | Permission, allocation, expiry, key and reward replay tests; real two-context browser video/input acceptance; Python protocol tests | No operating GPU fleet, TURN relay or publisher licence is invented. Linux GPU, installed-game and anti-cheat compatibility need real hardware acceptance. Windows/macOS agents and server rental remain separate extensions. Native adapter refuses relay-only mode until it can enforce it |
+| 004174 — Offline/online | `clubhouse.ts`, venue pages and `/clubhouse`: opening hours, stations, free events, RSVP capacity/waitlist, bookings, linked QR passes and operator tools. Local scan queue with staff/device-scoped manifests and server reconciliation; existing academy/mentorship and tournament links retained | Reservation/capacity, withdrawal, replay, cross-device and revocation tests; browser event/booking/offline-sync flows | A physical Clubhouse needs an actual verified operator, address, equipment and staff. Offline arrivals remain provisional until server reconciliation; the page must stay open. No unconfirmed physical experience is listed |
+
+Acceptance evidence and release status are recorded in `docs/RELEASE_C24.md` when verified. Software implementation does not itself prove a commercial launch, source accuracy, actual hardware performance or blockchain inclusion. Account creation, tournaments, membership billing and legal texts retain their established boundaries.
 
 The official brand, approved slogan and project-wide requirements in `AGENTS.md` continue to apply. The scientific-work identifiers above identify supplied source documents; this record makes no new claim of registration, novelty or exclusivity.

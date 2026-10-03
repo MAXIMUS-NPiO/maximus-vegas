@@ -8,6 +8,7 @@ import { GAMES } from "@/lib/games.ts";
 import { DIRECTIONS, t } from "@/lib/directions.ts";
 import { pageMeta } from "@/lib/meta.ts";
 import { viewer } from "@/server/viewer.ts";
+import { currentSeason } from "@/server/progression.ts";
 import { listTournaments } from "@/server/queries.ts";
 import { activeSponsors } from "@/server/sponsors.ts";
 import { mediaUrl } from "@/server/media.ts";
@@ -88,7 +89,7 @@ export default async function Home({ params, searchParams }: { params: Promise<{
               <p className="muted small">{ru ? "Вызовите конкретного игрока. Результат подтверждает соперник." : "Challenge a specific player. The opponent confirms the result."}</p>
             </Link>
             <Link href={`/${lang}/progress`} className="card card-link">
-              <span className="field-label">{ru ? "СЕЗОН 1" : "SEASON 1"}</span>
+              <span className="field-label">{ru ? "СЕЗОН" : "SEASON"} {currentSeason().id.slice(1)}</span>
               <h3>{ru ? "Ранги и сезонный пропуск" : "Ranks and season pass"}</h3>
               <p className="muted small">{ru ? "XP за подтверждённые матчи, цели и косметика. Монеты не покупаются и не выводятся." : "XP for confirmed matches, objectives and cosmetics. Coins cannot be bought or cashed out."}</p>
             </Link>

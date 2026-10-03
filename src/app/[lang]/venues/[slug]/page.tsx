@@ -7,7 +7,7 @@ import { pageMeta } from "@/lib/meta.ts";
 import { countryName } from "@/lib/countries.ts";
 import { mapLink, venueText } from "@/lib/venue-text.ts";
 import { viewer } from "@/server/viewer.ts";
-import { venueTournaments, venueView } from "@/server/venues.ts";
+import { venueTournaments, venueView, isVenueStaff } from "@/server/venues.ts";
 import { Badge, DbDown, Flash, type SearchParams } from "@/components/ui";
 import { LocalTime } from "@/components/time";
 import { ClubhousePublic } from "@/components/clubhouse-public";
@@ -69,6 +69,7 @@ export default async function VenuePage({ params, searchParams }: { params: Prom
         ) : null}
       </p>
       {venue.description ? <p className="prewrap">{venue.description}</p> : null}
+      {await isVenueStaff(db, venue.org_id, user) && <Link className="btn btn-ghost" href={`/${lang}/clubhouse/${slug}/scan`}>{lang === "ru" ? "Контроль входа" : "Member check-in"}</Link>}
       {venue.status === "confirmed" && <ClubhousePublic db={db} venueId={venue.id} slug={slug} userId={user?.id} manager={manager} lang={lang} />}
       <section className="section-tight">
         <h2 className="h3">{x.events}</h2>

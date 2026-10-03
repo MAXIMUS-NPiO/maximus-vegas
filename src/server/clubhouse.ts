@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type { Database, Queryable } from "./db.ts";
 import type { SessionUser } from "./auth.ts";
 import { activeAccount, manageVenue } from "./product-access.ts";
-import { isVenueStaff, passState } from "./venues.ts";
+import { isVenueStaff, passState, lockClubAdmission } from "./venues.ts";
 import { fail } from "./errors.ts";
 import { seal } from "./secret-box.ts";
 import { audit } from "./audit.ts";
@@ -193,6 +193,7 @@ export async function syncOfflineScan(db: Database, user: SessionUser, input: { 
     if (old) { if (old.manifest_id !== input.manifest) fail("forbidden"); return old.result; }
     if (m.venue_status !== "confirmed" || Date.now() - new Date(m.expires_at).getTime() > 24 * 3600_000 || observed.getTime() < new Date(m.created_at).getTime() || observed.getTime() > Math.min(Date.now() + 30_000, new Date(m.expires_at).getTime())) fail("pass_expired");
     const entry = m.passes.find(p => p.token_hash === hash(input.token)); if (!entry) return fail("pass_unknown");
+    await lockClubAdmission(q, entry.id);
     const [p] = await q.query<Parameters<typeof passState>[1] & { club_rsvp_id: string | null; station_booking_id: string | null }>("select * from venue_passes where id=$1 and venue_id=$2 for update", [entry.id, m.venue_id]);
     if (!p) fail("pass_unknown");
     const result = await passState(q, p, observed.getTime());

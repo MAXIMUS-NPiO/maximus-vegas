@@ -6,11 +6,11 @@ import { signUp, sessionUser, exportAccount, deleteAccount, type SessionUser } f
 import { DomainError } from "../src/server/errors.ts";
 import { grantXp, balance, currentSeason } from "../src/server/progression.ts";
 import { claimMission, missionWindow, missionStates, setMissionPreference } from "../src/server/missions.ts";
-import { saveSocialProfile, discover, likeProfile, conversation, sendSocialMessage, blockProfile, withdrawSocialProfile, reportSocialProfile, resolveSocialReport, socialProfile } from "../src/server/social.ts";
+import { saveSocialProfile, discover, likeProfile, conversation, sendSocialMessage, blockProfile, withdrawSocialProfile, reportSocialProfile, resolveSocialReport, restoreSocialProfile, socialProfile } from "../src/server/social.ts";
 import { createOrg } from "../src/server/teams.ts";
 import { createVenue, submitVenue, reviewVenue, issueGuestPass, myPasses, revokePass } from "../src/server/venues.ts";
 import { setClubHours, addStation, bookStation, changeBooking, createClubEvent, rsvpEvent, cancelRsvp, changeClubEvent, clubView, offlineManifest, syncOfflineScan } from "../src/server/clubhouse.ts";
-import { createPassReward, reservePassReward, fulfilPassReward, rewardCatalogue } from "../src/server/missions.ts";
+import { createPassReward, reservePassReward, fulfilPassReward, rewardCatalogue, setPassRewardActive, cancelPassReward } from "../src/server/missions.ts";
 import { registerHost, reviewHost, hostHeartbeat, allocateHost, peerSession, answerSession, addSignal, pollSession, finishSession, rotateHostKey, authenticateHost, iceConfiguration, P2P_GAME } from "../src/server/p2p.ts";
 
 let db: Database, seq = 0;
@@ -92,6 +92,9 @@ test("Dating reports disclose only messages addressed to the reporter; moderatio
   await resolveSocialReport(db, moderator, report.id, "Profile hidden following review", true);
   await reject(saveSocialProfile(db, a, profile), "account_restricted");
   assert.equal((await socialProfile(db, a.id))?.visible, false);
+  await restoreSocialProfile(db, moderator, a.id, "Appeal independently reviewed and accepted");
+  assert.equal((await socialProfile(db, a.id))?.visible, false, "restoration does not publish without consent");
+  await saveSocialProfile(db, a, profile);
   const exported = await exportAccount(db, a); assert.equal(exported.connections.messages.length, 1);
   await deleteAccount(db, a, password);
   assert.equal((await conversation(db, b, match)).messages.length, 0);
@@ -146,6 +149,15 @@ test("Physical gifts require confirmed inventory, qualifying XP and a holder's c
   await fulfilPassReward(db, owner, claim.id, claim.code!);
   await reject(fulfilPassReward(db, owner, claim.id, claim.code!), "invalid_transition");
   assert.equal((await rewardCatalogue(db, a.id)).claims[0].code, null);
+  await reject(cancelPassReward(db, a, claim.id), "invalid_transition");
+  const cancellable = await createPassReward(db, owner, venue.id, { title: "Second gift", description: "Collect from actual stock", tier: 1, quantity: 1 });
+  await setPassRewardActive(db, owner, cancellable, false);
+  await reject(reservePassReward(db, a, cancellable), "offer_unavailable");
+  await setPassRewardActive(db, owner, cancellable, true);
+  const reservation = await reservePassReward(db, a, cancellable);
+  await reject(cancelPassReward(db, b, reservation), "forbidden");
+  await cancelPassReward(db, a, reservation);
+  await reservePassReward(db, b, cancellable);
 });
 test("P2P approves and allocates one live host once, scopes signalling and expires dead leases", async () => {
   const host = await account(), client = await account(), other = await account(), staff = { ...(await account()), roles: ["infrastructure"] } as SessionUser;
@@ -166,11 +178,16 @@ test("P2P approves and allocates one live host once, scopes signalling and expir
   const incoming = await pollSession(db, client, session, 0, true); assert.equal(incoming.signals.length, 1);
   assert.equal((await pollSession(db, host, session, 0, true)).signals.length, 0);
   assert.equal((await peerSession(db, client, session)).status, "active");
+  await db.query("update p2p_sessions set connected_seconds=0,metered_at=now()-interval '1.9 seconds' where id=$1", [session]);
+  assert.equal((await pollSession(db, host, session, 0, true)).session.connected_seconds, 1, "fractional seconds do not round up");
   await db.query("update p2p_sessions set client_seen=now()-interval '2 minutes' where id=$1", [session]);
   assert.equal((await pollSession(db, host, session, 0, true)).session.status, "failed");
   await reject(addSignal(db, host, session, "offer", offer, randomUUID()), "request_state");
   const token = await rotateHostKey(db, host, id); assert.equal((await authenticateHost(db, token!)).host.id, id);
+  await hostHeartbeat(db, host, id, true);
+  const replacement = await allocateHost(db, client, P2P_GAME, "Local", true);
   await rotateHostKey(db, host, id, true); await reject(authenticateHost(db, token!), "unauthorized");
+  assert.equal((await peerSession(db, client, replacement)).status, "failed");
 });
 test("P2P contribution requires both confirmations and sufficient metered time; retries cannot double credit", async () => {
   const host = await account(), client = await account(), staff = { ...(await account()), roles: ["infrastructure"] } as SessionUser;

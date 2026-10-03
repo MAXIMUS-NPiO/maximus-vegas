@@ -7,18 +7,19 @@ export function P2pRoom({ initial, configuration, lang }: { initial: Session; co
   const T = (ru: string, en: string) => lang === "ru" ? ru : en, host = initial.role === "host", arena = initial.game === "maximus-arena";
   const [session, setSession] = useState(initial), [started, setStarted] = useState(false), [state, setState] = useState("new"), [message, setMessage] = useState(""), [rtt, setRtt] = useState<number | null>(null), [quality, setQuality] = useState(""), [busy, setBusy] = useState(false), [confirm, setConfirm] = useState(false);
   const [rating, setRating] = useState(""), [problem, setProblem] = useState("");
+  const pollFailures = useRef(0);
   const video = useRef<HTMLVideoElement>(null), canvas = useRef<HTMLCanvasElement>(null), pc = useRef<RTCPeerConnection | null>(null), dc = useRef<RTCDataChannel | null>(null), media = useRef<MediaStream | null>(null), poller = useRef<ReturnType<typeof setTimeout> | null>(null), animation = useRef(0), alive = useRef(true), cursor = useRef(0), input = useRef({ left: false, right: false, target: .5 }), pendingIce = useRef<RTCIceCandidateInit[]>([]), pointerAt = useRef(0);
   const call = async (action: string, extra: Record<string, unknown> = {}) => {
     const r = await fetch("/api/p2p", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, id: initial.id, ...extra }) });
-    const data = await r.json(); if (!r.ok) throw new Error(dict(lang).errors[data.error] ?? T("Не удалось выполнить запрос", "Request failed")); return data;
+    const data = await r.json(); if (!r.ok) throw Object.assign(new Error(dict(lang).errors[data.error] ?? T("Не удалось выполнить запрос", "Request failed")), { terminal: r.status >= 400 && r.status < 500 }); return data;
   };
   const cleanup = () => { if (poller.current) clearTimeout(poller.current); poller.current = null; cancelAnimationFrame(animation.current); media.current?.getTracks().forEach(t => t.stop()); media.current = null; dc.current?.close(); dc.current = null; pc.current?.close(); pc.current = null; };
   useEffect(() => { alive.current = true; return () => { alive.current = false; cleanup(); }; }, []);
   const send = (data: Record<string, unknown>) => { const channel = dc.current; if (channel?.readyState === "open" && channel.bufferedAmount < 64_000) channel.send(JSON.stringify(data)); };
   const wireChannel = (channel: RTCDataChannel) => {
-    dc.current = channel; channel.onmessage = e => {
+    dc.current = channel; channel.onclose = () => { input.current.left = false; input.current.right = false; }; channel.onmessage = e => {
       if (typeof e.data !== "string" || e.data.length > 1000) return;
-      try { const data = JSON.parse(e.data); if (data.type === "ping" && Number.isFinite(data.at)) channel.send(JSON.stringify({ type: "pong", at: data.at })); else if (data.type === "pong" && Number.isFinite(data.at)) setRtt(Math.max(0, Math.round(performance.now() - data.at))); else if (host && arena) { if (data.type === "key" && ["ArrowLeft", "KeyA", "ArrowRight", "KeyD"].includes(data.code)) input.current[data.code === "ArrowLeft" || data.code === "KeyA" ? "left" : "right"] = data.down === true; if (data.type === "pointer" && Number.isFinite(data.x)) input.current.target = Math.max(0, Math.min(1, data.x)); } } catch { /* Ignore malformed peer input. */ }
+      try { const data = JSON.parse(e.data); if (data.type === "ping" && Number.isFinite(data.at)) channel.send(JSON.stringify({ type: "pong", at: data.at })); else if (data.type === "pong" && Number.isFinite(data.at)) setRtt(Math.max(0, Math.round(performance.now() - data.at))); else if (host && arena) { if (data.type === "release") { input.current.left = false; input.current.right = false; } if (data.type === "key" && ["ArrowLeft", "KeyA", "ArrowRight", "KeyD"].includes(data.code)) input.current[data.code === "ArrowLeft" || data.code === "KeyA" ? "left" : "right"] = data.down === true; if (data.type === "pointer" && Number.isFinite(data.x)) input.current.target = Math.max(0, Math.min(1, data.x)); } } catch { /* Ignore malformed peer input. */ }
     };
   };
   const arenaStream = () => {
@@ -46,12 +47,12 @@ export function P2pRoom({ initial, configuration, lang }: { initial: Session; co
     if (!alive.current || !pc.current) return;
     try {
       const r = await call("poll", { cursor: cursor.current, connected: pc.current.connectionState === "connected" });
-      if (!alive.current) return; setSession(r.session);
+      if (!alive.current) return; pollFailures.current = 0; setSession(r.session);
       if (!["requested", "connecting", "active"].includes(r.session.status)) { cleanup(); setState("closed"); return; }
       for (const s of r.signals as Signal[]) { await applySignal(s); cursor.current = Number(s.id); }
       send({ type: "ping", at: performance.now() });
       if (pc.current?.connectionState === "connected") { const stats = await pc.current.getStats(); stats.forEach(stat => { if (stat.type === "inbound-rtp" && stat.kind === "video") setQuality(`${Math.round(stat.framesPerSecond ?? 0)} FPS · ${stat.frameWidth ?? 0}×${stat.frameHeight ?? 0} · ${T("Потеряно пакетов", "Packets lost")}: ${stat.packetsLost ?? 0}`); }); }
-    } catch (e) { if (alive.current) setMessage((e as Error).message); }
+    } catch (e) { if (alive.current) { setMessage((e as Error).message); if ((e as { terminal?: boolean }).terminal || ++pollFailures.current >= 3) { cleanup(); setState("closed"); } } }
     if (alive.current && pc.current) poller.current = setTimeout(poll, 1500);
   };
   const start = async () => {

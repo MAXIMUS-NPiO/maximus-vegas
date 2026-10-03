@@ -370,6 +370,16 @@ export async function isVenueStaff(q: Queryable, orgId: string, user: SessionUse
   return Boolean(m);
 }
 
+/** Lock admission's parent before its pass, matching booking/event cancellation order. */
+export async function lockClubAdmission(q: Queryable, passId: string) {
+  const [p] = await q.query<{ station_booking_id: string | null; club_rsvp_id: string | null }>("select station_booking_id,club_rsvp_id from venue_passes where id=$1", [passId]);
+  if (p?.station_booking_id) await q.query("select id from station_bookings where id=$1 for update", [p.station_booking_id]);
+  if (p?.club_rsvp_id) {
+    await q.query("select id from club_events where id=(select event_id from club_rsvps where id=$1) for update", [p.club_rsvp_id]);
+    await q.query("select id from club_rsvps where id=$1 for update", [p.club_rsvp_id]);
+  }
+}
+
 /** What a scan would do now, without changing anything. */
 export async function passState(q: Queryable, p: Pass, now = Date.now()): Promise<ScanResult> {
   if (p.status === "revoked") return "revoked";
@@ -392,6 +402,9 @@ export async function passState(q: Queryable, p: Pass, now = Date.now()): Promis
 export async function admitPass(db: Database, staff: SessionUser, token: unknown): Promise<{ result: ScanResult; passId: string }> {
   if (!tokenOk(token)) fail("pass_unknown");
   return db.tx(async (q) => {
+    const [ref] = await q.query<{ id: string }>("select id from venue_passes where token_hash=$1", [sha256(token as string)]);
+    if (!ref) fail("pass_unknown");
+    await lockClubAdmission(q, ref.id);
     const [p] = await q.query<Pass & { org_id: string }>(
       "select p.*, v.org_id from venue_passes p join venues v on v.id = p.venue_id where p.token_hash = $1 for update of p",
       [sha256(token as string)],

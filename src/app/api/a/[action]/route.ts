@@ -87,7 +87,7 @@ const signupDraft = (c: Ctx) => ({ email: c.form.email ?? "", username: c.form.u
 
 /** What an account under a suspension sanction may still do: read, appeal, manage its own access and data. */
 const RESTRICTED_OK = new Set(["arbitration.open", "arbitration.evidence", "arbitration.appeal", "marketplace.delete", "auth.signout", "conduct.appeal", "notifications.read", "account.session", "account.password", "account.delete", "account.accept_terms"]);
-for (const action of ["social.withdraw", "social.block", "social.close", "social.report", "stats.unlink", "reward.cancel", "club.rsvp_cancel"]) RESTRICTED_OK.add(action);
+for (const action of ["social.withdraw", "social.block", "social.close", "social.report", "stats.unlink", "stats.share", "reward.cancel", "club.rsvp_cancel", "club.booking_status"]) RESTRICTED_OK.add(action);
 const conductAdmin = (c: Ctx) => `/${c.lang}/admin?tab=conduct`;
 const venueForm = (c: Ctx) => ({
   name: c.form.name,

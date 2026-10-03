@@ -121,8 +121,9 @@ export async function statsOverview(q: Queryable, userId: string) {
 export async function createSnapshot(db: Database, user: SessionUser, fromInput?: string, untilInput?: string) {
   const from = fromInput ? new Date(fromInput) : new Date(0), until = untilInput ? new Date(new Date(untilInput).getTime() + 86400_000) : new Date();
   if (!Number.isFinite(from.getTime()) || !Number.isFinite(until.getTime()) || until <= from) fail("invalid_date");
-  return db.tx(async q => {
-    await q.query("set transaction isolation level repeatable read");
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try { return await db.tx(async q => {
+    await q.query("set transaction isolation level serializable");
     await activeAccount(q, user); await q.query("select id from users where id=$1 for update", [user.id]);
     const [n] = await q.query<{ n: number }>("select count(*)::int as n from stats_snapshots where user_id=$1 and created_at>now()-interval '1 day'", [user.id]); if (n.n >= 5) fail("request_limit");
     const source = await q.query("select o.id,o.source_id,s.name as source,o.game,o.match_ref,o.played_at,o.metrics,o.signed_body,o.signature,o.public_key,o.review_note from stats_observations o join stats_sources s on s.id=o.source_id where o.user_id=$1 and o.status='confirmed' and o.played_at >= $2 and o.played_at < $3 order by o.id limit 5001", [user.id, from, until]);
@@ -143,7 +144,11 @@ export async function createSnapshot(db: Database, user: SessionUser, fromInput?
     }
     await q.query("insert into stats_snapshots(id,user_id,root,leaf_count,records,signature,public_key) values($1,$2,$3,$4,$5,$6,$7)", [id, user.id, root, records.length, JSON.stringify(records), signature, key]);
     await audit(q, { actorId: user.id, action: "stats.snapshot_created", entity: "stats_snapshot", entityId: id, data: { root, count: records.length } }); return id;
-  });
+  }); } catch (error) {
+      if ((error as { code?: string }).code !== "40001" || attempt === 2) throw error;
+    }
+  }
+  return fail("server_error");
 }
 export async function snapshotProof(q: Queryable, id: string, userId?: string, recordIndex?: number) {
   if (!uuid(id)) return null;
