@@ -22,6 +22,8 @@ import { fail } from "./errors.ts";
 import { seal, unseal } from "./secret-box.ts";
 import { uniqueSlug } from "./teams.ts";
 import { isCountry } from "../lib/countries.ts";
+import { isGame, GAMES } from "../lib/games.ts";
+import { VENUE_LAT_MAX, type VenueFilters } from "../lib/venue-discovery.ts";
 import * as v from "./validate.ts";
 
 export const VENUE_KINDS = ["club", "arena", "games_house", "clubhouse", "other"] as const;
@@ -46,6 +48,10 @@ export type Venue = {
   country_code: string | null;
   description: string;
   website: string;
+  lat_e6: number | null;
+  lng_e6: number | null;
+  games: string[];
+  review_version: number;
   status: "draft" | "submitted" | "confirmed" | "rejected" | "suspended";
   review_note: string;
   reviewed_at: Date | null;
@@ -53,7 +59,13 @@ export type Venue = {
   updated_at: Date;
 };
 
-type VenueInput = { name: unknown; kind: unknown; address: unknown; city: unknown; country: unknown; description: unknown; website: unknown };
+export type VenueInput = { name: unknown; kind: unknown; address: unknown; city: unknown; country: unknown; description: unknown; website: unknown; latitude?: unknown; longitude?: unknown; games?: unknown };
+
+function coordinate(value: unknown, limit: number): number | null {
+  if (value === null || value === "") return null;
+  if (typeof value !== "string" || !/^-?\d{1,3}(?:\.\d{1,6})?$/.test(value) || Math.abs(Number(value)) > limit) return fail("venue_coordinates");
+  return Math.round(Number(value) * 1e6);
+}
 
 function parseVenue(input: VenueInput) {
   const name = v.displayName(input.name, 80);
@@ -66,7 +78,18 @@ function parseVenue(input: VenueInput) {
   if (country && !isCountry(country)) fail("invalid_input");
   const website = v.optionalUrl(input.website);
   if (website && !website.startsWith("https://")) fail("invalid_url");
-  return { name, kind, address, city, country: country || null, description: v.clean(input.description, 1000), website };
+  let location: { lat: number | null; lng: number | null } | undefined;
+  if (input.latitude !== undefined || input.longitude !== undefined) {
+    const lat = coordinate(input.latitude, VENUE_LAT_MAX), lng = coordinate(input.longitude, 180);
+    if ((lat === null) !== (lng === null)) fail("venue_coordinates");
+    location = { lat, lng: lng === 180000000 ? -180000000 : lng };
+  }
+  let games: string[] | undefined;
+  if (input.games !== undefined) {
+    if (!Array.isArray(input.games) || input.games.length > GAMES.length || !input.games.every(isGame)) fail("invalid_input");
+    games = [...new Set(input.games as string[])].sort();
+  }
+  return { name, kind, address, city, country: country || null, description: v.clean(input.description, 1000), website, location, games };
 }
 
 async function lockVenue(q: Queryable, venueId: unknown): Promise<Venue> {
@@ -99,9 +122,9 @@ export async function createVenue(db: Database, user: SessionUser, orgId: unknow
     if ((n?.n ?? 0) >= 20) fail("venue_limit");
     const slug = await uniqueSlug(q, "venues", data.name);
     const [row] = await q.query<{ id: string; slug: string }>(
-      `insert into venues (org_id, slug, name, kind, address, city, country_code, description, website, created_by)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id, slug`,
-      [org.id, slug, data.name, data.kind, data.address, data.city, data.country, data.description, data.website, user.id],
+      `insert into venues (org_id, slug, name, kind, address, city, country_code, description, website, created_by, lat_e6, lng_e6, games)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) returning id, slug`,
+      [org.id, slug, data.name, data.kind, data.address, data.city, data.country, data.description, data.website, user.id, data.location?.lat ?? null, data.location?.lng ?? null, data.games ?? []],
     );
     await audit(q, { actorId: user.id, action: "venue.created", entity: "venue", entityId: row.id, data: { org: org.id, name: data.name } });
     return row;
@@ -113,12 +136,15 @@ export async function updateVenue(db: Database, user: SessionUser, venueId: unkn
   const data = parseVenue(input);
   return db.tx(async (q) => {
     const venue = await managedVenue(q, user, venueId);
-    const identity = venue.name !== data.name || venue.address !== data.address || venue.city !== data.city || (venue.country_code ?? null) !== data.country;
+    const lat = data.location ? data.location.lat : venue.lat_e6, lng = data.location ? data.location.lng : venue.lng_e6;
+    const games = data.games ?? venue.games;
+    const identity = venue.name !== data.name || venue.kind !== data.kind || venue.address !== data.address || venue.city !== data.city || (venue.country_code ?? null) !== data.country
+      || venue.lat_e6 !== lat || venue.lng_e6 !== lng || JSON.stringify(venue.games) !== JSON.stringify(games);
     const resubmitted = venue.status === "confirmed" && identity;
     await q.query(
       `update venues set name = $2, kind = $3, address = $4, city = $5, country_code = $6, description = $7, website = $8,
-              status = case when $9 then 'submitted' else status end, updated_at = now() where id = $1`,
-      [venue.id, data.name, data.kind, data.address, data.city, data.country, data.description, data.website, resubmitted],
+              status = case when $9 then 'submitted' else status end, lat_e6 = $10, lng_e6 = $11, games = $12, review_version = review_version + 1, updated_at = now() where id = $1`,
+      [venue.id, data.name, data.kind, data.address, data.city, data.country, data.description, data.website, resubmitted, lat, lng, games],
     );
     if (resubmitted) await notify(q, await staffIds(q), "venue_submitted", { venue: data.name, adminTab: "venues" });
     await audit(q, { actorId: user.id, action: "venue.updated", entity: "venue", entityId: venue.id, data: { resubmitted } });
@@ -137,11 +163,13 @@ export async function submitVenue(db: Database, user: SessionUser, venueId: unkn
 }
 
 /** Portal staff confirm or reject a submitted venue, or suspend a confirmed one (with a reason). */
-export async function reviewVenue(db: Database, staff: SessionUser, venueId: unknown, decision: unknown, noteInput: unknown) {
+export async function reviewVenue(db: Database, staff: SessionUser, venueId: unknown, decision: unknown, noteInput: unknown, expectedVersion?: unknown) {
   requireSection(staff, "venues");
   const note = v.clean(noteInput, 500);
   await db.tx(async (q) => {
     const venue = await lockVenue(q, venueId);
+    // Browser decisions always supply the version shown to the reviewer. Trusted internal callers may omit it.
+    if (expectedVersion !== undefined && (typeof expectedVersion !== "string" || !/^\d+$/.test(expectedVersion) || Number(expectedVersion) !== venue.review_version)) fail("venue_changed");
     let status: Venue["status"];
     if (decision === "confirm" && venue.status === "submitted") status = "confirmed";
     else if (decision === "reject" && venue.status === "submitted") status = "rejected";
@@ -165,12 +193,26 @@ export async function orgVenues(q: Queryable, orgId: string): Promise<Venue[]> {
 }
 
 export async function publicVenues(q: Queryable, city = ""): Promise<(Venue & { upcoming: number })[]> {
-  const term = v.oneLine(city, 80);
-  return q.query<Venue & { upcoming: number }>(
+  return (await discoverVenues(q, { city })).items;
+}
+
+export function venueFilters(input: Partial<Record<keyof VenueFilters, unknown>>): VenueFilters {
+  return { name: v.oneLine(input.name, 80), city: v.oneLine(input.city, 80), country: v.oneLine(input.country, 2).toUpperCase(),
+    game: v.oneLine(input.game, 40), kind: v.oneLine(input.kind, 30) };
+}
+
+export async function discoverVenues(q: Queryable, input: Partial<Record<keyof VenueFilters, unknown>> = {}) {
+  const f = venueFilters(input);
+  // position() treats %, _ and backslash literally. Every filter precedes the bounded result window.
+  const rows = await q.query<Venue & { upcoming: number }>(
     `select v.*, (select count(*)::int from tournaments t where t.venue_id = v.id and t.status in ${LIVE}) as upcoming
-       from venues v where v.status = 'confirmed' and ($1 = '' or lower(v.city) = lower($1)) order by v.city, v.name limit 200`,
-    [term],
+       from venues v where v.status = 'confirmed' and ($1 = '' or lower(v.city) = lower($1))
+         and ($2 = '' or position(lower($2) in lower(v.name)) > 0) and ($3 = '' or v.country_code = $3)
+         and ($4 = '' or $4 = any(v.games)) and ($5 = '' or v.kind = $5)
+       order by lower(v.city), lower(v.name), v.id limit 201`,
+    [f.city, f.name, f.country, f.game, f.kind],
   );
+  return { items: rows.slice(0, 200), more: rows.length > 200 };
 }
 
 export async function venueCities(q: Queryable): Promise<string[]> {

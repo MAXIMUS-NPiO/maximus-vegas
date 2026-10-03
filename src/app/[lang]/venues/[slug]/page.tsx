@@ -10,6 +10,8 @@ import { viewer } from "@/server/viewer.ts";
 import { venueTournaments, venueView, isVenueStaff } from "@/server/venues.ts";
 import { Badge, DbDown, Flash, type SearchParams } from "@/components/ui";
 import { LocalTime } from "@/components/time";
+import { VenueMap } from "@/components/venue-map";
+import { venueCoordinateLink, venueMapPoints } from "@/lib/venue-discovery.ts";
 import { ClubhousePublic } from "@/components/clubhouse-public";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string; slug: string }> }): Promise<Metadata> {
@@ -54,7 +56,7 @@ export default async function VenuePage({ params, searchParams }: { params: Prom
         {venue.country_code ? `, ${countryName(venue.country_code, lang)}` : ""}
       </p>
       <p className="row">
-        <a href={mapLink(venue.address, venue.city)} target="_blank" rel="noopener" className="btn btn-ghost btn-sm">
+        <a href={venue.lat_e6 !== null && venue.lng_e6 !== null ? venueCoordinateLink(venue.lat_e6 / 1e6, venue.lng_e6 / 1e6) : mapLink(venue.address, venue.city)} target="_blank" rel="noopener" className="btn btn-ghost btn-sm">
           {x.map}
         </a>
         {venue.website ? (
@@ -68,6 +70,8 @@ export default async function VenuePage({ params, searchParams }: { params: Prom
           </Link>
         ) : null}
       </p>
+      {venue.games.length > 0 && <p className="small">{x.games}: {venue.games.map(g => gameBySlug(g)?.name ?? g).join(" · ")}</p>}
+      {venue.status === "confirmed" && <VenueMap lang={lang} points={venueMapPoints([venue])} />}
       {venue.description ? <p className="prewrap">{venue.description}</p> : null}
       {await isVenueStaff(db, venue.org_id, user) && <Link className="btn btn-ghost" href={`/${lang}/clubhouse/${slug}/scan`}>{lang === "ru" ? "Контроль входа" : "Member check-in"}</Link>}
       {venue.status === "confirmed" && <ClubhousePublic db={db} venueId={venue.id} slug={slug} userId={user?.id} manager={manager} lang={lang} />}

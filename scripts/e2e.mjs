@@ -837,7 +837,7 @@ if (process.env.OWNER_CODE) {
   assert.equal((await guest.get(`/ru/venues/${venueSlug}`)).status, 404, "a draft venue is not public");
   assert.equal((await org.post("venue.submit", { venue: venueId, back: venuesPath })).ok, "venue_submitted");
   assert.ok((await org.get("/ru/admin?tab=venues")).text.includes(`E2E Hall ${RUN}`), "the venue waits in the staff queue");
-  assert.equal((await org.post("venue.review", { venue: venueId, decision: "confirm", note: "" })).ok, "venue_reviewed");
+  assert.equal((await org.post("venue.review", { venue: venueId, decision: "confirm", note: "", version: "0" })).ok, "venue_reviewed");
   assert.equal((await guest.get(`/ru/venues/${venueSlug}`)).status, 200);
   assert.ok((await guest.get("/ru/venues")).text.includes(`E2E Hall ${RUN}`), "the confirmed venue is in the catalog");
   const passFrom = new Date(Date.now() - 60_000).toISOString().slice(0, 16);

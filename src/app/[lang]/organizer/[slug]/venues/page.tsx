@@ -4,6 +4,8 @@ import { notFound, redirect } from "next/navigation";
 import { isLocale, type Locale } from "@/lib/i18n.ts";
 import { pageMeta } from "@/lib/meta.ts";
 import { countryOptions } from "@/lib/countries.ts";
+import { GAMES } from "@/lib/games.ts";
+import { VENUE_LAT_MAX } from "@/lib/venue-discovery.ts";
 import { venueText } from "@/lib/venue-text.ts";
 import { viewer } from "@/server/viewer.ts";
 import { orgBySlug } from "@/server/queries.ts";
@@ -58,6 +60,23 @@ function VenueFields({ lang, venue }: { lang: Locale; venue?: Venue }) {
       <Field label={x.description}>
         <textarea name="description" maxLength={1000} rows={3} defaultValue={venue?.description} />
       </Field>
+      <input type="hidden" name="discovery" value="1" />
+      <div className="form-grid">
+        <Field label={x.latitude}>
+          <input name="latitude" type="number" min={-VENUE_LAT_MAX} max={VENUE_LAT_MAX} step="0.000001" defaultValue={venue?.lat_e6 == null ? "" : venue.lat_e6 / 1e6} />
+        </Field>
+        <Field label={x.longitude}>
+          <input name="longitude" type="number" min={-180} max={180} step="0.000001" defaultValue={venue?.lng_e6 == null ? "" : venue.lng_e6 / 1e6} />
+        </Field>
+      </div>
+      <p className="small muted">{x.coordinatesHelp}</p>
+      <fieldset className="fieldset">
+        <legend>{x.games}</legend>
+        <div className="check-grid">{GAMES.map(g => <label className="check" key={g.slug}>
+          <input type="checkbox" name="games" value={g.slug} defaultChecked={venue?.games.includes(g.slug)} />{g.name}
+        </label>)}</div>
+        <p className="small muted">{x.gamesHelp}</p>
+      </fieldset>
     </>
   );
 }

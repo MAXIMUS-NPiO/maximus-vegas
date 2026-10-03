@@ -213,6 +213,8 @@ export const ERROR_CODES = [
   "webhook_delivered",
   // Venues and passes
   "venue_address",
+  "venue_coordinates",
+  "venue_changed",
   "venue_limit",
   "venue_state",
   "venue_not_confirmed",

@@ -2131,4 +2131,15 @@ export const migrations: Migration[] = [
       `create index social_locations_expiry on social_locations(expires_at)`,
     ],
   },
+  {
+    id: 37,
+    name: "reviewed_public_venue_coordinates_and_games",
+    statements: [
+      `alter table venues add column lat_e6 int, add column lng_e6 int, add column games text[] not null default '{}', add column review_version int not null default 0,
+        add constraint venue_coordinate_pair check ((lat_e6 is null and lng_e6 is null) or
+          (lat_e6 is not null and lng_e6 is not null and lat_e6 between -85051128 and 85051128 and lng_e6 between -180000000 and 179999999)),
+        add constraint venue_games_bound check (cardinality(games)<=16 and array_position(games,null) is null)`,
+      `create index venues_discovery_city on venues(lower(city),lower(name),id) where status='confirmed'`,
+    ],
+  },
 ];
