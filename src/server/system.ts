@@ -31,7 +31,7 @@ const FEATURE_ACTIONS: Record<Feature, readonly string[]> = {
   venues: ["venue.create", "venue.submit", "pass.guest", "club.book", "club.rsvp", "club.event", "club.station"],
   integrations: ["integrations.key_create", "integrations.webhook_create", "integrations.webhook_test", "integrations.delivery_retry", "stats.source", "stats.link", "stats.intake"],
   academy: ["coach.submit", "training.request"],
-  connections: ["social.profile", "social.like"],
+  connections: ["social.profile", "social.like", "social.call_start", "social.call_accept"],
   cloud_gaming: ["p2p.register", "p2p.allocate"],
   recurring_pass: ["reward.create", "reward.reserve"],
   server_hosting: ["rental.node", "rental.template", "rental.allocate", "rental.start", "rental.restart", "rental.backup", "rental.restore"],
@@ -40,7 +40,7 @@ const FEATURE_ACTIONS: Record<Feature, readonly string[]> = {
 export const featureOf = (action: string): Feature | null => FEATURES.find((f) => FEATURE_ACTIONS[f].includes(action)) ?? null;
 
 /** Open to everyone during maintenance: staff must be able to sign in and confirm their second factor. */
-const MAINTENANCE_OK = new Set(["auth.signin", "auth.signout", "mfa.verify", "rental.stop", "rental.release"]);
+const MAINTENANCE_OK = new Set(["auth.signin", "auth.signout", "mfa.verify", "rental.stop", "rental.release", "social.call_end", "social.withdraw", "social.close", "social.block", "social.report"]);
 
 type Flag = {
   key: string;

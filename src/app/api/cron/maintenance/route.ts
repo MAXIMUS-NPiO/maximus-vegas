@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { getDb } from "@/server/db.ts";
 import { drainOutbox } from "@/server/mail.ts";
 import { sweepPayments } from "@/server/billing.ts";
+import { expireSocialCalls } from "@/server/social-calls.ts";
 import { expireStale } from "@/server/challenges.ts";
 import { pulseAllQueues } from "@/server/quickmatch.ts";
 import { settleWars } from "@/server/clans.ts";
@@ -26,6 +27,7 @@ export async function GET(request: Request) {
   const mail = await drainOutbox(db, 50);
   await sweepPayments(db);
   await expireStale(db);
+  await expireSocialCalls(db);
   await pulseAllQueues(db);
   await settleWars(db);
   const webhooks = await pumpWebhooks(db);

@@ -403,7 +403,7 @@ async function rewardReferrers(q: Queryable, userIds: string[]) {
 
 export async function coinHistory(q: Queryable, userId: string, limit = 50) {
   return q.query<{ id: string; delta: number; reason: string; ref: string; balance_after: number; created_at: Date }>(
-    "select id::text, delta, reason, ref, balance_after, created_at from coin_ledger where user_id = $1 order by id desc limit $2",
+    "select id::text, delta, reason, ref, balance_after, created_at from coin_ledger where user_id = $1 order by coin_ledger.id desc limit $2",
     [userId, limit],
   );
 }

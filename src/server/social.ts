@@ -6,10 +6,13 @@ import { requireSection } from "./access.ts";
 import { fail } from "./errors.ts";
 import { audit } from "./audit.ts";
 import * as v from "./validate.ts";
+import { endSocialCalls } from "./social-calls.ts";
 import { isGame } from "../lib/games.ts";
 
 export const SOCIAL_CONSENT = "MV-DISCOVERY-1";
-export type SocialProfile = { user_id: string; visible: boolean; intent: string; age: number; city: string; game: string; languages: string; gaming_preferences: string; relationship_preferences: string; bio: string; display_name: string; username: string };
+export const GAMING_CONSENT = "MV-CONNECTION-FIT-1";
+export type GamingFit = { game: string; points: number; similar: boolean; recent: boolean };
+export type SocialProfile = { gaming_consent: boolean; gaming_consent_version: string | null; gaming_consented_at: Date | null; user_id: string; visible: boolean; intent: string; age: number; city: string; game: string; languages: string; gaming_preferences: string; relationship_preferences: string; bio: string; display_name: string; username: string };
 const uuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 async function lockPair(q: Queryable, a: string, b: string) {
   if (!uuid(a) || !uuid(b) || a === b) fail("invalid_input");
@@ -32,20 +35,21 @@ export async function saveSocialProfile(db: Database, user: SessionUser, input: 
     await q.query("select id from users where id=$1 for update", [user.id]);
     await activeAccount(q, user);
     if ((await q.query("select 1 from social_profiles where user_id=$1 and suspended", [user.id]))[0]) fail("account_restricted");
-    await q.query(`insert into social_profiles(user_id,visible,intent,age,city,game,languages,gaming_preferences,relationship_preferences,bio,consent_version)
-      values($1,true,$2,$3,$4,$5,$6,$7,$8,$9,$10) on conflict(user_id) do update set visible=true,intent=excluded.intent,age=excluded.age,
+    await q.query(`insert into social_profiles(user_id,visible,intent,age,city,game,languages,gaming_preferences,relationship_preferences,bio,consent_version,gaming_consent,gaming_consent_version,gaming_consented_at)
+      values($1,true,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,case when $11 then now() else null end) on conflict(user_id) do update set visible=true,intent=excluded.intent,age=excluded.age,
       city=excluded.city,game=excluded.game,languages=excluded.languages,gaming_preferences=excluded.gaming_preferences,
-      relationship_preferences=excluded.relationship_preferences,bio=excluded.bio,consent_version=excluded.consent_version,consented_at=now(),updated_at=now()`,
-      [user.id, intent, age, v.oneLine(input.city, 80), game, v.oneLine(input.languages, 100), v.clean(input.gamingPreferences, 400), v.clean(input.relationshipPreferences, 400), bio, SOCIAL_CONSENT]);
-    await audit(q, { actorId: user.id, action: "social.consent_granted", entity: "user", entityId: user.id, data: { version: SOCIAL_CONSENT } });
+      relationship_preferences=excluded.relationship_preferences,bio=excluded.bio,consent_version=excluded.consent_version,consented_at=now(),updated_at=now(),gaming_consent=excluded.gaming_consent,gaming_consent_version=excluded.gaming_consent_version,gaming_consented_at=excluded.gaming_consented_at`,
+      [user.id, intent, age, v.oneLine(input.city, 80), game, v.oneLine(input.languages, 100), v.clean(input.gamingPreferences, 400), v.clean(input.relationshipPreferences, 400), bio, SOCIAL_CONSENT, v.bool(input.gamingConsent), v.bool(input.gamingConsent) ? GAMING_CONSENT : null]);
+    await audit(q, { actorId: user.id, action: "social.consent_granted", entity: "user", entityId: user.id, data: { version: SOCIAL_CONSENT, gaming: v.bool(input.gamingConsent), gamingVersion: v.bool(input.gamingConsent) ? GAMING_CONSENT : null } });
   });
 }
 export async function withdrawSocialProfile(db: Database, user: SessionUser) {
   await db.tx(async q => {
     await q.query("select id from users where id=$1 for update", [user.id]);
-    await q.query("update social_profiles set visible=false,updated_at=now() where user_id=$1", [user.id]);
+    await q.query("update social_profiles set visible=false,gaming_consent=false,gaming_consent_version=null,gaming_consented_at=null,updated_at=now() where user_id=$1", [user.id]);
     await q.query("delete from social_likes where sender_id=$1 or recipient_id=$1", [user.id]);
     await q.query("update social_matches set status='closed' where user_a=$1 or user_b=$1", [user.id]);
+    await endSocialCalls(q, user.id);
     await audit(q, { actorId: user.id, action: "social.consent_withdrawn", entity: "user", entityId: user.id });
   });
 }
@@ -54,14 +58,25 @@ export async function discover(q: Queryable, user: SessionUser, filters: Record<
   const me = await socialProfile(q, user.id);
   if (!me?.visible) return [];
   const minAge = v.intIn(filters.minAge || "18", 18, 100), maxAge = v.intIn(filters.maxAge || "100", minAge, 100);
-  return q.query<SocialProfile>(`select p.user_id,p.intent,p.age,p.city,p.game,p.languages,p.gaming_preferences,p.relationship_preferences,p.bio,u.display_name,u.username
+  return q.query<SocialProfile & { gaming_fit: GamingFit[]; gaming_points: number }>(`select p.user_id,p.intent,p.age,p.city,p.game,p.languages,p.gaming_preferences,p.relationship_preferences,p.bio,u.display_name,u.username,
+    coalesce(fit.points,0)::int as gaming_points,coalesce(fit.games,'[]'::jsonb) as gaming_fit
     from social_profiles p join users u on u.id=p.user_id
-    where p.visible and u.status='active' and p.user_id<>$1 and p.intent=$2 and p.age between $3 and $4
+    left join lateral (
+      select sum(g.points)::int as points,jsonb_agg(jsonb_build_object('game',g.game,'points',g.points,'similar',g.similar,'recent',g.recent) order by g.points desc,g.game) as games
+      from (select a.game,10+case when abs(a.rating-b.rating)<=200 then 10 else 0 end+case when least(a.updated_at,b.updated_at)>now()-interval '30 days' then 5 else 0 end as points,
+        abs(a.rating-b.rating)<=200 as similar,least(a.updated_at,b.updated_at)>now()-interval '30 days' as recent
+        from ratings a join ratings b on a.game=b.game and b.user_id=p.user_id
+        where a.user_id=$1 and a.matches>0 and b.matches>0 and p.gaming_consent
+          and exists(select 1 from social_profiles me where me.user_id=$1 and me.gaming_consent and me.visible)
+        order by points desc,a.game limit 3) g
+    ) fit on true
+    where p.visible and not p.suspended and u.status='active'
+      and not exists(select 1 from sanctions s where s.user_id=u.id and s.kind='suspension' and s.revoked_at is null and s.starts_at<=now() and (s.ends_at is null or s.ends_at>now())) and p.user_id<>$1 and p.intent=$2 and p.age between $3 and $4
       and ($5='' or p.city ilike $5) and ($6='' or p.game=$6)
       and not exists(select 1 from social_blocks b where (b.user_id=$1 and b.subject_id=p.user_id) or (b.subject_id=$1 and b.user_id=p.user_id))
       and not exists(select 1 from social_likes l where l.sender_id=$1 and l.recipient_id=p.user_id)
       and not exists(select 1 from social_matches m where m.status='active' and $1 in(m.user_a,m.user_b) and p.user_id in(m.user_a,m.user_b))
-    order by p.updated_at desc,p.user_id limit 40`, [user.id, me.intent, minAge, maxAge, v.oneLine(filters.city, 80), v.oneLine(filters.game, 40)]);
+    order by gaming_points desc,p.updated_at desc,p.user_id limit 40`, [user.id, me.intent, minAge, maxAge, v.oneLine(filters.city, 80), v.oneLine(filters.game, 40)]);
 }
 export async function likeProfile(db: Database, user: SessionUser, otherId: string) {
   return db.tx(async q => {
@@ -120,13 +135,15 @@ export async function closeMatch(db: Database, user: SessionUser, matchId: strin
     const m = await matchFor(q, user.id, matchId);
     await lockPair(q, m.user_a, m.user_b);
     await q.query("update social_matches set status='closed' where id=$1", [matchId]);
+    await endSocialCalls(q, user.id, matchId);
     await q.query("delete from social_likes where (sender_id=$1 and recipient_id=$2) or (sender_id=$2 and recipient_id=$1)", [m.user_a, m.user_b]);
   });
 }
 async function block(q: Queryable, userId: string, subjectId: string) {
   await q.query("insert into social_blocks(user_id,subject_id) values($1,$2) on conflict do nothing", [userId, subjectId]);
   await q.query("delete from social_likes where (sender_id=$1 and recipient_id=$2) or (sender_id=$2 and recipient_id=$1)", [userId, subjectId]);
-  await q.query("update social_matches set status='closed' where $1 in(user_a,user_b) and $2 in(user_a,user_b)", [userId, subjectId]);
+  const rows = await q.query<{ id: string }>("update social_matches set status='closed' where $1 in(user_a,user_b) and $2 in(user_a,user_b) returning id", [userId, subjectId]);
+  for (const row of rows) await endSocialCalls(q, userId, row.id);
 }
 export async function blockProfile(db: Database, user: SessionUser, subjectId: string, unblock = false) {
   await db.tx(async q => {
@@ -168,6 +185,7 @@ export async function resolveSocialReport(db: Database, user: SessionUser, repor
     if (hide) {
       await q.query("update social_profiles set visible=false,suspended=true where user_id=$1", [r.subject_id]);
       await q.query("update social_matches set status='closed' where $1 in(user_a,user_b)", [r.subject_id]);
+      await endSocialCalls(q, r.subject_id);
     }
     await audit(q, { actorId: user.id, action: "social.report_resolved", entity: "social_report", entityId: reportId, data: { hidden: hide } });
   });
@@ -186,6 +204,7 @@ export async function restoreSocialProfile(db: Database, user: SessionUser, subj
 export async function socialExport(q: Queryable, userId: string) {
   return {
     profile: await socialProfile(q, userId),
+    calls: await q.query("select id,match_id,mode,state,reason,created_at,accepted_at,ended_at from social_calls where $1 in(caller_id,callee_id) order by created_at", [userId]),
     likes: await q.query("select recipient_id,created_at from social_likes where sender_id=$1", [userId]),
     matches: await myMatches(q, userId),
     messages: await q.query("select id,match_id,body,created_at from social_messages where sender_id=$1 order by id", [userId]),
@@ -194,6 +213,8 @@ export async function socialExport(q: Queryable, userId: string) {
   };
 }
 export async function eraseSocial(q: Queryable, userId: string) {
+  await endSocialCalls(q, userId);
+  await q.query("delete from social_calls where $1 in(caller_id,callee_id)", [userId]);
   await q.query("delete from social_profiles where user_id=$1", [userId]);
   await q.query("delete from social_likes where sender_id=$1 or recipient_id=$1", [userId]);
   await q.query("delete from social_blocks where user_id=$1 or subject_id=$1", [userId]);

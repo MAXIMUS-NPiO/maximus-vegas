@@ -2082,4 +2082,36 @@ export const migrations: Migration[] = [
       `alter table rental_jobs add constraint rental_job_backup_fk foreign key(backup_id) references rental_backups(id)`,
     ],
   },
+  {
+    id: 35,
+    name: "consented_gaming_compatibility_and_private_calls",
+    statements: [
+      `alter table social_profiles add column gaming_consent boolean not null default false,
+        add column gaming_consent_version text, add column gaming_consented_at timestamptz`,
+      `create table social_calls (
+        id uuid primary key default gen_random_uuid(), match_id uuid not null references social_matches(id),
+        caller_id uuid not null references users(id), callee_id uuid not null references users(id),
+        caller_client uuid not null, callee_client uuid,
+        mode text not null check(mode in ('audio','video')), state text not null default 'ringing' check(state in ('ringing','accepted','ended')),
+        reason text not null default '', created_at timestamptz not null default now(), accepted_at timestamptz,
+        expires_at timestamptz not null default now()+interval '60 seconds', ended_at timestamptz,
+        caller_seen timestamptz not null default now(), callee_seen timestamptz not null default now(),
+        unique(caller_id,caller_client), check(caller_id<>callee_id)
+      )`,
+      `create index social_calls_match on social_calls(match_id,created_at desc)`,
+      `create index social_calls_live_caller on social_calls(caller_id) where state<>'ended'`,
+      `create index social_calls_live_callee on social_calls(callee_id) where state<>'ended'`,
+      `create table social_call_members (
+        user_id uuid primary key references users(id), call_id uuid not null references social_calls(id) on delete cascade
+      )`,
+      `create index social_call_members_call on social_call_members(call_id)`,
+      `create table social_call_signals (
+        id bigint generated always as identity primary key, call_id uuid not null references social_calls(id) on delete cascade,
+        sender_id uuid not null references users(id), kind text not null check(kind in ('offer','answer','ice')),
+        payload jsonb not null, client_id uuid not null, created_at timestamptz not null default now(), unique(sender_id,client_id)
+      )`,
+      `create index social_call_signal_poll on social_call_signals(call_id,id)`,
+      `create unique index social_call_description on social_call_signals(call_id,kind) where kind in ('offer','answer')`,
+    ],
+  },
 ];
