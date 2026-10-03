@@ -3,6 +3,7 @@ import { getDb } from "@/server/db.ts";
 import { drainOutbox } from "@/server/mail.ts";
 import { sweepPayments } from "@/server/billing.ts";
 import { expireSocialCalls } from "@/server/social-calls.ts";
+import { expireNearby } from "@/server/social-nearby.ts";
 import { expireStale } from "@/server/challenges.ts";
 import { pulseAllQueues } from "@/server/quickmatch.ts";
 import { settleWars } from "@/server/clans.ts";
@@ -28,6 +29,7 @@ export async function GET(request: Request) {
   await sweepPayments(db);
   await expireStale(db);
   await expireSocialCalls(db);
+  await expireNearby(db);
   await pulseAllQueues(db);
   await settleWars(db);
   const webhooks = await pumpWebhooks(db);
