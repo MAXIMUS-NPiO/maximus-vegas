@@ -22,7 +22,9 @@ Owner instruction: implement all five directions and continue through verificati
 
 ## External acceptance still required
 
-The software is ready for a controlled pilot. Operating GPU hosts and public relay connectivity, native installed-game/publisher/anti-cheat compatibility, publisher-specific source credentials, actual venue operators and gift stock, and chain deployment/RPC evidence cannot be inferred from code. No public GPU fleet or blockchain inclusion is claimed. Windows/macOS host agents and server rental remain separate extensions of the supplied P2P concept. The offline scanner requires its page to remain open; arrivals are provisional until reconciliation.
+The portal workflows have passed software acceptance; operating infrastructure still requires connection and verification. Operating GPU hosts and public relay connectivity, native installed-game/publisher/anti-cheat compatibility, publisher-specific source credentials, actual venue operators and gift stock, and chain deployment/RPC evidence cannot be inferred from code. No public GPU fleet or blockchain inclusion is claimed. Windows/macOS host agents and server rental remain separate extensions of the supplied P2P concept. The offline scanner requires its page to remain open; arrivals are provisional until reconciliation.
+
+MIPA implementation provenance is recorded in `docs/IP_RECORD.md`.
 
 ## Constraints carried forward
 

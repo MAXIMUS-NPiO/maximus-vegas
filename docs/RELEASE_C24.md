@@ -14,7 +14,7 @@ The portal previously had several foundations described in the five supplied sci
 | P2P — 004173 | Independently reviewed hosts publish live availability. A host and player receive an exclusive, expiring session with scoped signalling, video, input, feedback and capped non-cash contribution credits. The browser Arena runs on the host and streams to the player. Native host keys can be rotated/revoked. An isolated Linux adapter captures a configured game and accepts bounded input. |
 | Statistics/Web3 — 004172 | Independently approved sources prove a player's linked handle and submit signed, replay-protected data. Organisers review records. A member downloads a private period snapshot with portable Merkle proofs and verifies it locally. Sharing exposes a commitment rather than private records and can be withdrawn. An optional contract adapter checks code, receipt, chain, commitment and finality. |
 
-Migrations 29–33 are additive. Existing account, tournament, membership billing and legal-text behaviour is preserved. The official lion is unchanged. The new components and attribution are recorded in `docs/IP_RECORD.md`; this release makes no new external IP-registration claim.
+Migrations 29–33 are additive. Existing account, tournament, membership billing and legal-text behaviour is preserved. The official lion is unchanged. The new components and MIPA attribution record are recorded in `docs/IP_RECORD.md`; this release makes no new external IP-registration claim.
 
 ## Acceptance actually run
 
@@ -64,4 +64,4 @@ BASE=http://127.0.0.1:3100 CHROMIUM_PATH=/path/to/chromium node scripts/browser-
 - Opt-in matching requires real members and operating moderation. Local fixtures are not audience or usage evidence.
 - Paid coin packages, transferable/withdrawable value, paid game entry and other financial gaming provisions from the source are retained in the requirements record but remain disabled under the approved product boundary. Existing membership billing does not turn progression coins into money.
 
-The release completes the implemented portal journeys and their local acceptance. It is a basis for a controlled pilot, not evidence that all five concepts have reached a commercial operating launch.
+The release completes the implemented portal journeys and their local acceptance. Commercial operation of all five directions still requires the external connections and acceptance listed above.
