@@ -148,3 +148,9 @@ Status: INTERNAL EVIDENCE RECORDED IN REPOSITORY; registry number: NOT PROVIDED.
 Основание: спецификация от 27 September 2026, раздел 8 («смешанные многоэтапные структуры»; предпросмотр, история, freeze и безопасная регенерация); задача C-04 доски.
 Компоненты: порядок MV-STAGES-2 — до трёх этапов в турах между основным этапом и плей-офф; состав каждого этапа по итоговой таблице предыдущего с записью посева, группы и места; змейка по новому посеву с уменьшением числа групп для малого состава; фиксация туров швейцарского этапа с сохранением запроса; фиксация этапа после старта следующего; переход только после решения споров текущего этапа и повтор проверки при возобновлении; итоговые места по этапу выбывания с общими местами после групп; нумерация матчей этапа после прежних этапов того же тура без изменения ключа слота (`src/server/rounds.ts`, `src/server/format-settings.ts`, миграция 24).
 Проверка: интеграционные тесты на PGlite, тест обновления базы release 6, тест гонок на PostgreSQL 16, проверка отката, сквозной сценарий, снимки 390 и 1440 px.
+
+## C-18 — 3 October 2026
+
+Owner-requested corrections based on main 6657387: final-placement participant coverage in rankings, all-game selector, racing-specific catalogue text, shared partner/component status bindings and regression fixtures. Internal component record only; MIPA registration number: NOT PROVIDED. Rights holder and author remain as recorded above; no new attribution or external registration is asserted. Version and source hashes are recorded in docs/AUDIT_C18.json.
+
+C-18 follow-up: language-switch query preservation, public control checks and deployment-access evidence recorded on 3 October 2026 in docs/AUDIT_C18.json. No external registration asserted.

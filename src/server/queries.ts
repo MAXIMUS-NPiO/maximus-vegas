@@ -488,13 +488,19 @@ export async function rankings(db: Queryable, game: string) {
          join registrations r on r.id in (m.a_reg, m.b_reg)
         where t.game = $1 and m.status = 'completed' and m.outcome <> 'bye' and r.user_id is not null),
      titles as (
-       select r.user_id, count(*)::int as n from registrations r join tournaments t on t.id = r.tournament_id
-        where t.game = $1 and t.status in ('COMPLETED','ARCHIVED') and r.placement = 1 and r.user_id is not null group by r.user_id)
+       select r.user_id, count(distinct t.id)::int as n from registrations r join tournaments t on t.id = r.tournament_id
+        where t.game = $1 and t.status in ('COMPLETED','ARCHIVED') and r.placement = 1 and r.user_id is not null group by r.user_id),
+     participants as (
+       select user_id from results
+       union
+       select r.user_id from registrations r join tournaments t on t.id = r.tournament_id
+        where t.game = $1 and t.status in ('COMPLETED','ARCHIVED') and r.placement is not null and r.user_id is not null)
      select u.display_name as name, u.username as link,
             count(*) filter (where won)::int as wins, count(*) filter (where drawn)::int as draws,
             count(*) filter (where not drawn and not won)::int as losses,
             coalesce(max(ti.n), 0)::int as titles
-       from results x join users u on u.id = x.user_id left join titles ti on ti.user_id = u.id
+       from participants p join users u on u.id = p.user_id
+       left join results x on x.user_id = p.user_id left join titles ti on ti.user_id = u.id
       where u.status = 'active' and u.profile_public
       group by u.id order by titles desc, wins desc, draws desc, losses asc limit 100`,
     [game],
@@ -506,13 +512,19 @@ export async function rankings(db: Queryable, game: string) {
          join registrations r on r.id in (m.a_reg, m.b_reg)
         where t.game = $1 and m.status = 'completed' and m.outcome <> 'bye' and r.team_id is not null),
      titles as (
-       select r.team_id, count(*)::int as n from registrations r join tournaments t on t.id = r.tournament_id
-        where t.game = $1 and t.status in ('COMPLETED','ARCHIVED') and r.placement = 1 and r.team_id is not null group by r.team_id)
+       select r.team_id, count(distinct t.id)::int as n from registrations r join tournaments t on t.id = r.tournament_id
+        where t.game = $1 and t.status in ('COMPLETED','ARCHIVED') and r.placement = 1 and r.team_id is not null group by r.team_id),
+     participants as (
+       select team_id from results
+       union
+       select r.team_id from registrations r join tournaments t on t.id = r.tournament_id
+        where t.game = $1 and t.status in ('COMPLETED','ARCHIVED') and r.placement is not null and r.team_id is not null)
      select tm.name, tm.slug as link,
             count(*) filter (where won)::int as wins, count(*) filter (where drawn)::int as draws,
             count(*) filter (where not drawn and not won)::int as losses,
             coalesce(max(ti.n), 0)::int as titles
-       from results x join teams tm on tm.id = x.team_id left join titles ti on ti.team_id = tm.id
+       from participants p join teams tm on tm.id = p.team_id
+       left join results x on x.team_id = p.team_id left join titles ti on ti.team_id = tm.id
       group by tm.id order by titles desc, wins desc, draws desc, losses asc limit 100`,
     [game],
   );

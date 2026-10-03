@@ -62,11 +62,11 @@ Title: Module registry · Status: PENDING MIPA REGISTRATION · Version: 6.1 · D
 
 | Модуль | Состояние и граница |
 | --- | --- |
-| Медиа и трансляции | Live-центр, VOD, клипы, оверлеи. |
+| Клипы, highlights, совместный разбор и профили авторов | Дополнительные медиафункции; трансляции, записи и оверлеи работают и учтены отдельно. |
 | Сообщества, сообщения, голос | С модерацией и ограничениями для несовершеннолетних. |
-| Площадки, Clubhouse, QR check-in | Только подтверждённые адреса и статусы. |
+| Карта площадок, RSVP, бронирование станций и Clubhouse | Каталог подтверждённых площадок и онлайн QR-пропуска работают и учтены отдельно. Офлайн-сканирование не реализовано. |
 | Магазин и маркетплейс | Только реальные заказы и подтверждённые товары. |
-| Кабинет спонсора, API, webhooks, виджеты | Подписанные webhooks и тестовая среда. |
+| Кабинет спонсора и тестовая среда партнёра | Кампании, атрибуция и выделенная тестовая среда; API, подписанные webhooks и виджеты работают и учтены отдельно. |
 | ИИ-помощники игрока, организатора, тренера | Действуют в пределах серверных прав; критичные действия подтверждает человек. |
 | Опекуны, школы и благополучие | Согласия с версиями, лимиты времени и расходов, ограничения контактов. |
 | Облачный гейминг и аренда серверов | Отдельная инфраструктура; сейчас принимаются заявки. |
@@ -82,3 +82,9 @@ Title: Module registry · Status: PENDING MIPA REGISTRATION · Version: 6.1 · D
 | Анализ реакции зрачка | Не применяется к игрокам: никаких выводов о здоровье, личности или честности. |
 | Идентичность ACEXIS | Направление цифровых решений из учёта IP; не является игровым продуктом. |
 | ИИ-аналитика продаж, персонализированные новости и лояльность | Для партнёрских программ и разрешённых рекомендаций. |
+
+## Audit correction C-18 — 3 October 2026
+
+The component registry in src/lib/directions.ts is the source for public feature states. Partners derives its lists from that registry. Home direction badges reuse the implemented academy/coaches, media and venue components; the accompanying text preserves unfinished extensions. Media clips/co-watch/creator profiles, venue maps/RSVP/station booking/Clubhouse, and sponsor workspace/partner sandbox remain in development. Working API/webhooks/widgets, media streams/VOD/overlays and online venue passes are not included in those unfinished rows.
+
+Rankings includes final placed participants without head-to-head matches, for individuals and teams; titles still require final first place in a completed or archived event. All catalogue games are selectable. Trackmania describes referee-entered placement scoring only: no automatic lap timing, and non-placement fields of the shared FFA form must remain zero.

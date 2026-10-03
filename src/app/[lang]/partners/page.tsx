@@ -6,6 +6,7 @@ import { pageMeta } from "@/lib/meta.ts";
 import { viewer } from "@/server/viewer.ts";
 import { Flash, type SearchParams } from "@/components/ui";
 import { ApplicationForm } from "@/components/application-form";
+import { partnerModules, t } from "@/lib/directions.ts";
 import { Arrow, Check } from "@/components/icons";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
@@ -42,10 +43,10 @@ export default async function Partners({ params, searchParams }: { params: Promi
         <section className="card">
           <h2 className="h3">{p.now}</h2>
           <ul className="checks">
-            {p.nowItems.map((x) => (
-              <li key={x}>
+            {partnerModules(true).map((x) => (
+              <li key={x.id}>
                 <Check />
-                {x}
+                {t(x.name, lang)}
               </li>
             ))}
           </ul>
@@ -53,8 +54,8 @@ export default async function Partners({ params, searchParams }: { params: Promi
         <section className="card">
           <h2 className="h3">{p.next}</h2>
           <ul className="bullets">
-            {p.nextItems.map((x) => (
-              <li key={x}>{x}</li>
+            {partnerModules(false).map((x) => (
+              <li key={x.id}>{t(x.name, lang)} — {t(x.note, lang)}</li>
             ))}
           </ul>
         </section>
