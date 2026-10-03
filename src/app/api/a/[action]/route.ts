@@ -1,3 +1,5 @@
+import * as marketplace from "@/server/marketplace.ts";
+import * as arbitration from "@/server/arbitration.ts";
 import { after } from "next/server";
 import * as auth from "@/server/auth.ts";
 import * as accounts from "@/server/accounts.ts";
@@ -78,7 +80,7 @@ const staff = async (c: Ctx, section?: Section) => {
 const signupDraft = (c: Ctx) => ({ email: c.form.email ?? "", username: c.form.username ?? "", displayName: c.form.displayName ?? "", marketing: c.form.marketing ?? "" });
 
 /** What an account under a suspension sanction may still do: read, appeal, manage its own access and data. */
-const RESTRICTED_OK = new Set(["auth.signout", "conduct.appeal", "notifications.read", "account.session", "account.password", "account.delete", "account.accept_terms"]);
+const RESTRICTED_OK = new Set(["arbitration.open", "arbitration.evidence", "arbitration.appeal", "marketplace.delete", "auth.signout", "conduct.appeal", "notifications.read", "account.session", "account.password", "account.delete", "account.accept_terms"]);
 const conductAdmin = (c: Ctx) => `/${c.lang}/admin?tab=conduct`;
 const venueForm = (c: Ctx) => ({
   name: c.form.name,
@@ -101,6 +103,17 @@ const oneTimeSecret = (c: Ctx, kind: "key" | "webhook", value: string, clear = f
 };
 
 const handlers: Record<string, Handler> = {
+  "marketplace.publish": async c => { await marketplace.publishListing(c.db,u(c),idOf(c.form.id),c.form.publish==="1"); },
+  "marketplace.request": async c => { await marketplace.requestDemoOrder(c.db,u(c),idOf(c.form.id)); return `/${c.lang}/marketplace#orders`; },
+  "marketplace.step": async c => { await marketplace.demoOrderStep(c.db,u(c),idOf(c.form.id),c.form.step); },
+
+  "marketplace.save": async c => { await marketplace.saveListingDraft(c.db,u(c),c.form); },
+  "marketplace.delete": async c => { await marketplace.deleteListingDraft(c.db,u(c),idOf(c.form.id)); },
+  "arbitration.open": async c => { const id=await arbitration.openCase(c.db,u(c),c.form); return `/${c.lang}/arbitration?case=${id}`; },
+  "arbitration.evidence": async c => { await arbitration.addCaseEvidence(c.db,u(c),idOf(c.form.id),c.form.body,c.form.evidence); },
+  "arbitration.appeal": async c => { await arbitration.appealCase(c.db,u(c),idOf(c.form.id),c.form.body,c.form.evidence); },
+  "arbitration.claim": async c => { await arbitration.claimCase(c.db,await staff(c,"disputes"),idOf(c.form.id)); },
+  "arbitration.decide": async c => { await arbitration.decideCase(c.db,await staff(c,"disputes"),idOf(c.form.id),c.form.outcome,c.form.body); },
   // ---------- Accounts ----------
   "auth.signup": async (c) => {
     const input = {
@@ -243,7 +256,9 @@ const handlers: Record<string, Handler> = {
   "team.invite": async (c) => {
     const { reserveOrInvite } = await import("@/server/username-reservations.ts");
     const result = await reserveOrInvite(c.db, u(c), idOf(c.form.team), c.form.username);
-    return { ok: result === "reserved" ? "username_reserved" : "invite_sent" };
+    return result === "reserved"
+      ? { to: c.back.split("#")[0] + "#invitation-" + c.form.username.trim().toLowerCase(), ok: "username_reserved" }
+      : { ok: "invite_sent" };
   },
   "team.respond": async (c) => {
     const team = await teams.respondToInvite(c.db, u(c), idOf(c.form.invite), c.form.accept === "1");

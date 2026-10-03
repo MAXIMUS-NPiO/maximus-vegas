@@ -1,3 +1,5 @@
+import { arbitrationExport, eraseMarketData } from "./arbitration.ts";
+import { listingDrafts, myMarketOrders } from "./marketplace.ts";
 import { checkReservedName, claimReservedName } from "./username-reservations.ts";
 import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
@@ -377,6 +379,9 @@ export async function exportAccount(db: Database, user: SessionUser) {
     venuePasses: await passExport(db, user.id),
     portalMessages: await messageExport(db, user.id),
     academy: await academyExport(db, user.id),
+    arbitration: await arbitrationExport(db,user.id),
+    skinListingDrafts: await listingDrafts(db,user.id),
+    skinDemoOrders: await myMarketOrders(db,user.id),
     scoutFilters: await q("select name, query, created_at from scout_filters where user_id = $1 order by created_at"),
     watchlist: await q("select u.username as player, w.note, w.created_at from scout_watch w join users u on u.id = w.player_id where w.user_id = $1 order by w.created_at"),
     reportsFiled: await q(
@@ -494,6 +499,7 @@ export async function deleteAccount(db: Database, user: SessionUser, confirmPass
     await eraseMessageData(q, user.id);
     // Academy: the account's training records go; as a coach, open requests are cancelled and the profile goes.
     await eraseAcademyData(q, user.id);
+    await eraseMarketData(q,user.id);
     // Scouting: the account's filters and watchlist go, and it leaves every other watchlist.
     await q.query("delete from scout_filters where user_id = $1", [user.id]);
     await q.query("delete from scout_watch where user_id = $1 or player_id = $1", [user.id]);

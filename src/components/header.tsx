@@ -72,6 +72,13 @@ export function Header({ lang, nav, extra, common, user }: { lang: Locale; nav: 
               </div>
             </details>
           ))}
+          <details className="nav-group" onToggle={(e) => closeOthers(e.currentTarget)}>
+            <summary>{lang === "ru" ? "Предметы и споры" : "Items and disputes"}<Chevron /></summary>
+            <div className="nav-panel">
+              <Link href={`/${lang}/marketplace`} className="nav-item"><span>Skins Marketplace</span><small>{lang === "ru" ? "Каталог · тестовые сделки" : "Catalogue · test transactions"}</small></Link>
+              <Link href={`/${lang}/arbitration`} className="nav-item"><span>{lang === "ru" ? "Арбитраж" : "Arbitration"}</span><small>{lang === "ru" ? "Споры и апелляции" : "Disputes and appeals"}</small></Link>
+            </div>
+          </details>
           <div className="nav-mobile-extra">
             <Link href={`/${lang}/search`}>{common.search}</Link>
             <Link href={`/${lang}/explore`}>{nav.explore}</Link>

@@ -162,3 +162,9 @@ The owner requested recording this as a "work of science". This entry preserves 
 
 ## 3 October 2026 — Automatic team image preparation
 Owner-requested automatic resizing and compression of team logos before upload, with server validation and full artwork preserved on a transparent square. Large-image browser upload verified locally.
+
+
+## 3 October 2026 — C-22
+MIPA internal implementation record: owner-directed skins marketplace preparation and platform-wide dispute workflow. Private drafts, party evidence history, independent review and separate appeal reviewer. Source and delivered boundaries: docs/MARKETPLACE_C22.md. This is an internal provenance entry; no external registration, exclusivity or novelty is asserted. Live trading and settlement remain unimplemented.
+
+C-22 owner correction: public catalogue and explicitly simulated transaction journey added; reserved-name invitations immediately open a recipient/channel step. MIPA record documents source and implementation provenance only. Fantasy-fashion storyboard remains a separate visual concept.

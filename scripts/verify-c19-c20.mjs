@@ -50,7 +50,13 @@ const meta=await sharp(logoBytes).metadata();assert.equal(meta.width,512);assert
 await submit(p,"team.invite",{username:"storm"+run});
 assert.ok((await p.locator("body").innerText()).includes("ожидает регистрации"));
 const url=await p.locator('input[aria-label="Персональная ссылка"]').inputValue();
-assert.ok(await p.locator('a[href^="mailto:"]').count());assert.ok(await p.locator('a[href^="https://wa.me/"]').count());assert.ok(await p.locator('a[href^="https://t.me/share/"]').count());
+await p.getByLabel("Email получателя",{exact:true}).fill("friend@example.com");
+assert.ok(await p.locator('a[href^="mailto:"]').count());
+await p.getByLabel("Способ отправки").selectOption("whatsapp");
+await p.getByLabel("Номер получателя с кодом страны").fill("+971501234567");
+assert.ok(await p.locator('a[href^="https://wa.me/"]').count());
+await p.getByLabel("Способ отправки").selectOption("telegram");
+assert.ok(await p.locator('a[href^="https://t.me/share/"]').count());
 const ctx2=await browser.newContext();const p2=await ctx2.newPage();p2.on("pageerror",e=>errors.push(e.message));
 await p2.goto(BASE+new URL(url).pathname+new URL(url).search);
 assert.equal(await p2.locator('input[name="username"]').inputValue(),"storm"+run);

@@ -1,6 +1,8 @@
 import { dict, fill, type Locale } from "./i18n.ts";
 
 export function notificationText(lang: Locale, kind: string, data: Record<string, string>) {
+  if(kind === "arbitration_updated") return lang === "ru" ? "Обновление арбитражного дела" : "Arbitration case updated";
+  if(kind === "marketplace_updated") return lang === "ru" ? "Обновление тестовой сделки" : "Test transaction updated";
   const d = dict(lang);
   const template = d.notifications.kinds[kind];
   if (!template) return kind;
@@ -9,6 +11,8 @@ export function notificationText(lang: Locale, kind: string, data: Record<string
 }
 
 export function notificationLink(lang: Locale, data: Record<string, string>) {
+  if (data.marketplace) return `/${lang}/marketplace#orders`;
+  if (data.caseId) return `/${lang}/arbitration?case=${encodeURIComponent(data.caseId)}`;
   if (data.messageId) return `/${lang}/messages/${data.messageId}`;
   if (data.trainingId) return `/${lang}/training/${data.trainingId}`;
   if (data.coachWorkspace) return `/${lang}/coach`;
