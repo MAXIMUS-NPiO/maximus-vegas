@@ -4,6 +4,7 @@ import { openDatabase, type Database } from "../src/server/db.ts";
 import { signUp, sessionUser, type SessionUser } from "../src/server/auth.ts";
 import {
   balance,
+  coinHistory,
   buyCosmetic,
   claimObjective,
   claimPassTier,
@@ -56,6 +57,14 @@ test("coins are earn-only and idempotent; balances never go negative", async () 
   const results = await Promise.all(Array.from({ length: 5 }, (_, i) => moveCoins(db, u.id, -30, "spend", "", `race-${i}`).catch((e) => (e as DomainError).code)));
   assert.equal(results.filter((r) => r === true).length, 3);
   assert.equal(await balance(db, u.id), 10);
+});
+
+test("coin history sorts numeric ledger IDs across a decimal boundary", async () => {
+  const u = await mk("historyorder");
+  await db.query("select setval(pg_get_serial_sequence('coin_ledger','id'),98,false)");
+  for (let i = 0; i < 3; i++) await moveCoins(db, u.id, 1, "test", "", `history-${i}`);
+  assert.deepEqual((await coinHistory(db, u.id)).map(r => r.id), ["100", "99", "98"]);
+  assert.equal(await balance(db, u.id), 3);
 });
 
 test("objectives are evaluated against real state and paid once", async () => {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb, databaseUrl } from "@/server/db.ts";
 import { ping } from "@/server/queries.ts";
 import { mailConfigured } from "@/server/mail.ts";
+import { socialCallsAvailable } from "@/server/social-calls.ts";
 import { paymentReadiness, publicOffer } from "@/server/billing.ts";
 
 export const runtime = "nodejs";
@@ -20,6 +21,7 @@ export async function GET() {
         latencyMs,
         email: mailConfigured() ? "connected" : "not_connected",
         payments: pay.ready ? pay.mode : "off",
+        calls: socialCallsAvailable() ? "relay_configured" : "not_connected",
         checkedAt: new Date().toISOString(),
       },
       { headers: { "Cache-Control": "no-store" } },

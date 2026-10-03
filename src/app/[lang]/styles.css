@@ -2838,3 +2838,10 @@ button:disabled {
   font-size: 28px;
   color: #c9c9d4;
 }
+
+/* Mutual-call controls remain usable on narrow screens. */
+.social-call .row { flex-wrap: wrap; }
+.call-media[hidden] { display: none; }
+.call-media figure { margin: 0; min-width: 0; }
+.call-media video { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #111; border-radius: 12px; }
+.call-media figcaption { margin-top: .4rem; }
