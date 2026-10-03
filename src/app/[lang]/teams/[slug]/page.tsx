@@ -142,7 +142,7 @@ export default async function TeamPage({ params, searchParams }: { params: Promi
                 <button className="btn btn-primary btn-sm">{T("Пригласить / зарезервировать имя", "Invite / reserve username")}</button>
               </ActionForm>
               <p className="small muted">{T("Если игрок уже зарегистрирован, приглашение появится в его хабе. Свободное имя резервируется на 7 дней: отправьте ссылку будущему игроку. До 20 действующих резервов на приглашающего.", "Existing players receive an invitation in their hub. An available username is reserved for 7 days: share the link with the future player. Up to 20 active reservations per inviter.")}</p>
-              {reservations.map(r => <div className="card stack-sm" key={r.id}>
+              {reservations.map(r => <div className="card stack-sm" id={`invitation-${r.username}`} key={r.id}>
                 <h3 className="h4">@{r.username} — {T("ожидает регистрации", "awaiting registration")}</h3>
                 <p className="small">{T("Резерв до", "Reserved until")} <LocalTime iso={r.expires_at} lang={lang} /></p>
                 <ShareInvitation url={`${siteOrigin() ?? "https://www.maximus.vegas"}/${lang}/signup?reservation=${r.id}`} username={r.username} team={team.name} ru={ru} />

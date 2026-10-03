@@ -1792,4 +1792,54 @@ export const migrations: Migration[] = [
       `create index username_reservations_team on username_reservations(team_id)`,
     ],
   },
+  {
+    id: 27,
+    name: "marketplace_drafts_and_arbitration",
+    statements: [
+      `create table skin_listing_drafts (
+        id uuid primary key default gen_random_uuid(), user_id uuid not null references users(id),
+        game text not null, title text not null, asset_ref text not null,
+        price_minor int not null check(price_minor>0), currency text not null check(currency in ('USD','EUR','AED')),
+        created_at timestamptz not null default now(), unique(user_id,game,asset_ref)
+      )`,
+      `create table arbitration_cases (
+        id uuid primary key default gen_random_uuid(), opened_by uuid not null references users(id),
+        respondent_id uuid not null references users(id), category text not null check(category in ('marketplace','team','tournament','account','other')),
+        title text not null, status text not null default 'open' check(status in ('open','reviewing','decided','appealed','closed')),
+        assigned_to uuid references users(id), first_reviewer uuid references users(id),
+        outcome text check(outcome in ('claim_supported','claim_rejected','agreement')),
+        response_due timestamptz not null default now()+interval '72 hours',
+        created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
+        check(opened_by<>respondent_id), check(assigned_to not in(opened_by,respondent_id))
+      )`,
+      `create index arbitration_cases_queue on arbitration_cases(status,created_at)`,
+      `create index arbitration_cases_parties on arbitration_cases(opened_by,respondent_id)`,
+      `create table arbitration_entries (
+        id uuid primary key default gen_random_uuid(), case_id uuid not null references arbitration_cases(id),
+        author_id uuid not null references users(id), kind text not null check(kind in ('opened','evidence','assigned','decision','appeal','appeal_decision')),
+        body text not null, evidence_url text not null default '', digest text not null,
+        created_at timestamptz not null default now()
+      )`,
+      `create index arbitration_entries_case on arbitration_entries(case_id,created_at)`,
+    ],
+  },
+  {
+    id: 28,
+    name: "public_skin_listings_and_simulated_orders",
+    statements: [
+      `alter table skin_listing_drafts add column published boolean not null default false`,
+      `create table skin_demo_orders (
+        id uuid primary key default gen_random_uuid(),
+        listing_id uuid references skin_listing_drafts(id) on delete set null,
+        seller_id uuid not null references users(id), buyer_id uuid not null references users(id),
+        title text not null, game text not null, price_minor int not null check(price_minor>0), currency text not null,
+        status text not null default 'requested' check(status in ('requested','awaiting_payment','payment_simulated','delivery_simulated','completed','cancelled','disputed')),
+        case_id uuid unique references arbitration_cases(id), created_at timestamptz not null default now(),
+        check(seller_id<>buyer_id)
+      )`,
+      `create unique index skin_demo_open_order on skin_demo_orders(listing_id,buyer_id) where status not in ('cancelled','completed')`,
+      `create index skin_demo_parties on skin_demo_orders(seller_id,buyer_id)`,
+      `alter table arbitration_cases add column demo_order_id uuid unique references skin_demo_orders(id)`,
+    ],
+  },
 ];
