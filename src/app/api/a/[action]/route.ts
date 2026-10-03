@@ -99,6 +99,7 @@ const venueForm = (c: Ctx) => ({
   country: c.form.country,
   description: c.form.description,
   website: c.form.website,
+  ...(c.form.discovery === "1" ? { latitude: c.form.latitude, longitude: c.form.longitude, games: c.multi.games ?? [] } : {}),
 });
 /**
  * A new API key or webhook secret is shown once: an HttpOnly cookie for the integrations page only, five
@@ -887,7 +888,7 @@ const handlers: Record<string, Handler> = {
   "venue.review": async (c) => {
     const user = await staff(c, "venues");
     mfa.requireStepUp(user);
-    await venues.reviewVenue(c.db, user, c.form.venue, c.form.decision, c.form.note);
+    await venues.reviewVenue(c.db, user, c.form.venue, c.form.decision, c.form.note, c.form.version ?? "");
     return { to: `/${c.lang}/admin?tab=venues`, ok: "venue_reviewed" };
   },
   "tournament.venue_set": async (c) => {

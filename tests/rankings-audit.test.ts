@@ -65,7 +65,11 @@ test("public summaries reuse component states and preserve unfinished extensions
     assert.equal(DIRECTIONS.find(x=>x.slug===slug)?.state,MODULES.find(x=>x.id===id)?.state);
   }
   assert.ok(pending.some(x=>x.id==="sponsor-workspace"));
-  for(const term of ["Clips, highlights", "Venue map"]) assert.ok(MODULES.some(x=>x.state==="dev" && x.name.en.startsWith(term)));
+  assert.ok(MODULES.some(x=>x.state==="dev" && x.name.en.startsWith("Clips, highlights")));
+  const map = MODULES.find(x=>x.name.en === "Venue map");
+  assert.equal(map?.state,"works");
+  assert.match(map!.note.en,/changes require review/);
+  assert.match(map!.note.en,/Venues without coordinates remain in the list/);
 });
 
 test("racing catalogue copy does not inherit battle royale scoring", () => {

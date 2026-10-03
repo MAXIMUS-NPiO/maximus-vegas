@@ -7,7 +7,7 @@ Source: owner-supplied `project_sources/01-technical-en.pdf`, §15.2, printed pa
 | ID | Requirement / implementation decision | Acceptance |
 |---|---|---|
 | C28-01 | Optional public venue coordinates and supported game tags entered by its organizer; existing venues default to no coordinates and no game claims | Strict paired coordinates, known games, authorization, additive migration and legacy-update compatibility |
-| C28-02 | Coordinates, games, identity and venue-kind changes to a confirmed venue require review before it returns to the directory | Staff review exposes the supplied data; draft, resubmitted, rejected and suspended venues never enter public discovery |
+| C28-02 | Coordinates, games, identity and venue-kind changes to a confirmed venue require review before it returns to the directory | Staff review exposes the supplied data; browser decisions carry the displayed version; draft, resubmitted, rejected and suspended venues never enter public discovery |
 | C28-03 | Server-filtered name, game, kind, country and city search with shared list/map results | Literal search, intersected filters, eligibility before pagination, deterministic ordering and truthful empty/limited states |
 | C28-04 | Interactive OpenStreetMap map loads only after an explicit action; only reviewed public venue coordinates are serialized | No user geolocation; accessible venue links remain available; map errors preserve the list; safe text markers and attribution |
 | C28-05 | Complete RU/EN organizer → staff review → public discovery flow | Local database and browser acceptance, 390/1440 px layouts, required quality gate and public read-only release verification |
@@ -16,4 +16,4 @@ Implementation uses a lazily loaded browser map in the current portal; no paid p
 
 Remaining source requirements are preserved: Clubhouse join-policy membership enforcement, native applications, rotating native passes and live presence transport; actual operating venues, hours and inventory require operator evidence. Existing QR/offline controls, all other four works, brand, non-cash gaming, accounts and billing remain intact. Map software acceptance does not establish that any physical venue operates.
 
-State: claimed; implementation and acceptance pending.
+State: C28-01 through C28-05 implemented and locally accepted. Migration 37 is additive. All 307 domain tests passed without skips, including seven new venue-discovery tests and real PostgreSQL edit/review concurrency. Ten browser scenarios and twelve RU/EN responsive captures passed; filter-reset duplication and accessible naming were corrected. Existing HTTP e2e, browser smoke and 14 server-agent tests passed. Public status assertions recognize the map while preserving other unfinished requirements. Release and publication evidence: `docs/RELEASE_C28.md` and PR #31.

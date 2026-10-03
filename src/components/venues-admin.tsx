@@ -2,6 +2,8 @@ import Link from "next/link";
 import type { Locale } from "@/lib/i18n.ts";
 import { countryName } from "@/lib/countries.ts";
 import { venueText } from "@/lib/venue-text.ts";
+import { gameBySlug } from "@/lib/games.ts";
+import { venueCoordinateLink } from "@/lib/venue-discovery.ts";
 import type { Database } from "@/server/db.ts";
 import { venueReviewQueue } from "@/server/venues.ts";
 import { ActionForm, Badge, Empty, Field } from "@/components/ui";
@@ -57,7 +59,12 @@ export async function VenuesTab({ db, lang, back }: { db: Database; lang: Locale
         </a>
       ) : null}
       {r.description ? <p className="small muted prewrap">{r.description}</p> : null}
-      <ActionForm action="venue.review" lang={lang} back={back} hidden={{ venue: r.id }} className="stack-sm">
+      <p className="small">{v.games}: {r.games.map(g => gameBySlug(g)?.name ?? g).join(", ") || "—"}</p>
+      <p className="small">{r.lat_e6 !== null && r.lng_e6 !== null ? <a href={venueCoordinateLink(r.lat_e6 / 1e6, r.lng_e6 / 1e6)} target="_blank" rel="noopener">
+        {v.coordinates}: {r.lat_e6 / 1e6}, {r.lng_e6 / 1e6} ↗
+      </a> : v.noCoordinates}</p>
+      <p className="small muted">{v.gamesHelp}</p>
+      <ActionForm action="venue.review" lang={lang} back={back} hidden={{ venue: r.id, version: String(r.review_version) }} className="stack-sm">
         <Field label={x.note}>
           <textarea name="note" maxLength={500} rows={2} />
         </Field>
