@@ -193,3 +193,8 @@ Owner-directed original material: browser-side coarse-location protocol; version
 ## 3 October 2026 — C-28: reviewed venue discovery
 
 Original portal material: organizer-supplied public entrance coordinates and game declarations; version-bound browser review under the venue lock; shared literal name/game/type/location discovery; an explicitly opened interactive map with safe text markers, accessible venue selection and failure fallback; migration, concurrency and synthetic-tile browser acceptance harnesses. Source trace: WOS 004174 and supplied technical overview §15.2. Existing third-party mapping dependencies retain their own licences and attribution. No native source reuse, independent address certification, new copyright registration or real operating venue is asserted. PR #31; `docs/C28_IMPLEMENTATION_STATE.md` and `docs/RELEASE_C28.md`. Ownership remains as recorded by the repository.
+
+
+## 4 October 2026 — C-29: browser broadcasts and customer-selected retention
+
+MIPA internal implementation record: owner-directed native screen/audio studio, prepaid service orders, authoritative payment reconciliation and monotonic revocation, bounded viewer grants, private recording lifecycle, selected retention and retryable erasure. Original portal additions include RU/EN controls, migrations and local/CI acceptance harnesses. Technical service dependencies retain their licences. No provider partnership, approved commercial tariff, native mobile extension, external media acceptance or new IP registration is asserted. PR #32; source coverage in `docs/C29_IMPLEMENTATION_STATE.md`, operation in `docs/BROADCASTS.md`. Ownership remains with the owner under the existing repository record.

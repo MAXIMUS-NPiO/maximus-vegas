@@ -10,6 +10,7 @@ import { mediaCentre, type MediaRow } from "@/server/streams.ts";
 import { DbDown, Empty, Flash, one, PageHead, type SearchParams } from "@/components/ui";
 import { ApplicationForm } from "@/components/application-form";
 import { portalHost, StreamCard } from "@/components/streams";
+import { publicBroadcasts } from "@/server/broadcasts.ts";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
   const { lang } = await params;
@@ -29,6 +30,7 @@ export default async function Media({ params, searchParams }: { params: Promise<
   const { db, user, dbError } = await viewer();
   const data = db ? await mediaCentre(db, game) : { live: [], upcoming: [], vods: [] };
   const host = await portalHost();
+  const native = db ? await publicBroadcasts(db) : [];
   const context = (r: MediaRow) => (
     <>
       <Link href={`/${lang}/tournaments/${r.t_slug}`}>{r.t_name}</Link> · {gameBySlug(r.t_game)?.name ?? r.t_game}
@@ -56,6 +58,7 @@ export default async function Media({ params, searchParams }: { params: Promise<
   return (
     <div className="container page">
       <PageHead title={x.title} lead={x.lead} />
+      <Link className="btn btn-primary" href={`/${lang}/studio`}>{lang === "ru" ? "Открыть студию эфиров и POV" : "Open live & POV studio"}</Link>
       <Flash lang={lang} params={sp} />
       {dbError ? (
         <DbDown lang={lang} />
@@ -75,6 +78,7 @@ export default async function Media({ params, searchParams }: { params: Promise<
           <section className="section-tight stack-sm" id="live">
             <h2 className="h3">{x.live}</h2>
             <p className="small muted">{x.liveNote}</p>
+            {native.length ? <div className="grid grid-2">{native.map(b => <Link key={b.id} className="card card-link" href={`/${lang}/watch/${b.id}`}><span className="small muted">LIVE · {b.display_name}</span><h3>{b.title}</h3></Link>)}</div> : null}
             <Cards rows={data.live} empty={x.noLive} />
           </section>
           <section className="section-tight stack-sm" id="schedule">

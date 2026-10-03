@@ -68,6 +68,7 @@ export default async function Hub({ params, searchParams }: { params: Promise<{ 
         {d.hub.hello}, {user.displayName}
       </h1>
       <Flash lang={lang} params={sp} />
+      <Link className="btn btn-secondary" href={`/${lang}/studio`}>{T("Студия эфиров и POV", "Live & POV studio")}</Link>
       {termsUpdate ? (
         <div className="notice notice-warn" role="status">
           <p>

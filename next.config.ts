@@ -23,6 +23,7 @@ const config: NextConfig = {
         ],
       },
       { source: "/:lang/dating", headers: [{ key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(self)" }] },
+      { source: "/:lang/studio", headers: [{ key: "Permissions-Policy", value: "camera=(), microphone=(self), display-capture=(self), geolocation=()" }] },
       { source: "/:lang/dating/:id", headers: [{ key: "Permissions-Policy", value: "camera=(self), microphone=(self), geolocation=()" }] },
       { source: "/:lang/clubhouse/:path*", headers: [{ key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=()" }] },
       { source: "/:lang/cloud-gaming/session/:path*", headers: [{ key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), display-capture=(self)" }] },

@@ -4,6 +4,7 @@ import { eraseClubhouse } from "./clubhouse.ts";
 import { eraseP2p } from "./p2p.ts";
 import { eraseRentals } from "./rentals.ts";
 import { statisticsExport, eraseStatistics } from "./statistics.ts";
+import { eraseBroadcasts } from "./broadcasts.ts";
 import { listingDrafts, myMarketOrders } from "./marketplace.ts";
 import { checkReservedName, claimReservedName } from "./username-reservations.ts";
 import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
@@ -334,6 +335,8 @@ export async function exportAccount(db: Database, user: SessionUser) {
   const [mfa] = await q<{ enrolled: boolean }>("select confirmed_at is not null as enrolled from mfa_factors where user_id = $1");
   return {
     exportedAt: new Date().toISOString(),
+    broadcasts: await q("select id,title,mode,minutes,max_viewers,retention_days,state,started_at,ended_at,archive_state,retain_until,created_at from native_broadcasts where owner_id=$1"),
+    broadcastOrders: await q("select id,broadcast_id,state,amount_minor,currency,tariff,mode,paid_at,created_at from broadcast_orders where user_id=$1"),
     profile,
     roles: user.roles,
     consents: await q("select kind, version, granted, source, created_at from consents where user_id = $1 order by id"),
@@ -451,6 +454,8 @@ export async function deleteAccount(db: Database, user: SessionUser, confirmPass
   if (!row || typeof confirmPassword !== "string" || !(await verifyPassword(confirmPassword, row.password_hash)))
     fail("wrong_password");
   await db.tx(async (q) => {
+    // Serialize account closure with native-service purchases using the same account lock.
+    await q.query("select id from users where id=$1 for update", [user.id]);
     const [owned] = await q.query<{ n: number }>(
       `select count(*)::int as n from teams t
         where t.owner_id = $1 and exists (select 1 from team_members m where m.team_id = t.id and m.user_id <> $1)`,
@@ -469,6 +474,7 @@ export async function deleteAccount(db: Database, user: SessionUser, confirmPass
       [user.id],
     );
     if (paying) throw new DomainError("checkout_in_progress");
+    await eraseBroadcasts(q, user.id);
     const tag = user.id.slice(0, 8);
     await q.query(
       `update users set email = $2, username = $3, display_name = 'Deleted user', password_hash = $4,

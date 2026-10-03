@@ -1,0 +1,26 @@
+.studio { display: grid; gap: 1.5rem; }
+.workspace { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(280px, 1fr); gap: 1.5rem; align-items: start; }
+.preview { position: relative; aspect-ratio: 16 / 9; background: #090b0d; border: 1px solid #33383b; border-radius: 12px; overflow: hidden; display: grid; place-items: center; }
+.preview video { width: 100%; height: 100%; object-fit: contain; }
+.empty { position: absolute; text-align: center; padding: 2rem; color: #a9b0b5; max-width: 32rem; }
+.live { position: absolute; top: 1rem; left: 1rem; border-radius: 5px; padding: .35rem .6rem; background: #c92c42; color: white; font-size: .8rem; font-weight: 700; }
+.controls { display: flex; gap: .65rem; flex-wrap: wrap; margin-top: 1rem; align-items: center; }
+.settings { display: grid; gap: 1rem; padding: 1.4rem; border: 1px solid #363b40; border-radius: 12px; background: #131619; }
+.settings label { display: grid; gap: .4rem; font-size: .9rem; }
+.settings input:not([type=checkbox]), .settings select { width: 100%; min-width: 0; }
+.settings .check { display: flex; gap: .65rem; align-items: start; line-height: 1.5; }
+.check input { margin-top: .3rem; flex: 0 0 auto; }
+.quote { padding-top: 1rem; border-top: 1px solid #363b40; }
+.price { font-size: 2rem; font-weight: 700; display: block; }
+.details { display: grid; gap: .7rem; white-space: pre-wrap; max-height: 24rem; overflow: auto; }
+.list { display: grid; gap: 1rem; }
+.record { padding: 1.3rem; border: 1px solid #363b40; border-radius: 12px; display: grid; gap: .6rem; }
+.record h3 { margin: 0; overflow-wrap: anywhere; }
+.meta { display: flex; gap: .5rem 1.2rem; flex-wrap: wrap; color: #a9b0b5; font-size: .85rem; }
+.error { color: #ffc3c8; border: 1px solid #804452; padding: .8rem 1rem; border-radius: 8px; }
+.notice { border-left: 3px solid #bd9b57; background: #bd9b5710; padding: 1rem 1.2rem; }
+.player { width: 100%; min-height: 280px; background: #090b0d; border-radius: 12px; }
+.player video { width: 100%; max-height: 72vh; display: block; }
+.player audio { display: none; }
+@media (max-width: 850px) { .workspace { grid-template-columns: 1fr; } .settings { padding: 1rem; } }
+@media (max-width: 440px) { .controls > button { flex: 1 1 auto; } .price { font-size: 1.6rem; } .empty { padding: 1rem; font-size: .85rem; } }
