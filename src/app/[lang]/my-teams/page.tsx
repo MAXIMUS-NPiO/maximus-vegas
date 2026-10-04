@@ -22,7 +22,7 @@ export default async function MyTeams({ params, searchParams }: { params: Promis
   const [deliveries, directIncoming] = await Promise.all([invitationDeliveryOverview(db, user, search), incomingDeliveries(db, user)]);
   const teamId = leaders.some(t => t.id === one(sp.team)) ? one(sp.team) : leaders[0]?.id;
   const username = one(sp.username).replace(/^@/, "").slice(0, 24);
-  const statuses: Record<string, string> = { pending: T("Ожидает ответа", "Awaiting response"), accepted: T("Приглашение принято", "Invitation accepted"), declined: T("Отклонено", "Declined"), revoked: T("Отменено", "Cancelled"), claimed: T("Имя получено при регистрации", "Username claimed at sign-up"), expired: T("Срок резерва истёк", "Reservation expired") };
+  const statuses: Record<string, string> = { pending: T("Ожидает ответа", "Awaiting response"), accepted: T("Приглашение принято", "Invitation accepted"), declined: T("Отклонено", "Declined"), revoked: T("Отменено", "Cancelled"), claimed: T("Имя получено при регистрации", "Username claimed at sign-up"), expired: T("Срок истёк", "Expired") };
   return <div className="container page">
     <Link className="text-link" href={`/${lang}/hub`}>← {T("Мой кабинет", "My hub")}</Link>
     <PageHead title={T("Мои команды и приглашения", "My teams & invitations")} lead={T("Составы, приглашённые игроки и зарезервированные имена — в одном месте.", "Your rosters, invited players and reserved usernames in one place.")}>
