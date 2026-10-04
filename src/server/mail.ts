@@ -45,11 +45,28 @@ function smtp(from: string, url: string): Transport {
     name: "smtp",
     async send(mail) {
       const { createTransport } = await import("nodemailer");
-      const transport = createTransport(url);
-      const info = await transport.sendMail({ from, to: mail.to, subject: mail.subject, text: mail.text, html: mail.html, messageId: undefined });
-      return { id: String(info.messageId ?? "") };
+      const config = new URL(url);
+      config.searchParams.set("connectionTimeout", "10000");
+      config.searchParams.set("greetingTimeout", "10000");
+      config.searchParams.set("socketTimeout", "10000");
+      config.searchParams.set("dnsTimeout", "10000");
+      const transport = createTransport(config.toString());
+      try {
+        const info = await transport.sendMail({ from, to: mail.to, subject: mail.subject, text: mail.text, html: mail.html, messageId: `<${mail.idempotencyKey}@maximus.vegas>` });
+        if (!smtpRecipientAccepted(info, mail.to)) throw new Error("smtp recipient not accepted");
+        return { id: String(info.messageId ?? "") };
+      } finally {
+        transport.close();
+      }
     },
   };
+}
+
+/** SMTP resolving a request is insufficient if the intended recipient was rejected. */
+export function smtpRecipientAccepted(info: { accepted?: unknown[]; rejected?: unknown[] }, recipient: string): boolean {
+  const address = (value: unknown) => (typeof value === "string" ? value : value && typeof value === "object" && "address" in value ? String(value.address) : "").trim().toLowerCase();
+  const expected = recipient.trim().toLowerCase();
+  return Boolean(info.accepted?.some((value) => address(value) === expected)) && !info.rejected?.some((value) => address(value) === expected);
 }
 
 export function mailTransport(): Transport | null {
@@ -86,7 +103,8 @@ export type Template =
   | "membership_decision"
   | "invoice_issued"
   | "payment_received"
-  | "membership_active";
+  | "membership_active"
+  | "team_invitation";
 
 export async function enqueueMail(
   q: Queryable,
@@ -105,6 +123,18 @@ export function render(template: Template, lang: "ru" | "en", data: Record<strin
   const ru = lang === "ru";
   const s = (x: unknown) => String(x ?? "");
   switch (template) {
+    case "team_invitation":
+      return {
+        subject: ru ? `Приглашение в команду ${s(data.team)} — MAXIMUS VEGAS` : `Invitation to ${s(data.team)} — MAXIMUS VEGAS`,
+        lines: [
+          ru ? `@${s(data.by)} приглашает вас в команду «${s(data.team)}».` : `@${s(data.by)} invites you to the team “${s(data.team)}”.`,
+          ...(data.username ? [ru ? `Приглашение для @${s(data.username)}.` : `This invitation is for @${s(data.username)}.`] : []),
+          ru ? `Ссылка действует до ${s(data.expiresAt)}. Для нового аккаунта подтвердите этот email, затем примите приглашение.` : `The link expires at ${s(data.expiresAt)}. For a new account, confirm this email address, then accept the invitation.`,
+          ru ? "Вы войдёте в команду только после вашего согласия. Если приглашение неожиданное, проигнорируйте письмо." : "You join the team only after accepting. If this invitation is unexpected, ignore this email.",
+        ],
+        // A message may have been queued before the origin was configured.
+        action: { label: ru ? "Открыть приглашение" : "View invitation", url: /^\/(ru|en)\/team-invitations\/[0-9a-f-]+$/.test(s(data.path)) ? link(s(data.path)) : s(data.url) },
+      };
     case "verify_email":
       return {
         subject: ru ? "Подтвердите email — MAXIMUS VEGAS" : "Confirm your email — MAXIMUS VEGAS",
@@ -181,6 +211,11 @@ export const MAX_ATTEMPTS = 7;
  * same message twice; a crashed claim is retried after its lock expires.
  */
 export async function drainOutbox(db: Database, limit = 10): Promise<{ configured: boolean; sent: number; failed: number }> {
+  await db.query(`update email_outbox o set status='cancelled',locked_until=null,last_error=''
+    where o.status in('pending','failed','sending') and o.team_invitation_id is not null
+      and exists(select 1 from team_invitation_deliveries d where d.id=o.team_invitation_id and (d.status<>'pending' or d.expires_at<=now()))`);
+  await db.query(`update email_outbox set status='failed',last_error='mail_retry_exhausted',locked_until=null
+    where status='sending' and locked_until<now() and attempts>=$1`, [MAX_ATTEMPTS]);
   const transport = mailTransport();
   if (!transport) return { configured: false, sent: 0, failed: 0 };
   const claimed = await db.query<{ id: string; to_email: string; template: Template; lang: "ru" | "en"; data: Record<string, unknown>; attempts: number; created_at: Date }>(
@@ -197,25 +232,48 @@ export async function drainOutbox(db: Database, limit = 10): Promise<{ configure
   let sent = 0;
   let failed = 0;
   for (const row of batch) {
-    try {
-      const mail = compose(row.template, row.lang, row.data, row.to_email, row.id);
-      const result = await transport.send(mail);
-      await db.query(
-        "update email_outbox set status = 'sent', provider = $2, provider_message_id = $3, sent_at = now(), last_error = '', locked_until = null where id = $1",
-        [row.id, transport.name, result.id],
-      );
-      sent++;
-    } catch (error) {
-      const wait = BACKOFF_MINUTES[Math.min(row.attempts - 1, BACKOFF_MINUTES.length - 1)];
-      await db.query(
-        `update email_outbox set status = 'failed', last_error = $2, locked_until = null, provider = $3,
-            next_attempt_at = now() + ($4 || ' minutes')::interval where id = $1`,
-        [row.id, String((error as Error).message ?? error).slice(0, 300), transport.name, String(wait)],
-      );
-      failed++;
+    if (row.template === "team_invitation") {
+      // Lock the invitation through the provider acknowledgement. Revocation either wins first and
+      // cancels this unsent message, or follows a completed provider handoff. A stale claim cannot send.
+      const outcome = await db.tx(async (q) => {
+        const [invitation] = await q.query<{ id: string; status: string; valid: boolean }>(`select d.id,d.status,
+          (d.expires_at>clock_timestamp() and (d.recipient_user_id is null or exists(select 1 from users u where u.id=d.recipient_user_id and u.status in('active','pending')))) as valid
+          from team_invitation_deliveries d join email_outbox o on o.team_invitation_id=d.id where o.id=$1 for update of d`, [row.id]);
+        const [current] = await q.query<{ status: string; attempts: number }>("select status,attempts from email_outbox where id=$1 for update", [row.id]);
+        if (!current || current.status !== "sending" || current.attempts !== row.attempts) return "cancelled";
+        if (!invitation || invitation.status !== "pending" || !invitation.valid) {
+          await q.query("update email_outbox set status='cancelled',locked_until=null,last_error='' where id=$1", [row.id]);
+          return "cancelled";
+        }
+        return deliver(q, row, transport);
+      });
+      if (outcome === "sent") sent++;
+      if (outcome === "failed") failed++;
+    } else {
+      const outcome = await deliver(db, row, transport);
+      if (outcome === "sent") sent++;
+      else failed++;
     }
   }
   return { configured: true, sent, failed };
+}
+
+async function deliver(q: Queryable, row: { id: string; to_email: string; template: Template; lang: "ru" | "en"; data: Record<string, unknown>; attempts: number }, transport: Transport): Promise<"sent" | "failed"> {
+  try {
+    const result = await transport.send(compose(row.template, row.lang, row.data, row.to_email, row.id));
+    await q.query(
+      "update email_outbox set status='sent',provider=$2,provider_message_id=$3,sent_at=now(),last_error='',locked_until=null where id=$1 and status='sending' and attempts=$4",
+      [row.id, transport.name, result.id, row.attempts],
+    );
+    return "sent";
+  } catch {
+    const wait = BACKOFF_MINUTES[Math.min(row.attempts - 1, BACKOFF_MINUTES.length - 1)];
+    // Provider errors can contain recipient addresses; keep a non-identifying operational code.
+    await q.query(`update email_outbox set status='failed',last_error='mail_provider_failed',locked_until=null,provider=$2,
+      next_attempt_at=now()+($3 || ' minutes')::interval where id=$1 and status='sending' and attempts=$4`,
+      [row.id, transport.name, String(wait), row.attempts]);
+    return "failed";
+  }
 }
 
 export async function outboxSummary(q: Queryable) {

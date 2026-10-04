@@ -125,6 +125,8 @@ export function Header({ lang, nav, extra, common, user }: { lang: Locale; nav: 
                 </summary>
                 <div className="account-panel">
                   <Link href={`/${lang}/hub`}>{nav.hub}</Link>
+                  <Link href={`/${lang}/my-teams#invite-player`}>{lang === "ru" ? "Пригласить игрока" : "Invite a player"}</Link>
+                  <Link href={`/${lang}/experience`}>{lang === "ru" ? "Мой игровой опыт" : "My gaming experience"}</Link>
                   <Link href={`/${lang}/my-teams`}>{lang === "ru" ? "Мои команды и приглашения" : "My teams & invitations"}</Link>
                   <Link href={`/${lang}/community`}>{lang === "ru" ? "Моё сообщество" : "My community"}</Link>
                   <Link href={`/${lang}/gameday`}>{extra.gameDay}</Link>

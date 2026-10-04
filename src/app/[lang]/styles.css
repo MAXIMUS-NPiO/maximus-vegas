@@ -2845,3 +2845,13 @@ button:disabled {
 .call-media figure { margin: 0; min-width: 0; }
 .call-media video { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #111; border-radius: 12px; }
 .call-media figcaption { margin-top: .4rem; }
+
+/* Recipient-first invitations keep the complete form readable on phones. */
+.invitation-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+.invitation-fields input[type="radio"] { width: auto; accent-color: var(--accent, #9f87ff); }
+.invitation-preview { overflow-wrap: anywhere; }
+.invitation-preview p { margin-bottom: 0; }
+
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin: 8px 0; }
+.stats-grid dt { font-size: .8rem; opacity: .7; overflow-wrap: anywhere; }
+.stats-grid dd { margin: 4px 0 0; font-size: 1.15rem; font-weight: 700; }

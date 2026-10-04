@@ -1,3 +1,4 @@
+import { publicExperienceBadges } from "@/server/player-experience.ts";
 import { MemberAvatar } from "@/components/member-avatar";
 import Link from "next/link";
 import type { Metadata } from "next";
@@ -21,6 +22,7 @@ export default async function Players({ params, searchParams }: { params: Promis
   const q = one((await searchParams).q).slice(0, 40);
   const { db, dbError } = await viewer();
   const list = db ? await listPlayers(db, q).catch(() => []) : [];
+  const experienceBadges = db ? await publicExperienceBadges(db, list.map(p => p.username)) : new Map<string, string[]>();
   return (
     <div className="container page">
       <PageHead title={d.players.title} lead={d.players.lead} />
@@ -37,8 +39,9 @@ export default async function Players({ params, searchParams }: { params: Promis
               <MemberAvatar name={p.display_name} mediaId={p.avatar_media_id} size="lg" />
               <strong>{p.display_name}</strong>
               <span className="small muted">@{p.username}</span>
+              {experienceBadges.get(p.username)?.length ? <span className="badge badge-info">{lang === "ru" ? "Опыт" : "Experience"}: {experienceBadges.get(p.username)!.join(" · ")}</span> : null}
               <span className="small">
-                {p.wins} {lang === "ru" ? "побед" : "wins"}
+                {p.wins} {lang === "ru" ? "побед в MAXIMUS" : "MAXIMUS wins"}
                 {p.country ? ` · ${p.country}` : ""}
               </span>
             </Link>

@@ -202,3 +202,8 @@ MIPA internal implementation record: owner-directed native screen/audio studio, 
 ## 4 October 2026 — C-30: community home and clear invitations
 
 MIPA internal implementation record: owner-directed personal invitation/reservation desk; independent mutual friendships; membership-scoped community rooms; privacy-scoped photo avatars; bilateral clan relationships; transparent host/practitioner review; bounded audio-only group room lifecycle and provider cleanup; RU/EN flows and isolated acceptance fixtures. Source trace: the owner's gamer feedback and four-page EC-01-004170 certificate attachment. No full 81-page source, new copyright registration, provider partnership, hired host or operating clinical service is asserted. Technical dependencies retain their licences. PR #33; requirements in `docs/C30_IMPLEMENTATION_STATE.md`, operating boundaries in `docs/COMMUNITY.md`. Ownership remains with the owner under this repository's existing record.
+
+
+## 4 October 2026 — C-31: recipient-first invitations and sourced player experience
+
+Owner-directed original portal material: shared recipient-first invitation controls, durable delivery and response lifecycle, exact recipient binding, idempotency and expiry/revocation guards; verified-account game-history adapters, source-attributed experience passport, independent sharing and bounded synchronization; additive migrations and isolated acceptance fixtures. Existing third-party APIs and documentation retain their own rights. This entry asserts no new copyright registration, publisher certification, provider partnership or live mail-provider acceptance. PR #34; requirements and operating boundaries in `docs/C31_IMPLEMENTATION_STATE.md`; reproducible checks in `GATES.md`. Ownership remains as recorded above.

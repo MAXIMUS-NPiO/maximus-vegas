@@ -1,3 +1,5 @@
+import { profileExperience } from "@/server/player-experience.ts";
+import { PlayerExperienceCard } from "@/components/player-experience";
 import { MemberAvatar } from "@/components/member-avatar";
 import Link from "next/link";
 import type { Metadata } from "next";
@@ -60,7 +62,7 @@ export default async function Player({ params }: { params: Promise<{ lang: strin
     ratingsFor(db, p.user.id),
     ratingHistory(db, p.user.id, "", 120),
   ]);
-  const [teamEvents, clan] = await Promise.all([playerHistory(db, p.user.id), clanOf(db, p.user.id)]);
+  const [teamEvents, clan, experience] = await Promise.all([playerHistory(db, p.user.id), clanOf(db, p.user.id), profileExperience(db, p.user.id, user?.id)]);
   const draws = p.history.filter((h) => h.drawn).length;
   const { rank } = rankFor(xp);
   return (
@@ -81,7 +83,7 @@ export default async function Player({ params }: { params: Promise<{ lang: strin
             {p.user.country ? ` · ${p.user.country}` : ""} · {d.players.since} <LocalTime iso={p.user.created_at} lang={lang} dateOnly />
           </p>
           <p className="row">
-            <Badge status="info">{ru ? rank.ru : rank.en}</Badge>
+            <Badge status="info">{ru ? "Прогресс в MAXIMUS" : "MAXIMUS progression"}: {ru ? rank.ru : rank.en}</Badge>
             {member ? <Badge status="ok">{ru ? "Членство VEGAS" : "VEGAS member"}</Badge> : null}
             {clan ? (
               <Link href={`/${lang}/clans/${clan.slug}`} className="badge badge-muted">
@@ -136,6 +138,8 @@ export default async function Player({ params }: { params: Promise<{ lang: strin
           </div>
         </dl>
       </header>
+
+      <PlayerExperienceCard lang={lang} data={experience} />
 
       <section className="section-tight">
         <h2 className="h3">{d.players.passport}</h2>

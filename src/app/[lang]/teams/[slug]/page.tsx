@@ -1,6 +1,6 @@
 import { AutoImageInput } from "@/components/auto-image-input";
-import { ShareInvitation } from "@/components/share-invitation";
-import { siteOrigin } from "@/lib/site.ts";
+import { InvitationComposer } from "@/components/invitation-composer";
+import { mailConfigured } from "@/server/mail.ts";
 import { MemberAvatar } from "@/components/member-avatar";
 import Link from "next/link";
 import type { Metadata } from "next";
@@ -141,17 +141,8 @@ export default async function TeamPage({ params, searchParams }: { params: Promi
           {isLeader ? (
             <>
               <h2 className="h3">{d.teams.invite}</h2>
-              <ActionForm action="team.invite" lang={lang} back={back} hidden={hidden} className="inline-form">
-                <input name="username" required pattern="@?[A-Za-z0-9_]{3,24}" placeholder={d.teams.inviteUsername} aria-label={d.teams.inviteUsername} autoCapitalize="none" />
-                <button className="btn btn-primary btn-sm">{T("Пригласить / зарезервировать имя", "Invite / reserve username")}</button>
-              </ActionForm>
-              <p className="small muted">{T("Если игрок уже зарегистрирован, приглашение появится в его хабе. Свободное имя резервируется на 7 дней: отправьте ссылку будущему игроку. До 20 действующих резервов на приглашающего.", "Existing players receive an invitation in their hub. An available username is reserved for 7 days: share the link with the future player. Up to 20 active reservations per inviter.")}</p>
-              {reservations.map(r => <div className="card stack-sm" id={`invitation-${r.username}`} key={r.id}>
-                <h3 className="h4">@{r.username} — {T("ожидает регистрации", "awaiting registration")}</h3>
-                <p className="small">{T("Резерв до", "Reserved until")} <LocalTime iso={r.expires_at} lang={lang} /></p>
-                <ShareInvitation url={`${siteOrigin() ?? "https://www.maximus.vegas"}/${lang}/signup?reservation=${r.id}`} username={r.username} team={team.name} ru={ru} />
-                <ActionForm action="team.reservation_revoke" lang={lang} back={back} hidden={{reservation:r.id}}><button className="btn btn-ghost btn-xs">{T("Отменить резерв", "Cancel reservation")}</button></ActionForm>
-              </div>)}
+              <InvitationComposer lang={lang} teams={[{ id: team.id, name: team.name }]} initialTeam={team.id} emailConfigured={mailConfigured()} />
+              {reservations.length > 0 && <p className="section-tight"><Link className="text-link" href={`/${lang}/my-teams?team=${team.id}#reserved`}>{T("Зарезервированные имена и статус приглашений", "Reserved usernames & invitation status")} ({reservations.length}) →</Link></p>}
               {invites.length ? (
                 <>
                   <h3 className="h4">{d.teams.pendingInvites}</h3>

@@ -155,6 +155,7 @@ export default async function Settings({ params, searchParams }: { params: Promi
       <section className="section-tight">
         <h2 className="h3">{d.settings.games}</h2>
         <p className="small muted">{d.settings.gamesNote}</p>
+          <div className="notice stack-sm"><strong>{T("Ваш игровой опыт уже с вами", "Your gaming experience comes with you")}</strong><p>{T("Подключите внешний профиль: история, ранг и достижения появятся с названием источника. Прогресс в MAXIMUS учитывается отдельно.", "Connect an external profile to bring your history, rank and achievements with their source. MAXIMUS progression is tracked separately.")}</p><Link className="btn btn-primary btn-sm" href={`/${lang}/experience`}>{T("Подключить игровой опыт", "Connect gaming experience")}</Link></div>
           <GameNames lang={lang} back={back} accounts={accounts} />
       </section>
 

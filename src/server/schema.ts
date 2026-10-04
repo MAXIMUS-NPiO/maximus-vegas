@@ -1,3 +1,5 @@
+import { playerExperienceSchema } from "./player-experience-schema.ts";
+import { teamInvitationStatements } from "./team-invitation-schema.ts";
 /**
  * Ordered, append-only migrations. Never edit an applied migration; add a new one.
  * Each entry is a list of single statements so both node-postgres and PGlite run them.
@@ -2246,4 +2248,6 @@ export const migrations: Migration[] = [
       `insert into community_voice_worker(id) values(true)`,
     ],
   },
+  { id: 40, name: "recipient_team_invitations", statements: teamInvitationStatements },
+  { id: 41, name: "verified_player_experience", statements: playerExperienceSchema },
 ];

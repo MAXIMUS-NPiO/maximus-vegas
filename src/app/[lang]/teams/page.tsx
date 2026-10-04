@@ -25,6 +25,7 @@ export default async function Teams({ params, searchParams }: { params: Promise<
   return (
     <div className="container page">
       <PageHead title={d.teams.title} lead={d.teams.lead}>
+        {user && <Link href={`/${lang}/my-teams#invite-player`} className="btn btn-primary btn-sm">{lang === "ru" ? "Пригласить игрока" : "Invite a player"}</Link>}
         {user && <Link href={`/${lang}/my-teams`} className="btn btn-secondary btn-sm">{lang === "ru" ? "Мои команды и приглашения" : "My teams & invitations"}</Link>}
         <Link href={`/${lang}/teams/new`} className="btn btn-primary btn-sm">
           {d.teams.create}

@@ -4,7 +4,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { chromium } from "playwright-core";
 const BASE = "http://127.0.0.1:3109", dataDir = "/tmp/c29-browser-acceptance";
-const env = { ...process.env, DATABASE_URL: "", MV_DATA_DIR: dataDir, MV_EMBEDDED_DB: "1", MV_LOCAL: "1", NEXT_PUBLIC_SITE_URL: BASE,
+const env = { ...process.env, DATABASE_URL: "", POSTGRES_URL: "", NEON_DATABASE_URL: "", MV_DATA_DIR: dataDir, MV_EMBEDDED_DB: "1", MV_LOCAL: "1", NEXT_PUBLIC_SITE_URL: BASE,
   MV_BROADCAST_ENABLED: "", MV_BROADCAST_TARIFF: "", STRIPE_SECRET_KEY: "", STRIPE_WEBHOOK_SECRET: "", LIVEKIT_URL: "" };
 const run = (args, options = {}) => new Promise((resolve, reject) => {
   const p = spawn(process.execPath, args, { env, stdio: "inherit", ...options });
