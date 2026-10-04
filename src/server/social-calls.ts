@@ -35,10 +35,10 @@ export async function endSocialCalls(q: Queryable, userId: string, matchId?: str
   const rows = await q.query<{ id: string }>("select id from social_calls where $1 in(caller_id,callee_id) and ($2::uuid is null or match_id=$2) and state<>'ended' order by id for update", [userId, matchId ?? null]);
   await finish(q, rows.map(r => r.id), reason);
 }
-async function eligible(q: Queryable, a: string, b: string) {
-  const [r] = await q.query<{ n: number }>(`select count(*)::int as n from users u join social_profiles p on p.user_id=u.id
-    where u.id=any($1::uuid[]) and u.status='active' and u.adult_confirmed_at is not null and p.visible and not p.suspended
-    and not exists(select 1 from sanctions s where s.user_id=u.id and s.kind='suspension' and s.revoked_at is null and s.starts_at<=now() and (s.ends_at is null or s.ends_at>now()))`, [[a, b]]);
+async function eligible(q: Queryable, a: string, b: string, friendship: boolean) {
+  const [r] = await q.query<{ n: number }>(`select count(*)::int as n from users u left join social_profiles p on p.user_id=u.id
+    where u.id=any($1::uuid[]) and u.status='active' and u.adult_confirmed_at is not null and ($2::boolean or p.visible) and not coalesce(p.suspended,false)
+    and not exists(select 1 from sanctions s where s.user_id=u.id and s.kind='suspension' and s.revoked_at is null and s.starts_at<=now() and (s.ends_at is null or s.ends_at>now()))`, [[a, b], friendship]);
   const blocked = (await q.query("select 1 from social_blocks where (user_id=$1 and subject_id=$2) or (user_id=$2 and subject_id=$1)", [a, b])).length;
   return r.n === 2 && !blocked;
 }
@@ -81,12 +81,12 @@ export async function socialCallAction(db: Database, user: SessionUser, input: R
     if (!initial) fail("not_found");
     const pair = [initial.user_a, initial.user_b].sort();
     await q.query("select id from users where id=any($1::uuid[]) order by id for update", [pair]);
-    const [match] = await q.query<{ status: string }>("select status from social_matches where id=$1 for update", [matchId]);
+    const [match] = await q.query<{ status: string; friendship_active: boolean }>("select status,friendship_active from social_matches where id=$1 for update", [matchId]);
     const [{ now }] = await q.query<{ now: Date }>("select now() as now");
     // Clear stale reservations of either participant, including calls in another match.
     const active = await q.query<CallRow>("select * from social_calls where state<>'ended' and (caller_id=any($1::uuid[]) or callee_id=any($1::uuid[])) order by id for update", [pair]);
     for (const row of active) if (expired(row, new Date(now).getTime())) await finish(q, [row.id], "expired");
-    const allowed = match.status === "active" && !user.restricted && await eligible(q, pair[0], pair[1]);
+    const allowed = match.status === "active" && !user.restricted && await eligible(q, pair[0], pair[1], match.friendship_active);
     if (!allowed) await endSocialCalls(q, user.id, matchId);
     let [c] = await q.query<CallRow>(`select * from social_calls where match_id=$1 and ($2::uuid is null or id=$2) order by created_at desc,id desc limit 1`, [matchId, input.callId ?? null]);
     const available = socialCallsAvailable();

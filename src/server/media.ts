@@ -8,7 +8,7 @@ import type { Queryable } from "./db.ts";
 import { fail } from "./errors.ts";
 import { hasSection } from "./staff-roles.ts";
 
-export type MediaKind = "team_logo" | "team_banner" | "tournament_banner" | "evidence" | "sponsor_logo";
+export type MediaKind = "team_logo" | "team_banner" | "tournament_banner" | "evidence" | "sponsor_logo" | "avatar";
 
 export const MEDIA_LIMITS: Record<MediaKind, number> = {
   team_logo: 256 * 1024,
@@ -16,6 +16,7 @@ export const MEDIA_LIMITS: Record<MediaKind, number> = {
   tournament_banner: 1024 * 1024,
   evidence: 1536 * 1024,
   sponsor_logo: 256 * 1024,
+  avatar: 128 * 1024,
 };
 
 const DAILY_UPLOADS = 20;
@@ -42,7 +43,7 @@ export async function storeUpload(q: Queryable, ownerId: string | null, kind: Me
   let bytes = new Uint8Array(await file.arrayBuffer());
   if (brand) {
     const { normalizeBrandImage } = await import("./normalize-image.ts");
-    bytes = new Uint8Array(await normalizeBrandImage(bytes, kind === "team_logo" || kind === "sponsor_logo", MEDIA_LIMITS[kind]));
+    bytes = new Uint8Array(await normalizeBrandImage(bytes, kind === "team_logo" || kind === "sponsor_logo" || kind === "avatar", MEDIA_LIMITS[kind]));
   }
   const type = sniffImage(bytes);
   if (!type) fail("invalid_file");

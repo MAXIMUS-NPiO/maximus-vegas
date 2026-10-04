@@ -1,3 +1,4 @@
+import { MemberAvatar } from "@/components/member-avatar";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -33,9 +34,7 @@ export default async function Players({ params, searchParams }: { params: Promis
         <div className="grid grid-4">
           {list.map((p) => (
             <Link key={p.username} href={`/${lang}/players/${p.username}`} className="card card-link player-card">
-              <span className="avatar avatar-lg" aria-hidden="true">
-                {p.display_name.slice(0, 1).toUpperCase()}
-              </span>
+              <MemberAvatar name={p.display_name} mediaId={p.avatar_media_id} size="lg" />
               <strong>{p.display_name}</strong>
               <span className="small muted">@{p.username}</span>
               <span className="small">

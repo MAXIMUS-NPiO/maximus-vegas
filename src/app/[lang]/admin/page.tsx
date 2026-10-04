@@ -39,6 +39,7 @@ import { sectionsFor, STAFF_ROLES } from "@/server/staff-roles.ts";
 import { roleNames } from "@/lib/staff-text.ts";
 import { recordStaffSearch } from "@/server/admin.ts";
 import { VenuesTab } from "@/components/venues-admin";
+import { CommunityHostsAdmin, CommunityReportsAdmin } from "@/components/community-admin";
 import { AcademyTab } from "@/components/academy-admin";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
@@ -77,7 +78,7 @@ const TAB_LABELS: Record<Tab, { ru: string; en: string }> = {
   conduct: { ru: "Честная игра", en: "Fair play" },
   applications: { ru: "Обращения", en: "Inquiries" },
   venues: { ru: "Площадки", en: "Venues" },
-  academy: { ru: "Тренеры", en: "Coaches" },
+  academy: { ru: "Тренеры и поддержка", en: "Coaches & support" },
   memberships: { ru: "Членство", en: "Membership" },
   offers: { ru: "Предложения", en: "Offers" },
   payments: { ru: "Оплаты", en: "Payments" },
@@ -249,11 +250,11 @@ export default async function Admin({ params, searchParams }: { params: Promise<
       <Empty title={T("Спорных вызовов нет.", "No disputed challenges.")} />
     );
   } else if (tab === "conduct") {
-    body = <><SocialAdmin db={db} user={user} lang={lang} back={back} /><ConductTab db={db} user={user} lang={lang} back={back} /></>;
+    body = <><CommunityReportsAdmin db={db} user={user} lang={lang} back={back} /><SocialAdmin db={db} user={user} lang={lang} back={back} /><ConductTab db={db} user={user} lang={lang} back={back} /></>;
   } else if (tab === "venues") {
     body = <VenuesTab db={db} lang={lang} back={back} />;
   } else if (tab === "academy") {
-    body = <AcademyTab db={db} lang={lang} back={back} />;
+    body = <><CommunityHostsAdmin db={db} user={user} lang={lang} back={back} /><AcademyTab db={db} lang={lang} back={back} /></>;
   } else if (tab === "applications") {
     const list = await adminApplications(db);
     body = list.length ? (

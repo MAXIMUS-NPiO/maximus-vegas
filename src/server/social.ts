@@ -51,8 +51,8 @@ export async function withdrawSocialProfile(db: Database, user: SessionUser) {
     await q.query("update social_profiles set visible=false,gaming_consent=false,gaming_consent_version=null,gaming_consented_at=null,updated_at=now() where user_id=$1", [user.id]);
     await clearNearby(q, user.id);
     await q.query("delete from social_likes where sender_id=$1 or recipient_id=$1", [user.id]);
-    await q.query("update social_matches set status='closed' where user_a=$1 or user_b=$1", [user.id]);
-    await endSocialCalls(q, user.id);
+    const closed = await q.query<{ id: string }>("update social_matches set status='closed' where (user_a=$1 or user_b=$1) and not friendship_active returning id", [user.id]);
+    for (const m of closed) await endSocialCalls(q, user.id, m.id);
     await audit(q, { actorId: user.id, action: "social.consent_withdrawn", entity: "user", entityId: user.id });
   });
 }
@@ -116,7 +116,7 @@ export async function myMatches(q: Queryable, userId: string) {
     where $1 in(m.user_a,m.user_b) order by m.created_at desc limit 100`, [userId]);
 }
 async function matchFor(q: Queryable, userId: string, matchId: string, lock = false) {
-  const [m] = await q.query<{ id: string; user_a: string; user_b: string; status: string }>(`select * from social_matches where id=$1 and $2 in(user_a,user_b) ${lock ? "for update" : ""}`, [matchId, userId]);
+  const [m] = await q.query<{ id: string; user_a: string; user_b: string; status: string; friendship_active: boolean }>(`select * from social_matches where id=$1 and $2 in(user_a,user_b) ${lock ? "for update" : ""}`, [matchId, userId]);
   if (!m) fail("not_found"); return m;
 }
 export async function conversation(db: Database, user: SessionUser, matchId: string, before = 0) {
@@ -135,7 +135,9 @@ export async function sendSocialMessage(db: Database, user: SessionUser, matchId
     await lockPair(q, initial.user_a, initial.user_b); await activeAccount(q, user);
     const m = await matchFor(q, user.id, matchId, true);
     if (m.status !== "active" || await blocked(q, m.user_a, m.user_b)) fail("request_state");
-    const [count] = await q.query<{ n: number }>("select count(*)::int as n from social_profiles p join users u on u.id=p.user_id where p.user_id=any($1::uuid[]) and p.visible and u.status='active'", [[m.user_a, m.user_b]]);
+    const [count] = await q.query<{ n: number }>(`select count(*)::int as n from users u left join social_profiles p on p.user_id=u.id
+      where u.id=any($1::uuid[]) and ($2::boolean or p.visible) and not coalesce(p.suspended,false) and u.status='active' and u.adult_confirmed_at is not null
+      and not exists(select 1 from sanctions s where s.user_id=u.id and s.kind='suspension' and s.revoked_at is null and s.starts_at<=now() and (s.ends_at is null or s.ends_at>now()))`, [[m.user_a, m.user_b], m.friendship_active]);
     if (count.n !== 2) fail("consent_required");
     const [old] = await q.query<{ id: string }>("select id from social_messages where sender_id=$1 and client_id=$2", [user.id, clientId]);
     if (old) return old.id;
@@ -149,7 +151,8 @@ export async function closeMatch(db: Database, user: SessionUser, matchId: strin
   await db.tx(async q => {
     const m = await matchFor(q, user.id, matchId);
     await lockPair(q, m.user_a, m.user_b);
-    await q.query("update social_matches set status='closed' where id=$1", [matchId]);
+    await q.query("update social_matches set status='closed',friendship_active=false where id=$1", [matchId]);
+    await q.query("update community_friend_requests set status='cancelled',updated_at=now() where user_a=$1 and user_b=$2", [m.user_a, m.user_b]);
     await endSocialCalls(q, user.id, matchId);
     await q.query("delete from social_likes where (sender_id=$1 and recipient_id=$2) or (sender_id=$2 and recipient_id=$1)", [m.user_a, m.user_b]);
   });
@@ -157,7 +160,8 @@ export async function closeMatch(db: Database, user: SessionUser, matchId: strin
 async function block(q: Queryable, userId: string, subjectId: string) {
   await q.query("insert into social_blocks(user_id,subject_id) values($1,$2) on conflict do nothing", [userId, subjectId]);
   await q.query("delete from social_likes where (sender_id=$1 and recipient_id=$2) or (sender_id=$2 and recipient_id=$1)", [userId, subjectId]);
-  const rows = await q.query<{ id: string }>("update social_matches set status='closed' where $1 in(user_a,user_b) and $2 in(user_a,user_b) returning id", [userId, subjectId]);
+  await q.query("update community_friend_requests set status='cancelled',updated_at=now() where $1 in(user_a,user_b) and $2 in(user_a,user_b)", [userId, subjectId]);
+  const rows = await q.query<{ id: string }>("update social_matches set status='closed',friendship_active=false where $1 in(user_a,user_b) and $2 in(user_a,user_b) returning id", [userId, subjectId]);
   for (const row of rows) await endSocialCalls(q, userId, row.id);
 }
 export async function blockProfile(db: Database, user: SessionUser, subjectId: string, unblock = false) {
@@ -200,7 +204,8 @@ export async function resolveSocialReport(db: Database, user: SessionUser, repor
     if (hide) {
       await q.query("update social_profiles set visible=false,suspended=true where user_id=$1", [r.subject_id]);
       await clearNearby(q, r.subject_id);
-      await q.query("update social_matches set status='closed' where $1 in(user_a,user_b)", [r.subject_id]);
+      await q.query("update social_matches set status='closed',friendship_active=false where $1 in(user_a,user_b)", [r.subject_id]);
+      await q.query("update community_friend_requests set status='cancelled',updated_at=now() where $1 in(user_a,user_b)", [r.subject_id]);
       await endSocialCalls(q, r.subject_id);
     }
     await audit(q, { actorId: user.id, action: "social.report_resolved", entity: "social_report", entityId: reportId, data: { hidden: hide } });

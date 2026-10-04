@@ -68,6 +68,11 @@ export default async function Hub({ params, searchParams }: { params: Promise<{ 
         {d.hub.hello}, {user.displayName}
       </h1>
       <Flash lang={lang} params={sp} />
+      <nav className="grid grid-3 section-tight" aria-label={T("Быстрые действия", "Quick actions")}>
+        <Link className="card card-link" href={`/${lang}/my-teams`}><strong>{T("Мои команды и приглашения", "My teams & invitations")}</strong><span className="small muted">{T("Игроки, составы, зарезервированные имена", "Players, rosters and reserved usernames")}</span></Link>
+        <Link className="card card-link" href={`/${lang}/my-teams#invite-player`}><strong>{T("Пригласить игрока", "Invite a player")}</strong><span className="small muted">{T("Выбрать команду и имя → отправить ссылку", "Choose a team and username → share a link")}</span></Link>
+        <Link className="card card-link" href={`/${lang}/community`}><strong>{T("Моё сообщество", "My community")}</strong><span className="small muted">{T("Друзья, чаты, кланы и поддержка", "Friends, chats, clans and support")}</span></Link>
+      </nav>
       <Link className="btn btn-secondary" href={`/${lang}/studio`}>{T("Студия эфиров и POV", "Live & POV studio")}</Link>
       {termsUpdate ? (
         <div className="notice notice-warn" role="status">
@@ -277,6 +282,7 @@ export default async function Hub({ params, searchParams }: { params: Promise<{ 
       <div className="grid grid-2 section-tight">
         <section>
           <h2 className="h3">{d.hub.teams}</h2>
+          <p><Link className="text-link" href={`/${lang}/my-teams`}>{T("Все мои команды и приглашения", "All my teams & invitations")} →</Link></p>
           {data.teams.length ? (
             <ul className="list">
               {data.teams.map((t) => (

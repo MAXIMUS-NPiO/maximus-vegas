@@ -1,6 +1,7 @@
 import { AutoImageInput } from "@/components/auto-image-input";
 import { ShareInvitation } from "@/components/share-invitation";
 import { siteOrigin } from "@/lib/site.ts";
+import { MemberAvatar } from "@/components/member-avatar";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -68,6 +69,8 @@ export default async function TeamPage({ params, searchParams }: { params: Promi
         </h1>
       </div>
       <Flash lang={lang} params={sp} />
+      {isMember && <p><Link href={`/${lang}/community/chat?scope=team&id=${team.id}`} className="btn btn-primary btn-sm">{ru ? "Чат нашей команды" : "Our team chat"}</Link></p>}
+      {user && <div className="row wrap section-tight"><Link className="btn btn-ghost btn-sm" href={`/${lang}/my-teams`}>{T("Мои команды и приглашения", "My teams & invitations")}</Link>{isLeader && <Link className="btn btn-primary btn-sm" href={`/${lang}/my-teams?team=${team.id}#invite-player`}>{T("Пригласить игрока", "Invite a player")}</Link>}</div>}
       <dl className="stat-row section-tight">
         <div>
           <dt>{T("Матчи", "Matches")}</dt>
@@ -94,6 +97,7 @@ export default async function TeamPage({ params, searchParams }: { params: Promi
           <ul className="list">
             {members.map((m) => (
               <li key={m.id} className="member-row">
+                <MemberAvatar name={m.display_name} mediaId={m.avatar_media_id} />
                 <span className="grow">
                   <Link href={`/${lang}/players/${m.username}`}>{m.display_name}</Link>{" "}
                   <span className="small muted">@{m.username}</span>
@@ -138,7 +142,7 @@ export default async function TeamPage({ params, searchParams }: { params: Promi
             <>
               <h2 className="h3">{d.teams.invite}</h2>
               <ActionForm action="team.invite" lang={lang} back={back} hidden={hidden} className="inline-form">
-                <input name="username" required pattern="[A-Za-z0-9_]{3,24}" placeholder={d.teams.inviteUsername} aria-label={d.teams.inviteUsername} autoCapitalize="none" />
+                <input name="username" required pattern="@?[A-Za-z0-9_]{3,24}" placeholder={d.teams.inviteUsername} aria-label={d.teams.inviteUsername} autoCapitalize="none" />
                 <button className="btn btn-primary btn-sm">{T("Пригласить / зарезервировать имя", "Invite / reserve username")}</button>
               </ActionForm>
               <p className="small muted">{T("Если игрок уже зарегистрирован, приглашение появится в его хабе. Свободное имя резервируется на 7 дней: отправьте ссылку будущему игроку. До 20 действующих резервов на приглашающего.", "Existing players receive an invitation in their hub. An available username is reserved for 7 days: share the link with the future player. Up to 20 active reservations per inviter.")}</p>

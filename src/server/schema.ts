@@ -2184,4 +2184,66 @@ export const migrations: Migration[] = [
       )`,
     ],
   },
+  {
+    id: 39,
+    name: "community_rooms_friendships_avatars_and_clan_relations",
+    statements: [
+      `alter table media drop constraint media_kind_check`,
+      `alter table media add constraint media_kind_check check(kind in ('team_logo','team_banner','tournament_banner','evidence','sponsor_logo','avatar'))`,
+      `alter table users add column avatar_media_id uuid references media(id) on delete set null`,
+      `alter table social_matches add column friendship_active boolean not null default false`,
+      `create table community_friend_requests (
+        id uuid primary key default gen_random_uuid(), user_a uuid not null references users(id), user_b uuid not null references users(id),
+        requested_by uuid not null references users(id), status text not null default 'pending' check(status in ('pending','accepted','declined','cancelled')),
+        created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
+        unique(user_a,user_b), check(user_a<user_b), check(requested_by in(user_a,user_b))
+      )`,
+      `create table community_messages (
+        id bigserial primary key, scope text not null check(scope in ('global','team','clan')), scope_id uuid,
+        sender_id uuid not null references users(id), body text not null check(char_length(body)<=1000),
+        client_id uuid not null, created_at timestamptz not null default now(), removed_at timestamptz,
+        unique(sender_id,client_id), check((scope='global' and scope_id is null) or (scope<>'global' and scope_id is not null))
+      )`,
+      `create index community_room_messages on community_messages(scope,scope_id,id desc)`,
+      `create index community_message_rate on community_messages(sender_id,created_at)`,
+      `create table community_reports (
+        id uuid primary key default gen_random_uuid(), message_id bigint not null references community_messages(id),
+        reporter_id uuid not null references users(id), subject_id uuid not null references users(id),
+        reason text not null, excerpt text not null, status text not null default 'open' check(status in ('open','resolved')),
+        decision text not null default '', decided_by uuid references users(id), created_at timestamptz not null default now(), decided_at timestamptz,
+        unique(message_id,reporter_id)
+      )`,
+      `create table clan_relationships (
+        id uuid primary key default gen_random_uuid(), clan_a uuid not null references clans(id), clan_b uuid not null references clans(id),
+        proposed_by uuid not null references clans(id), kind text not null check(kind in ('allies','rivals')),
+        status text not null default 'pending' check(status in ('pending','active','ended')),
+        created_at timestamptz not null default now(), updated_at timestamptz not null default now(), expires_at timestamptz not null default now()+interval '7 days',
+        unique(clan_a,clan_b), check(clan_a<clan_b), check(proposed_by in(clan_a,clan_b))
+      )`,
+      `create table community_hosts (
+        user_id uuid primary key references users(id), role text not null check(role in ('host','psychologist')),
+        bio text not null, languages text not null, jurisdiction text not null, organisation text not null,
+        credential text not null default '', credential_url text not null default '', booking_url text not null default '',
+        status text not null default 'pending' check(status in ('pending','verified','rejected','suspended')),
+        version int not null default 1, review_note text not null default '', reviewed_by uuid references users(id),
+        verified_until timestamptz, created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+      )`,
+      `create table community_voice_rooms (
+        id uuid primary key, scope text not null check(scope in ('global','team','clan')), scope_id uuid,
+        state text not null default 'opening' check(state in ('opening','active','closing','closed')),
+        created_at timestamptz not null default now(), expires_at timestamptz not null default now()+interval '30 minutes', cleanup_until timestamptz,
+        check((scope='global' and scope_id is null) or (scope<>'global' and scope_id is not null))
+      )`,
+      `create unique index community_voice_one_room on community_voice_rooms(scope,coalesce(scope_id,'00000000-0000-0000-0000-000000000000'::uuid)) where state<>'closed'`,
+      `create table community_voice_seats (
+        id uuid primary key, room_id uuid not null references community_voice_rooms(id), user_id uuid not null references users(id), device text not null,
+        state text not null default 'joined' check(state in ('joined','leaving','left')), heartbeat_at timestamptz not null default now(), created_at timestamptz not null default now()
+      )`,
+      `create unique index community_voice_one_user on community_voice_seats(user_id) where state<>'left'`,
+      `create index community_voice_room_seats on community_voice_seats(room_id,state)`,
+      `create index community_voice_user_rate on community_voice_seats(user_id,created_at)`,
+      `create table community_voice_worker (id boolean primary key default true check(id), lease_until timestamptz not null default now())`,
+      `insert into community_voice_worker(id) values(true)`,
+    ],
+  },
 ];

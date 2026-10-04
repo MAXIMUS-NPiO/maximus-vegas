@@ -3,6 +3,8 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { dict, isLocale } from "@/lib/i18n.ts";
 import { GameNames } from "@/components/game-names";
+import { AutoImageInput } from "@/components/auto-image-input";
+import { MemberAvatar } from "@/components/member-avatar";
 import { countryOptions } from "@/lib/countries.ts";
 import { LEGAL_VERSIONS } from "@/lib/legal.ts";
 import { pageMeta } from "@/lib/meta.ts";
@@ -67,6 +69,12 @@ export default async function Settings({ params, searchParams }: { params: Promi
     <div className="container narrow page">
       <h1>{d.settings.title}</h1>
       <Flash lang={lang} params={sp} />
+      <section className="section-tight" id="avatar"><h2 className="h3">{T("Мой аватар", "My avatar")}</h2><div className="card stack">
+        <MemberAvatar name={user.displayName} mediaId={user.avatarMediaId} size="xl" />
+        <p>{T("Ваша фотография или игровой образ появится рядом с вашим именем. Фото закрытого профиля доступно вашим собеседникам, товарищам по команде/клану и участникам общего чата после вашей публикации в нём.", "Your photo or game avatar appears beside your name. A private profile's photo is visible to your connections, team/clan members and members of the global chat after you post there.")}</p>
+        <ActionForm action="community.avatar" lang={lang} back={`${back}#avatar`} multipart className="stack-sm"><Field label={T("Фотография или аватар", "Photo or avatar")}><AutoImageInput name="avatar" logo ru={ru} /></Field><button className="btn btn-primary">{T("Сохранить аватар", "Save avatar")}</button></ActionForm>
+        {user.avatarMediaId && <ActionForm action="community.avatar" lang={lang} back={`${back}#avatar`} hidden={{ clear: "1" }}><button className="btn btn-ghost">{T("Удалить фото", "Remove photo")}</button></ActionForm>}
+      </div></section>
 
       <section className="section-tight">
         <h2 className="h3">{d.settings.profile}</h2>

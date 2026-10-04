@@ -1,5 +1,6 @@
 import { arbitrationExport, eraseMarketData } from "./arbitration.ts";
 import { socialExport, eraseSocial } from "./social.ts";
+import { communityExport, eraseCommunity } from "./community.ts";
 import { eraseClubhouse } from "./clubhouse.ts";
 import { eraseP2p } from "./p2p.ts";
 import { eraseRentals } from "./rentals.ts";
@@ -42,6 +43,7 @@ export type SessionUser = {
   /** When this session last passed the second factor (staff only). */
   mfaAt?: Date | null;
   avatarColor?: string;
+  avatarMediaId?: string | null;
   onboarded?: boolean;
   /** A live suspension sanction: the account reads and appeals, every other action is refused. */
   restricted?: boolean;
@@ -196,10 +198,11 @@ export async function sessionUser(db: Queryable, token: string | undefined): Pro
     email_verified_at: Date | null;
     mfa_at: Date | null;
     avatar_color: string;
+    avatar_media_id: string | null;
     onboarded_at: Date | null;
     restricted: boolean;
   }>(
-    `select u.id, u.email, u.username, u.display_name, s.last_seen_at, u.email_verified_at, s.mfa_at, u.avatar_color, u.onboarded_at,
+    `select u.id, u.email, u.username, u.display_name, s.last_seen_at, u.email_verified_at, s.mfa_at, u.avatar_color, u.avatar_media_id, u.onboarded_at,
             array(select role from user_roles r where r.user_id = u.id order by role) as roles,
             exists (select 1 from sanctions x where x.user_id = u.id and x.kind = 'suspension' and x.revoked_at is null
                        and x.starts_at <= now() and (x.ends_at is null or x.ends_at > now())) as restricted
@@ -220,6 +223,7 @@ export async function sessionUser(db: Queryable, token: string | undefined): Pro
     emailVerified: Boolean(row.email_verified_at),
     mfaAt: row.mfa_at ? new Date(row.mfa_at) : null,
     avatarColor: row.avatar_color,
+    avatarMediaId: row.avatar_media_id,
     onboarded: Boolean(row.onboarded_at),
     restricted: Boolean(row.restricted),
   };
@@ -388,6 +392,7 @@ export async function exportAccount(db: Database, user: SessionUser) {
     portalMessages: await messageExport(db, user.id),
     academy: await academyExport(db, user.id),
     connections: await socialExport(db, user.id),
+    community: await communityExport(db, user.id),
     statistics: await statisticsExport(db, user.id),
     recurringMissions: await q("select mission,window_start,window_end,game,target,coins,xp,claimed_at from mission_assignments where user_id=$1 order by window_start"),
     venueGifts: await q("select id,reward_id,status,claimed_at,collected_at from pass_reward_claims where user_id=$1"),
@@ -525,6 +530,7 @@ export async function deleteAccount(db: Database, user: SessionUser, confirmPass
     // Academy: the account's training records go; as a coach, open requests are cancelled and the profile goes.
     await eraseAcademyData(q, user.id);
     await eraseMarketData(q,user.id);
+    await eraseCommunity(q, user.id);
     await eraseSocial(q, user.id);
     await eraseClubhouse(q, user.id);
     await eraseP2p(q, user.id);

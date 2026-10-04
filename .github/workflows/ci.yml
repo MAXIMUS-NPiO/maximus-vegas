@@ -44,3 +44,14 @@ jobs:
             artifacts/c29-screens
             artifacts/c29-browser-report.json
             artifacts/c29-server.log
+      - name: Community browser acceptance
+        run: node scripts/community-browser.mjs
+      - name: Community acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: community-acceptance
+          path: |
+            artifacts/c30-screens
+            artifacts/c30-browser-report.json
+            artifacts/c30-server.log

@@ -68,7 +68,7 @@ export default async function Layout({ children, params }: { children: React.Rea
           nav={d.nav}
           extra={d.x.nav}
           common={d.common}
-          user={user ? { username: user.username, displayName: user.displayName, admin: isStaff(user), unread } : null}
+          user={user ? { username: user.username, displayName: user.displayName, avatarMediaId: user.avatarMediaId, admin: isStaff(user), unread } : null}
         />
         {maintenance?.on ? (
           <div className="maintenance-banner" role="status">

@@ -1,6 +1,11 @@
 import { dict, fill, type Locale } from "./i18n.ts";
 
 export function notificationText(lang: Locale, kind: string, data: Record<string, string>) {
+  if(kind === "community_report") return lang === "ru" ? "Новое сообщение сообщества на проверке" : "New community message report";
+  if(kind === "community_host_review") return lang === "ru" ? "Новая заявка ведущего или специалиста на проверке" : "New host or practitioner application";
+  if(kind === "community_host_decision") return lang === "ru" ? "Решение по вашей карточке сообщества" : "Your community profile review decision";
+  if(kind === "community_friend_request") return lang === "ru" ? `@${data.by} хочет добавить вас в друзья` : `@${data.by} sent you a friend request`;
+  if(kind === "community_friend_accepted") return lang === "ru" ? `@${data.by} принял(а) вашу заявку в друзья` : `@${data.by} accepted your friend request`;
   if(kind === "social_call") return lang === "ru" ? "Входящий звонок в переписке по взаимному согласию" : "Incoming call in a mutual conversation";
   if(kind === "arbitration_updated") return lang === "ru" ? "Обновление арбитражного дела" : "Arbitration case updated";
   if(kind === "marketplace_updated") return lang === "ru" ? "Обновление тестовой сделки" : "Test transaction updated";
@@ -12,6 +17,9 @@ export function notificationText(lang: Locale, kind: string, data: Record<string
 }
 
 export function notificationLink(lang: Locale, data: Record<string, string>) {
+  if (data.communitySupport) return `/${lang}/community/support`;
+  if (data.community) return `/${lang}/community#friends`;
+  if (data.inviteId) return `/${lang}/my-teams#incoming`;
   if (data.socialMatchId) return `/${lang}/dating/${encodeURIComponent(data.socialMatchId)}`;
   if (data.marketplace) return `/${lang}/marketplace#orders`;
   if (data.caseId) return `/${lang}/arbitration?case=${encodeURIComponent(data.caseId)}`;

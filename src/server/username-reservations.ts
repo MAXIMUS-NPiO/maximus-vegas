@@ -16,7 +16,7 @@ export async function reservationByToken(q: Queryable, token: unknown) {
  return row ?? null;
 }
 export async function reserveOrInvite(db: Database, user: SessionUser, teamId: string, input: unknown) {
- const username = parseUsername(input);
+ const username = parseUsername(typeof input === "string" ? input.trim().replace(/^@/, "") : input);
  const result = await db.tx(async q => {
   await q.query("select pg_advisory_xact_lock(hashtext($1))", ["username:"+username]);
   const [team] = await q.query<{id:string;owner_id:string;captain_id:string}>("select id,owner_id,captain_id from teams where id=$1 for update",[teamId]);

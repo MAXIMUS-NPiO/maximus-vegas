@@ -344,8 +344,8 @@ export async function unreadCount(db: Queryable, userId: string) {
 
 export async function playerProfile(db: Queryable, username: string, viewer: SessionUser | null) {
   const [u] = await db.query<{
-    id: string; username: string; display_name: string; country: string; bio: string; profile_public: boolean; created_at: Date; status: string; avatar_color: string;
-  }>("select id, username, display_name, country, bio, profile_public, created_at, status, avatar_color from users where username = $1", [username.toLowerCase()]);
+    id: string; username: string; display_name: string; country: string; bio: string; profile_public: boolean; created_at: Date; status: string; avatar_color: string; avatar_media_id: string | null;
+  }>("select id, username, display_name, country, bio, profile_public, created_at, status, avatar_color, avatar_media_id from users where username = $1", [username.toLowerCase()]);
   if (!u || u.status === "deleted" || u.status === "pending") return null;
   const self = viewer?.id === u.id;
   // Staff with the users section may open a private profile; the page marks it and records the view.
@@ -391,8 +391,8 @@ export async function playerProfile(db: Queryable, username: string, viewer: Ses
 
 export async function listPlayers(db: Queryable, search: string) {
   const q = `%${search.toLowerCase().replace(/[%_]/g, "")}%`;
-  return db.query<{ username: string; display_name: string; country: string; teams: number; wins: number }>(
-    `select u.username, u.display_name, u.country,
+  return db.query<{ username: string; display_name: string; country: string; avatar_media_id: string | null; teams: number; wins: number }>(
+    `select u.username, u.display_name, u.country, u.avatar_media_id,
             (select count(*)::int from team_members m where m.user_id = u.id) as teams,
             (select count(*)::int from matches m join roster_entries re on re.registration_id = m.winner_reg
               where re.user_id = u.id and m.status = 'completed' and m.outcome <> 'bye') as wins
@@ -421,8 +421,8 @@ export async function teamBySlug(db: Queryable, slug: string) {
     logo_media_id: string | null; banner_media_id: string | null;
   }>("select * from teams where slug = $1", [slug]);
   if (!team) return null;
-  const members = await db.query<{ id: string; username: string; display_name: string; joined_at: Date }>(
-    `select u.id, u.username, u.display_name, m.joined_at from team_members m join users u on u.id = m.user_id
+  const members = await db.query<{ id: string; username: string; display_name: string; avatar_media_id: string | null; joined_at: Date }>(
+    `select u.id, u.username, u.display_name, u.avatar_media_id, m.joined_at from team_members m join users u on u.id = m.user_id
       where m.team_id = $1 order by m.joined_at`,
     [team.id],
   );

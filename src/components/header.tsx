@@ -1,12 +1,13 @@
 "use client";
 import Link from "next/link";
 import { SoundToggle } from "./arena-sound";
+import { MemberAvatar } from "./member-avatar";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { Bell, Brand, Chevron, Search } from "./icons";
 import type { Dict, Locale } from "@/lib/i18n";
 
-type NavUser = { username: string; displayName: string; admin: boolean; unread: number } | null;
+type NavUser = { username: string; displayName: string; avatarMediaId?: string | null; admin: boolean; unread: number } | null;
 
 function LanguageSwitch({ alternate, lang, label }: { alternate: string; lang: Locale; label: string }) {
   const query = useSearchParams().toString();
@@ -119,13 +120,13 @@ export function Header({ lang, nav, extra, common, user }: { lang: Locale; nav: 
               </Link>
               <details className="account-menu" onToggle={(e) => closeOthers(e.currentTarget)}>
                 <summary aria-label={user.displayName}>
-                  <span className="avatar" aria-hidden="true">
-                    {user.displayName.slice(0, 1).toUpperCase()}
-                  </span>
+                  <MemberAvatar name={user.displayName} mediaId={user.avatarMediaId} />
                   <span className="hide-mobile account-name">{user.displayName}</span>
                 </summary>
                 <div className="account-panel">
                   <Link href={`/${lang}/hub`}>{nav.hub}</Link>
+                  <Link href={`/${lang}/my-teams`}>{lang === "ru" ? "Мои команды и приглашения" : "My teams & invitations"}</Link>
+                  <Link href={`/${lang}/community`}>{lang === "ru" ? "Моё сообщество" : "My community"}</Link>
                   <Link href={`/${lang}/gameday`}>{extra.gameDay}</Link>
                   <Link href={`/${lang}/players/${user.username}`}>{nav.profile}</Link>
                   <Link href={`/${lang}/progress`}>{extra.progress}</Link>

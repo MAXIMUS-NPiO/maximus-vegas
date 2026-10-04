@@ -589,7 +589,7 @@ export async function settleWars(db: Database): Promise<{ expired: number; compl
 // ---------- Views ----------
 
 export type ClanRow = { id: string; slug: string; name: string; tag: string; description: string; status: string; created_at: Date; members: number };
-export type ClanMember = { id: string; username: string; display_name: string; role: ClanRole; joined_at: Date };
+export type ClanMember = { id: string; username: string; display_name: string; avatar_media_id: string | null; role: ClanRole; joined_at: Date };
 
 export async function clanBySlug(q: Queryable, slug: string): Promise<{ clan: ClanRow; members: ClanMember[] } | null> {
   const [clan] = await q.query<ClanRow>(
@@ -598,7 +598,7 @@ export async function clanBySlug(q: Queryable, slug: string): Promise<{ clan: Cl
   );
   if (!clan) return null;
   const members = await q.query<ClanMember>(
-    `select u.id, u.username, u.display_name, m.role, m.joined_at from clan_members m join users u on u.id = m.user_id
+    `select u.id, u.username, u.display_name, u.avatar_media_id, m.role, m.joined_at from clan_members m join users u on u.id = m.user_id
       where m.clan_id = $1 and u.status <> 'deleted' order by case m.role when 'owner' then 0 when 'officer' then 1 else 2 end, m.joined_at`,
     [clan.id],
   );

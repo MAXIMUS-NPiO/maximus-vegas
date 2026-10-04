@@ -1,3 +1,4 @@
+import { MemberAvatar } from "@/components/member-avatar";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -62,7 +63,6 @@ export default async function Player({ params }: { params: Promise<{ lang: strin
   const [teamEvents, clan] = await Promise.all([playerHistory(db, p.user.id), clanOf(db, p.user.id)]);
   const draws = p.history.filter((h) => h.drawn).length;
   const { rank } = rankFor(xp);
-  const color = avatarColor(p.user.avatar_color);
   return (
     <div className="container page">
       {p.staffView ? (
@@ -73,9 +73,7 @@ export default async function Player({ params }: { params: Promise<{ lang: strin
         </p>
       ) : null}
       <header className="profile-head">
-        <span className="avatar avatar-xl" aria-hidden="true" style={color ? { background: color } : undefined}>
-          {p.user.display_name.slice(0, 1).toUpperCase()}
-        </span>
+        <MemberAvatar name={p.user.display_name} mediaId={p.user.avatar_media_id} size="xl" color={avatarColor(p.user.avatar_color)} />
         <div>
           <h1>{p.user.display_name}</h1>
           <p className="muted">
@@ -98,6 +96,8 @@ export default async function Player({ params }: { params: Promise<{ lang: strin
             </Link>
           ) : user ? (
             <span className="row">
+              <Link href={`/${lang}/my-teams?username=${p.user.username}#invite-player`} className="btn btn-primary btn-sm">{ru ? "Пригласить в команду" : "Invite to team"}</Link>
+              <Link href={`/${lang}/community?username=${p.user.username}#friends`} className="btn btn-ghost btn-sm">{ru ? "Добавить в друзья" : "Add friend"}</Link>
               <Link href={`/${lang}/challenges?to=${p.user.username}`} className="btn btn-ghost btn-sm">
                 {ru ? "Вызвать на матч 1v1" : "Challenge to a 1v1"}
               </Link>
