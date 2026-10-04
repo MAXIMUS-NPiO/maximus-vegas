@@ -1,5 +1,6 @@
 import type { Database, Queryable } from "./db.ts";
 import type { SessionUser } from "./auth.ts";
+import { notify } from "./access.ts";
 import { activeAccount } from "./product-access.ts";
 import { audit } from "./audit.ts";
 import { fail } from "./errors.ts";
@@ -12,7 +13,7 @@ async function leadership(q: Queryable, user: SessionUser, clanId: string) {
 export async function proposeClanRelationship(db: Database, user: SessionUser, clan: string, otherTag: string, kind: string) {
   if (!uuid(clan) || !["allies", "rivals"].includes(kind)) fail("invalid_input");
   return db.tx(async q => {
-    const [other] = await q.query<{ id: string }>("select id from clans where tag=$1 and status='active'", [otherTag.trim().toUpperCase()]);
+    const [other] = await q.query<{ id: string; slug: string }>("select id,slug from clans where tag=$1 and status='active'", [otherTag.trim().toUpperCase()]);
     if (!other || other.id === clan) fail("not_found");
     const [a, b] = [clan, other.id].sort();
     const rows = await q.query("select id from clans where id=any($1::uuid[]) and status='active' order by id for update", [[a, b]]);
@@ -24,6 +25,8 @@ export async function proposeClanRelationship(db: Database, user: SessionUser, c
     if (n.n >= 10) fail("request_limit");
     await q.query(`insert into clan_relationships(clan_a,clan_b,proposed_by,kind) values($1,$2,$3,$4)
       on conflict(clan_a,clan_b) do update set proposed_by=$3,kind=$4,status='pending',updated_at=now(),expires_at=now()+interval '7 days'`, [a, b, clan, kind]);
+    const leaders = await q.query<{ user_id: string }>("select user_id from clan_members where clan_id=$1 and role in ('owner','officer')", [other.id]);
+    await notify(q, leaders.map(r => r.user_id), "clan_relationship", { clanSlug: other.slug, by: user.username });
     await audit(q, { actorId: user.id, action: "clan.relationship_proposed", entity: "clan", entityId: clan, data: { other: other.id, kind } });
   });
 }

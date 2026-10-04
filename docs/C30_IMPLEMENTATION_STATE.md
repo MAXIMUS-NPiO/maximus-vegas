@@ -33,6 +33,10 @@ Invitations and active reservations are only visible inside individual team page
 
 The shared account worker reports a cost lock on autonomous external review. No paid review is submitted or bypassed; local and required CI verification remain the release gates. Full operational voice and professional-support activation must not be inferred from a software release.
 
-## Verification in progress
+## Verification and release gate
 
-Local type checking, 12 new domain scenarios and the existing production build have passed. A real PostgreSQL concurrency scenario and browser acceptance are included in the required CI gate. Browser media tests do not establish a working external voice service. Full release evidence will be recorded after the exact PR head completes the gate. The supplied certificate is evidence of the recorded deposit; it is not a basis to claim ownership of all gamer dating concepts.
+PR #33 implementation head `380590bfc47fbfec876bb1a66fa105a52ece70f4` passed CI run [37164932132](https://github.com/MAXIMUS-NPiO/maximus-vegas/actions/runs/37164932132): 328 tests with real PostgreSQL, zero skipped/failed, production build, 14 server-agent tests, six existing studio browser scenarios and nine new community browser/API scenarios. All browser accounts/data were disposable; no emails or provider calls were made. RU/EN desktop/mobile screenshots were retrieved and inspected. That inspection prompted a compact horizontal section navigation and removal of excess space in the reservation-search form. Final notification deduplication, bounded host applications and the PostgreSQL test's race setup were also tightened; the final head must pass the same required gate before merge.
+
+The nine community scenarios cover unauthenticated denial, account-menu entry, old reservations, expanded email delivery/reload, responsive RU/EN layouts, existing-player invitation acceptance, friendship/private messages without dating consent, text chat/report/block, photo upload/block-aware media, empty professional directory and permission-policy boundaries. Group voice was checked at the domain/provider-adapter boundary only; real Cloud audio and a working minute scheduler remain activation requirements. No clinical provider is claimed active.
+
+The supplied certificate is evidence of the recorded deposit; it is not a basis to claim ownership of all gamer dating concepts.

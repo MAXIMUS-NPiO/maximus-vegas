@@ -65,12 +65,16 @@ test("Room messages enforce payload-bound idempotence, length and per-user rate 
  await reject(sendRoomMessage(db,a,globalRoom,"x".repeat(1001),randomUUID()),"invalid_input");
  for(let i=0;i<9;i++)await sendRoomMessage(db,a,globalRoom,`message ${i}`,randomUUID());
  await reject(sendRoomMessage(db,a,globalRoom,"too many",randomUUID()),"request_limit");
+ await reject(deleteRoomMessage(db,a,"9".repeat(200)),"invalid_input");
  const b=await account();await deleteRoomMessage(db,b,id);assert.ok((await roomMessages(db,b,globalRoom)).some(m=>m.id===id));await deleteRoomMessage(db,a,id);assert.ok(!(await roomMessages(db,b,globalRoom)).some(m=>m.id===id));
 });
 test("Reporting captures an excerpt, blocks contact and needs independent moderation; restricted members can report",async()=>{
  const a=await account(),b=await account(),staff={...await account(),roles:["moderation"]} as SessionUser;
+ await db.query("insert into user_roles(user_id,role) values($1,'moderation')",[staff.id]);
  const match=await friend(a,b),id=await sendRoomMessage(db,a,globalRoom,"Message submitted for moderation",randomUUID());
  await reportRoomMessage(db,{...b,restricted:true},id,"Unwanted personal contact after refusal");
+ await reportRoomMessage(db,b,id,"A repeated report must not duplicate notifications");
+ assert.equal((await db.query("select 1 from notifications where user_id=$1 and kind='community_report'",[staff.id])).length,1);
  assert.ok(!(await roomMessages(db,b,globalRoom)).some(m=>m.id===id));assert.equal((await conversation(db,b,match)).match.status,"closed");
  const [r]=await db.query<{id:string;excerpt:string}>("select id,excerpt from community_reports where message_id=$1",[id]);assert.equal(r.excerpt,"Message submitted for moderation");
  await reject(reviewCommunityReport(db,{...b,roles:["moderation"]},r.id,"Self review is prohibited",true),"forbidden");await reject(reviewCommunityReport(db,a,r.id,"No staff privileges here",true),"forbidden");
@@ -137,6 +141,7 @@ test("real PostgreSQL: concurrent friends and room sends preserve one pair and o
  const a=await account(pg),b=await account(pg);await Promise.all([requestFriend(pg,a,b.username),requestFriend(pg,b,a.username)]);
  const [r]=await pg.query<{id:string;requested_by:string}>("select id,requested_by from community_friend_requests where $1 in(user_a,user_b)",[a.id]);await respondFriend(pg,r.requested_by===a.id?b:a,r.id,true);
  assert.equal((await communityPeople(pg,a)).friends.length,1);const key=randomUUID();const ids=await Promise.all([sendRoomMessage(pg,a,globalRoom,"One delivery",key),sendRoomMessage(pg,a,globalRoom,"One delivery",key)]);assert.equal(ids[0],ids[1]);
- await Promise.allSettled([blockProfile(pg,a,b.id),sendSocialMessage(pg,b,(await communityPeople(pg,a)).friends[0].id,"Racing message",randomUUID())]);assert.equal((await communityPeople(pg,a)).friends.length,0);
+ const match=(await communityPeople(pg,a)).friends[0].id;
+ await Promise.allSettled([blockProfile(pg,a,b.id),sendSocialMessage(pg,b,match,"Racing message",randomUUID())]);assert.equal((await communityPeople(pg,a)).friends.length,0);
  }finally{await pg.close();}
 });

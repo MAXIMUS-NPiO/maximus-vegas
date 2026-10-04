@@ -119,11 +119,11 @@ export async function sendRoomMessage(db: Database, user: SessionUser, room: Roo
   });
 }
 export async function deleteRoomMessage(db: Database, user: SessionUser, id: string) {
-  if (!/^\d+$/.test(id)) fail("invalid_input");
+  if (!/^\d+$/.test(id) || !Number.isSafeInteger(Number(id)) || Number(id) < 1) fail("invalid_input");
   await db.query("update community_messages set body='',removed_at=now() where id=$1 and sender_id=$2", [id, user.id]);
 }
 export async function reportRoomMessage(db: Database, user: SessionUser, id: string, reasonInput: unknown) {
-  const reason = v.clean(reasonInput, 1200); if (!/^\d+$/.test(id) || reason.length < 10) fail("invalid_input");
+  const reason = v.clean(reasonInput, 1200); if (!/^\d+$/.test(id) || !Number.isSafeInteger(Number(id)) || Number(id) < 1 || reason.length < 10) fail("invalid_input");
   return db.tx(async q => {
     const [m] = await q.query<{ scope: RoomScope["scope"]; scope_id: string | null; sender_id: string; body: string }>("select scope,scope_id,sender_id,body from community_messages where id=$1 and removed_at is null", [id]);
     if (!m || m.sender_id === user.id) fail("not_found");
@@ -131,8 +131,8 @@ export async function reportRoomMessage(db: Database, user: SessionUser, id: str
     await communityRoom(q, user, { scope: m.scope, id: m.scope_id }, true, true);
     const [n] = await q.query<{ n: number }>("select count(*)::int as n from community_reports where reporter_id=$1 and created_at>now()-interval '1 day'", [user.id]);
     if (n.n >= 10) fail("report_limit");
-    await q.query("insert into community_reports(message_id,reporter_id,subject_id,reason,excerpt) values($1,$2,$3,$4,$5) on conflict(message_id,reporter_id) do nothing", [id, user.id, m.sender_id, reason, m.body]);
-    await notify(q,await staffWith(q,"conduct"),"community_report",{conductAdmin:"1"});
+    const inserted = await q.query("insert into community_reports(message_id,reporter_id,subject_id,reason,excerpt) values($1,$2,$3,$4,$5) on conflict(message_id,reporter_id) do nothing returning id", [id, user.id, m.sender_id, reason, m.body]);
+    if (inserted.length) await notify(q,await staffWith(q,"conduct"),"community_report",{conductAdmin:"1"});
     await q.query("insert into social_blocks(user_id,subject_id) values($1,$2) on conflict do nothing", [user.id, m.sender_id]);
     await q.query("update community_friend_requests set status='cancelled',updated_at=now() where user_a=least($1::uuid,$2::uuid) and user_b=greatest($1::uuid,$2::uuid)", [user.id, m.sender_id]);
     const matches = await q.query<{ id: string }>("update social_matches set status='closed',friendship_active=false where $1 in(user_a,user_b) and $2 in(user_a,user_b) returning id", [user.id, m.sender_id]);

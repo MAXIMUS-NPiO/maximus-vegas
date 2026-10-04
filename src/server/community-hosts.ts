@@ -18,6 +18,8 @@ export async function applyCommunityHost(db: Database, user: SessionUser, input:
   if (bio.length < 30 || !languages || !jurisdiction || !organisation || (role === "psychologist" && (!credential || !credentialUrl || !bookingUrl))) fail("invalid_input");
   await db.tx(async q => {
     await q.query("select id from users where id=$1 for update", [user.id]); await activeAccount(q, user);
+    const [rate] = await q.query<{ n: number }>("select count(*)::int as n from audit_log where actor_id=$1 and action='community.host_applied' and at>now()-interval '1 day'", [user.id]);
+    if (rate.n >= 10) fail("request_limit");
     if ((await q.query("select 1 from community_hosts where user_id=$1 and status='suspended'", [user.id]))[0]) fail("account_restricted");
     await q.query(`insert into community_hosts(user_id,role,bio,languages,jurisdiction,organisation,credential,credential_url,booking_url)
       values($1,$2,$3,$4,$5,$6,$7,$8,$9) on conflict(user_id) do update set role=$2,bio=$3,languages=$4,jurisdiction=$5,organisation=$6,

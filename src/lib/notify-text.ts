@@ -1,6 +1,7 @@
 import { dict, fill, type Locale } from "./i18n.ts";
 
 export function notificationText(lang: Locale, kind: string, data: Record<string, string>) {
+  if(kind === "clan_relationship") return lang === "ru" ? "Новое предложение союза или соперничества для вашего клана" : "A new alliance or rivalry proposal for your clan";
   if(kind === "community_report") return lang === "ru" ? "Новое сообщение сообщества на проверке" : "New community message report";
   if(kind === "community_host_review") return lang === "ru" ? "Новая заявка ведущего или специалиста на проверке" : "New host or practitioner application";
   if(kind === "community_host_decision") return lang === "ru" ? "Решение по вашей карточке сообщества" : "Your community profile review decision";
