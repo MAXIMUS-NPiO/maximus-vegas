@@ -21,8 +21,8 @@ export async function myTeamDesk(q: Queryable, user: SessionUser, search = "") {
       left join team_invitation_deliveries d on d.team_invite_id=i.id
       where (t.owner_id=$1 or t.captain_id=$1) and u.status<>'deleted' and strpos(u.username,$2)>0
       order by (i.status='pending' and (d.id is null or (d.status='pending' and d.expires_at>now()))) desc,i.created_at desc limit 100`, [user.id, query]),
-    q.query<{ id: string; team_id: string; team_name: string; team_slug: string; username: string; status: string; expires_at: Date }>(`select r.id,r.team_id,t.name as team_name,t.slug as team_slug,r.username,
-      case when r.status='pending' and r.expires_at<=now() then 'expired' else r.status end as status,r.expires_at
+    q.query<{ id: string; team_id: string; team_name: string; team_slug: string; username: string; status: string; expires_at: Date; delivery_id: string | null }>(`select r.id,r.team_id,t.name as team_name,t.slug as team_slug,r.username,
+      case when r.status='pending' and r.expires_at<=now() then 'expired' else r.status end as status,r.expires_at,(select d.id from team_invitation_deliveries d where d.reservation_id=r.id) as delivery_id
       from username_reservations r join teams t on t.id=r.team_id where (t.owner_id=$1 or t.captain_id=$1) and strpos(r.username,$2)>0
       order by (r.status='pending' and r.expires_at>now()) desc,r.created_at desc limit 100`, [user.id, query]),
   ]);

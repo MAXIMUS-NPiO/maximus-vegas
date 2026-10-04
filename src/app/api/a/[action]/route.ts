@@ -282,8 +282,8 @@ const handlers: Record<string, Handler> = {
     return { to: `/${c.lang}/my-teams#delivery-${invitation.id}`, ok: invitation.channel === "site" ? "invite_sent" : "invitation_queued" };
   },
   "team.delivery_retry": async c => {
-    await invitationDelivery.retryTeamInvitation(c.db, u(c), idOf(c.form.invitation));
-    return { ok: "invitation_queued" };
+    const invitation = await invitationDelivery.retryTeamInvitation(c.db, u(c), idOf(c.form.invitation));
+    return { ok: invitation.deliveryStatus === "queued" ? "invitation_queued" : "saved" };
   },
   "team.delivery_revoke": async c => { await invitationDelivery.revokeTeamInvitation(c.db, u(c), idOf(c.form.invitation)); return { ok: "saved" }; },
   "team.delivery_respond": async c => {

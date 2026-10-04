@@ -11,6 +11,8 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 
 const BASE = (process.env.BASE || "http://127.0.0.1:3100").replace(/\/$/, "");
+const target = new URL(BASE);
+if (target.protocol !== "http:" || !["127.0.0.1", "localhost"].includes(target.hostname) || target.username || target.password) throw new Error("Acceptance creates test records and requires an isolated loopback server");
 const RUN = Date.now().toString(36).slice(-5);
 const PASSWORD = "e2e-password-" + RUN;
 const log = (...a) => console.log("•", ...a);

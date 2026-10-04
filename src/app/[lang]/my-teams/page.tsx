@@ -6,6 +6,7 @@ import { viewer } from "@/server/viewer.ts";
 import { myTeamDesk } from "@/server/my-teams.ts";
 import { ActionForm, Badge, DbDown, Field, Flash, PageHead, one, type SearchParams } from "@/components/ui";
 import { LocalTime } from "@/components/time";
+import { InvitationStatusRefresh } from "@/components/invitation-status-refresh";
 import { InvitationComposer } from "@/components/invitation-composer";
 import { invitationDeliveryOverview, incomingDeliveries } from "@/server/team-invitation-delivery.ts";
 import { mailConfigured } from "@/server/mail.ts";
@@ -42,7 +43,7 @@ export default async function MyTeams({ params, searchParams }: { params: Promis
       <InvitationComposer key={`${teamId}-${username}-${one(sp.channel)}`} lang={lang} teams={leaders} initialTeam={teamId} initialUsername={username} initialChannel={one(sp.channel) === "email" ? "email" : undefined} emailConfigured={mailConfigured()} />
     </section>
     <form method="get" className="card stack-sm"><Field label={T("Найти приглашённого игрока или резерв имени", "Find an invited player or reserved username")}><input name="q" defaultValue={search} maxLength={254} placeholder="@username / email" /></Field><button className="btn btn-ghost" style={{ alignSelf: "flex-start" }}>{T("Найти", "Find")}</button>{search && <Link className="text-link" href={back}>{T("Сбросить поиск", "Clear search")}</Link>}<p className="small muted">{T("До 100 последних записей в каждом списке. Для старого приглашения используйте поиск по имени или email.", "Up to 100 recent records per list. Search by username or email to find older invitations.")}</p></form>
-    <section className="section-tight" id="delivery-status" style={{ scrollMarginTop: 150 }}><h2>{T("Приглашения и статус отправки", "Invitations & sending status")}</h2>
+    <section className="section-tight" id="delivery-status" style={{ scrollMarginTop: 150 }}><div className="row-between wrap"><h2>{T("Приглашения и статус отправки", "Invitations & sending status")}</h2><InvitationStatusRefresh lang={lang} /></div>
       <p className="muted">{T("Почтовый сервис может принять письмо, но это ещё не подтверждает его получение человеком. Ответ игрока показываем отдельно.", "An email service accepting a message does not confirm the recipient received it. The player's response is shown separately.")}</p>
       {!deliveries.length && <p className="notice">{T("Новых приглашений пока нет. Старые резервы и приглашения сохранены ниже.", "No new invitations yet. Earlier reservations and invitations remain below.")}</p>}
       <div className="stack">{deliveries.map(i => <article className="card stack-sm invitation-preview" key={i.id} id={`delivery-${i.id}`} style={{ scrollMarginTop: 150 }}>
@@ -60,7 +61,7 @@ export default async function MyTeams({ params, searchParams }: { params: Promis
       <div className="stack">{data.reservations.map(r => <article className="card stack-sm" key={r.id} id={`invitation-${r.username}`} style={{ scrollMarginTop: 150 }}>
         <h3>@{r.username} <Badge status={r.status === "pending" ? "proposed" : r.status}>{r.status === "pending" ? T("Имя зарезервировано", "Username reserved") : statuses[r.status]}</Badge></h3>
         <p><Link className="text-link" href={`/${lang}/teams/${r.team_slug}`}>{r.team_name}</Link> · {T("Срок резерва", "Reserved until")}: <LocalTime iso={r.expires_at} lang={lang} /></p>
-        {r.status === "pending" && <div className="row wrap"><Link className="btn btn-primary btn-sm" href={`${back}?team=${r.team_id}&username=${encodeURIComponent(r.username)}&channel=email#invite-player`}>{T("Указать получателя и отправить", "Choose recipient & send")}</Link><ActionForm action="team.reservation_revoke" lang={lang} back={back} hidden={{ reservation: r.id }}><button className="btn btn-ghost btn-sm">{T("Отменить резерв", "Cancel reservation")}</button></ActionForm></div>}
+        {r.status === "pending" && <div className="row wrap">{r.delivery_id ? <Link className="btn btn-primary btn-sm" href={`#delivery-${r.delivery_id}`}>{T("Открыть статус приглашения", "View invitation status")}</Link> : <Link className="btn btn-primary btn-sm" href={`${back}?team=${r.team_id}&username=${encodeURIComponent(r.username)}&channel=email#invite-player`}>{T("Указать получателя и отправить", "Choose recipient & send")}</Link>}<ActionForm action="team.reservation_revoke" lang={lang} back={back} hidden={{ reservation: r.id }}><button className="btn btn-ghost btn-sm">{T("Отменить резерв", "Cancel reservation")}</button></ActionForm></div>}
       </article>)}</div>
     </section>
     <section className="section-tight" id="outgoing" style={{ scrollMarginTop: 150 }}><h2>{T("Приглашённые игроки", "Invited players")}</h2>

@@ -67,3 +67,13 @@ jobs:
             artifacts/c31-screens
             artifacts/c31-browser-report.json
             artifacts/c31-server.log
+      - name: Complete platform HTTP and browser journeys
+        run: node scripts/platform-acceptance.mjs
+      - name: Platform acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-acceptance
+          path: |
+            artifacts/c31-platform-report.json
+            artifacts/c31-platform-server.log

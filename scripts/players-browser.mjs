@@ -63,6 +63,7 @@ try {
   await player.getByRole("button", { name: "Принять и вступить в команду", exact: true }).click();
   await player.getByRole("link", { name: "Чат нашей команды", exact: true }).waitFor();
   await page.goto(`${BASE}/ru/my-teams#delivery-${directId}`);
+  await page.getByRole("button", { name: "Обновить статус", exact: true }).click();
   await page.locator(`#delivery-${directId}`).getByText("Приглашение принято", { exact: true }).waitFor();
   mark("Only the verified intended account can accept; recipient address stays private and captain sees player acceptance");
 
@@ -112,6 +113,9 @@ try {
   await page.goto(BASE + "/ru/hub"); await page.locator('.account-menu > summary').click();
   await page.locator('.account-panel').getByRole("link", { name: "Пригласить игрока", exact: true }).click();
   await page.locator('[data-invitation-composer]').waitFor();
+  await page.locator('.account-menu > summary').click();
+  await page.locator('.account-panel').getByRole("link", { name: "Пригласить игрока", exact: true }).click();
+  assert.equal(await page.locator('.account-menu').getAttribute('open'), null);
   assert.deepEqual(errors, []); mark("Account menu directly opens invite flow; all browser scenarios finish without page or server errors");
   await writeFile("artifacts/c31-browser-report.json", JSON.stringify({ checks, errors, mailTransport: "isolated in-memory test", realEmailsSent: false, providerLiveAcceptance: false, externalRecords: "disposable fixtures" }, null, 2));
 } finally { await browser?.close(); server.kill("SIGTERM"); await writeFile("artifacts/c31-server.log", logs); }

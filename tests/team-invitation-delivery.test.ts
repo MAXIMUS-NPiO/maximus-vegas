@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { openDatabase, type Database } from "../src/server/db.ts";
 import { signUp, sessionUser, type SessionUser } from "../src/server/auth.ts";
 import { myTeamDesk } from "../src/server/my-teams.ts";
+import { hub, teamBySlug } from "../src/server/queries.ts";
 import { createTeam, revokeInvite, respondToInvite } from "../src/server/teams.ts";
 import { reserveOrInvite, revokeReservation } from "../src/server/username-reservations.ts";
 import { drainOutbox, testMailbox, compose, smtpRecipientAccepted } from "../src/server/mail.ts";
@@ -356,18 +357,23 @@ test("SMTP acknowledgement requires this recipient in accepted and never in reje
 });
 
 
-test("team desk hides expired tracked invitations and reports expiry before maintenance while preserving legacy invitations", async () => {
+test("team views hide expired tracked invitations and report expiry before maintenance while preserving legacy invitations", async () => {
   const { owner, team } = await setup();
   const tracked = await player("desktracked"), legacy = await player("desklegacy");
   const invitation = await send(owner, team.id, { username: tracked.username });
   await reserveOrInvite(db, owner, team.id, legacy.username);
   assert.equal((await myTeamDesk(db, tracked)).incoming.length, 1, "positive control: live tracked invitation is actionable");
+  assert.equal((await hub(db, tracked)).invites.length, 1, "hub shows live tracked invitations");
+  assert.equal((await teamBySlug(db, team.slug))!.invites.length, 2, "team shows live tracked and legacy invitations");
   await db.query("update team_invitation_deliveries set expires_at=now()-interval '1 second' where id=$1", [invitation.id]);
   const [unchanged] = await db.query<{ status: string }>("select status from team_invites where id=$1", [invitation.inviteId]);
   assert.equal(unchanged.status, "pending", "maintenance has not settled the historical invitation row");
   assert.deepEqual((await myTeamDesk(db, tracked)).incoming, []);
+  assert.deepEqual((await hub(db, tracked)).invites, []);
+  assert.deepEqual((await teamBySlug(db, team.slug))!.invites.map((row) => row.username), [legacy.username]);
   const outgoing = (await myTeamDesk(db, owner)).outgoing;
   assert.equal(outgoing.find((row) => row.id === invitation.inviteId)!.status, "expired");
   assert.equal(outgoing.find((row) => row.username === legacy.username)!.status, "pending");
   assert.equal((await myTeamDesk(db, legacy)).incoming.length, 1, "legacy invitation without a delivery record stays actionable");
+  assert.equal((await hub(db, legacy)).invites.length, 1, "hub preserves legacy invitations without a delivery record");
 });

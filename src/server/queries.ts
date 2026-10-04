@@ -299,7 +299,10 @@ export async function hub(db: Queryable, user: SessionUser) {
   const invites = await db.query<{ id: string; team_name: string; team_slug: string; game: string; invited_by: string; created_at: Date }>(
     `select i.id, t.name as team_name, t.slug as team_slug, t.game, u.username as invited_by, i.created_at
        from team_invites i join teams t on t.id = i.team_id join users u on u.id = i.invited_by
-      where i.user_id = $1 and i.status = 'pending' order by i.created_at desc`,
+       left join team_invitation_deliveries d on d.team_invite_id = i.id
+      where i.user_id = $1 and i.status = 'pending'
+        and (d.id is null or (d.status = 'pending' and d.expires_at > now()))
+      order by i.created_at desc`,
     [user.id],
   );
   const teams = await db.query<{ slug: string; name: string; game: string; role: string }>(
@@ -428,7 +431,10 @@ export async function teamBySlug(db: Queryable, slug: string) {
   );
   const invites = await db.query<{ id: string; username: string; created_at: Date }>(
     `select i.id, u.username, i.created_at from team_invites i join users u on u.id = i.user_id
-      where i.team_id = $1 and i.status = 'pending' order by i.created_at`,
+       left join team_invitation_deliveries d on d.team_invite_id = i.id
+      where i.team_id = $1 and i.status = 'pending'
+        and (d.id is null or (d.status = 'pending' and d.expires_at > now()))
+      order by i.created_at`,
     [team.id],
   );
   const tournaments = await db.query<{ slug: string; name: string; status: string; placement: number | null; reg_status: string; starts_at: Date }>(

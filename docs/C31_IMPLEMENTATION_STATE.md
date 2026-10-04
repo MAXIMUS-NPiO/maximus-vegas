@@ -25,6 +25,7 @@ The owner's latest amendment adds contextual invitation entry points and require
 | R6a | Install the supplied optional workflow package | Automatic safety scan rejected persistent installation; no detailed reason or bypass | Blocked; package not installed |
 | R6b | Use a task tree, independent work and observable acceptance | Two disjoint implementation leaves; root integrates and independently verifies; `GATES.md` contains reproducible commands | Implemented; evidence pending |
 | R7 | Preserve prior features and prove release behavior | Required full check, PostgreSQL tests, studio/community/player browser suites, official lion guard, deployment verification | Pending |
+| R8 | Owner follow-up: audit mistakes and finish previously started work | Additional review of C29/C30/C31; existing full HTTP journeys and browser smoke added to the required job | In progress |
 
 ## Operating boundaries
 
@@ -39,3 +40,18 @@ The attached package's installation is a separate blocked outcome. Implementatio
 ## Acceptance evidence
 
 Pending the final integrated check, CI browser screenshots and published deployment. Evidence and remaining limitations must be updated before marking the coordination row done.
+
+## Audit of previously started functions
+
+The 4 October follow-up expands review to the existing platform journeys. The release preserves and checks registrations, onboarding, tournaments, teams, clans, account operations and staff MFA through the existing HTTP and Chromium scenarios on a fresh loopback database. All three database URL aliases are cleared; SMTP, API mail and paid-media credentials are disabled in that environment. No acceptance script may target a remote server.
+
+| Function | Implemented work | Remaining operational dependency |
+|---|---|---|
+| Team invitations | One recipient-first send, on-site receipt, exact delivery/response, expiry and cancellation | Real email requires a verified sending domain and SMTP or API mail credentials |
+| Player history | Verified Steam ownership and source-specific imports, consent, visibility and refresh | Player authorizes their own account; Steam playtime and FACEIT require operator API keys |
+| Text community | Public/team/clan text rooms, friendship, private messages, avatars and moderation | Existing account and membership permissions apply |
+| Group voice and native paid broadcasts | Scoped media lifecycle, paid entitlement, user-selected retention, cleanup and privacy | Media provider, suitable minute scheduler; broadcasts also need private storage, merchant configuration and approved tariff |
+| Community hosts and professional support | Transparent application/review and approved-provider directory | Real qualified providers and reviewed operating arrangements; no invented availability |
+| Optional attachment package | Inspected; ordinary project acceptance remains active | Installation safety scan rejected persistence; package is not installed |
+
+Production metadata confirms only scheduled-job authentication is currently configured among the new mail/media/import service settings. Software acceptance does not activate missing services.

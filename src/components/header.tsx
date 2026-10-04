@@ -40,9 +40,11 @@ export function Header({ lang, nav, extra, common, user }: { lang: Locale; nav: 
       headerRef.current?.querySelectorAll("details[open]").forEach((d) => d.removeAttribute("open"));
     };
     const onClick = (e: MouseEvent) => {
-      if (!headerRef.current?.contains(e.target as Node)) setOpen(false);
+      const link = e.target instanceof Element ? e.target.closest("a[href]") : null;
+      const navigating = Boolean(link && headerRef.current?.contains(link));
+      if (navigating || !headerRef.current?.contains(e.target as Node)) setOpen(false);
       headerRef.current?.querySelectorAll("details[open]").forEach((d) => {
-        if (!d.contains(e.target as Node)) d.removeAttribute("open");
+        if (navigating || !d.contains(e.target as Node)) d.removeAttribute("open");
       });
     };
     window.addEventListener("keydown", onKey);

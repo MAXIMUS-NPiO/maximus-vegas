@@ -27,7 +27,7 @@ MIPA internal implementation record. Owner request: 4 October 2026, Asia/Dubai. 
 | R13 | Existing copyright | Record the supplied certificate accurately alongside the prior MIPA source trace; preserve the original privately |
 | R14 | Preserve existing portal | Additive data changes only; streaming/payment gates, games, memberships, private data, legal pages and official lion preserved |
 
-## Current findings
+## Findings before the C30 changes
 
 Invitations and active reservations are only visible inside individual team pages. The account dropdown has no personal-teams/invitations link. The hub puts teams far below other sections, and the player directory has no invite action. The existing manual sharing component already has an email field, but it is only reachable after locating a reservation. This is a navigation/discoverability defect, not evidence that the owner's historical records were deleted. Acceptance uses disposable accounts, never production data.
 
@@ -40,3 +40,7 @@ PR #33 implementation head `380590bfc47fbfec876bb1a66fa105a52ece70f4` passed CI 
 The nine community scenarios cover unauthenticated denial, account-menu entry, old reservations, expanded email delivery/reload, responsive RU/EN layouts, existing-player invitation acceptance, friendship/private messages without dating consent, text chat/report/block, photo upload/block-aware media, empty professional directory and permission-policy boundaries. Group voice was checked at the domain/provider-adapter boundary only; real Cloud audio and a working minute scheduler remain activation requirements. No clinical provider is claimed active.
 
 The supplied certificate is evidence of the recorded deposit; it is not a basis to claim ownership of all gamer dating concepts.
+
+## C31 follow-up
+
+The owner's later clarification supersedes the manual email-after-reservation path above. C31 collects the intended email before reserving a new nickname and provides a durable delivery/response desk, while retaining historical reservations. Contextual entry points are intentionally repeated across account, community, roster and profile menus. Current acceptance and remaining operating dependencies are recorded in `C31_IMPLEMENTATION_STATE.md`.
