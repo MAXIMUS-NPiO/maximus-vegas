@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { MemberAvatar } from "@/components/member-avatar";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { isLocale } from "@/lib/i18n.ts";
@@ -16,8 +17,8 @@ export default async function Conversation({ params, searchParams }: { params: P
   const before = Number(one(sp.before));
   const data = await conversation(db, user, id, Number.isSafeInteger(before) && before > 0 ? before : 0).catch(() => null); if (!data) notFound();
   const other = data.match.user_a === user.id ? data.match.user_b : data.match.user_a;
-  const [person] = await db.query<{ display_name: string }>("select display_name from users where id=$1", [other]);
-  return <div className="container page narrow"><Link className="text-link" href={`/${lang}/dating`}>← {T("Знакомства", "Connections")}</Link><PageHead title={person.display_name} lead={data.match.status === "active" ? T("Общение по взаимному согласию", "Conversation by mutual consent") : T("Общение закрыто", "Conversation closed")} /><Flash lang={lang} params={sp} />
+  const [person] = await db.query<{ display_name: string; avatar_media_id: string | null }>("select display_name,avatar_media_id from users where id=$1", [other]);
+  return <div className="container page narrow"><Link className="text-link" href={`/${lang}/community#conversations`}>← {T("Моё сообщество", "My community")}</Link><div className="section-tight"><MemberAvatar name={person.display_name} mediaId={person.avatar_media_id} size="lg" /></div><PageHead title={person.display_name} lead={data.match.status === "active" ? T("Общение по взаимному согласию", "Conversation by mutual consent") : T("Общение закрыто", "Conversation closed")} /><Flash lang={lang} params={sp} />
     {data.match.status === "active" && <SocialCall lang={lang} matchId={id} available={socialCallsAvailable()} />}
     <div className="row"><Link href={back} className="btn btn-ghost">{T("Обновить сообщения", "Refresh messages")}</Link>{data.messages.length === 50 && <Link className="btn btn-ghost" href={`${back}?before=${data.messages[0].id}`}>{T("Более ранние сообщения", "Earlier messages")}</Link>}</div>
     <ol className="list section-tight">{data.messages.map(m => <li className="stack" key={m.id}><strong>{m.sender_id === user.id ? T("Вы", "You") : person.display_name}</strong><p className="prewrap">{m.body}</p><small><LocalTime iso={m.created_at} lang={lang} /></small>{m.sender_id !== user.id && <details><summary>{T("Пожаловаться на сообщение", "Report message")}</summary><ActionForm action="social.report" lang={lang} back={back} hidden={{ user: other, message: String(m.id) }}><Field label={T("Причина жалобы", "Report reason")}><textarea name="reason" minLength={10} maxLength={1200} required /></Field><button className="btn btn-ghost">{T("Передать модератору и заблокировать", "Report to moderator and block")}</button></ActionForm></details>}</li>)}</ol>

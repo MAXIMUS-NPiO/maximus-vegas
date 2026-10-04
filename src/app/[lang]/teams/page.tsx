@@ -20,11 +20,12 @@ export default async function Teams({ params, searchParams }: { params: Promise<
   const d = dict(lang);
   const sp = await searchParams;
   const game = isGame(one(sp.game)) ? one(sp.game) : undefined;
-  const { db, dbError } = await viewer();
+  const { db, user, dbError } = await viewer();
   const list = db ? await listTeams(db, game).catch(() => []) : [];
   return (
     <div className="container page">
       <PageHead title={d.teams.title} lead={d.teams.lead}>
+        {user && <Link href={`/${lang}/my-teams`} className="btn btn-secondary btn-sm">{lang === "ru" ? "Мои команды и приглашения" : "My teams & invitations"}</Link>}
         <Link href={`/${lang}/teams/new`} className="btn btn-primary btn-sm">
           {d.teams.create}
         </Link>

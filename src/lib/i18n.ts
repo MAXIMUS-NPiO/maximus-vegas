@@ -81,6 +81,7 @@ const ru = {
         label: "Сообщество",
         items: [
           ["players", "Игроки", "Профили и игровая история"],
+          ["community", "Среди своих", "Общий чат, друзья, команды и поддержка"],
           ["dating", "Знакомства 18+", "Совместная игра, дружба и отношения по взаимному согласию"],
           ["progress", "MAXIMUS Pass", "Сезоны, задания и награды"],
           ["statistics", "Моя статистика", "Проверяемые записи и экспорт достижений"],
@@ -927,6 +928,7 @@ const en: BaseDict = {
         label: "Community",
         items: [
           ["players", "Players", "Profiles and match history"],
+          ["community", "Community", "Shared chat, friends, teams and support"],
           ["dating", "Connections 18+", "Gaming, friendship and relationships with mutual consent"],
           ["progress", "MAXIMUS Pass", "Seasons, missions and rewards"],
           ["statistics", "My statistics", "Verifiable records and achievement exports"],

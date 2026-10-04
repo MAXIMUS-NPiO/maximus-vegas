@@ -2,6 +2,7 @@ import { getDb } from "@/server/db.ts";
 import { SESSION_COOKIE, sessionUser } from "@/server/auth.ts";
 import { parseCookies } from "@/server/http.ts";
 import { canSeeEvidence } from "@/server/media.ts";
+import { canSeeAvatar } from "@/server/community.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,6 +22,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     [id],
   );
   if (!row) return new Response("Not found", { status: 404 });
+  if (row.kind === "avatar") {
+    const user = await sessionUser(db, parseCookies(request.headers.get("cookie"))[SESSION_COOKIE]);
+    if (!(await canSeeAvatar(db, id, user))) return new Response("Not found", { status: 404, headers: { "Cache-Control": "private, no-store" } });
+    return new Response(Buffer.from(row.data), { headers: { ...HEADERS, "Content-Type": row.content_type, "Cache-Control": "private, no-store" } });
+  }
   if (row.kind === "evidence") {
     const user = await sessionUser(db, parseCookies(request.headers.get("cookie"))[SESSION_COOKIE]);
     if (!(await canSeeEvidence(db, id, user))) return new Response("Not found", { status: 404 });

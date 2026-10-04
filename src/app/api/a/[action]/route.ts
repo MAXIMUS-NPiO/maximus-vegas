@@ -1,6 +1,9 @@
 import * as marketplace from "@/server/marketplace.ts";
 import * as missions from "@/server/missions.ts";
 import * as social from "@/server/social.ts";
+import * as community from "@/server/community.ts";
+import * as communityHosts from "@/server/community-hosts.ts";
+import * as clanRelationships from "@/server/clan-relationships.ts";
 import * as clubhouse from "@/server/clubhouse.ts";
 import * as p2p from "@/server/p2p.ts";
 import * as rentals from "@/server/rentals.ts";
@@ -88,7 +91,7 @@ const signupDraft = (c: Ctx) => ({ email: c.form.email ?? "", username: c.form.u
 
 /** What an account under a suspension sanction may still do: read, appeal, manage its own access and data. */
 const RESTRICTED_OK = new Set(["arbitration.open", "arbitration.evidence", "arbitration.appeal", "marketplace.delete", "auth.signout", "conduct.appeal", "notifications.read", "account.session", "account.password", "account.delete", "account.accept_terms"]);
-for (const action of ["social.withdraw", "social.block", "social.close", "social.report", "stats.unlink", "stats.share", "reward.cancel", "club.rsvp_cancel", "club.booking_status"]) RESTRICTED_OK.add(action);
+for (const action of ["community.friend_cancel", "social.withdraw", "social.block", "social.close", "social.report", "stats.unlink", "stats.share", "reward.cancel", "club.rsvp_cancel", "club.booking_status"]) RESTRICTED_OK.add(action);
 for (const action of ["rental.stop", "rental.release"]) RESTRICTED_OK.add(action);
 const conductAdmin = (c: Ctx) => `/${c.lang}/admin?tab=conduct`;
 const venueForm = (c: Ctx) => ({
@@ -113,6 +116,15 @@ const oneTimeSecret = (c: Ctx, kind: "key" | "webhook", value: string, clear = f
 };
 
 const handlers: Record<string, Handler> = {
+  "community.friend": async c => { await community.requestFriend(c.db, u(c), c.form.username); },
+  "community.friend_respond": async c => { const match = await community.respondFriend(c.db, u(c), idOf(c.form.id), c.form.accept === "1"); return match ? `/${c.lang}/dating/${match}` : undefined; },
+  "community.friend_cancel": async c => { await community.cancelFriendRequest(c.db, u(c), idOf(c.form.id)); },
+  "community.avatar": async c => { await community.saveAvatar(c.db, u(c), c.files.avatar, c.form.clear === "1"); },
+  "community.host_apply": async c => { await communityHosts.applyCommunityHost(c.db, u(c), c.form); },
+  "community.host_review": async c => { await communityHosts.reviewCommunityHost(c.db, await staff(c, "academy"), idOf(c.form.user), c.form); },
+  "community.report_review": async c => { await community.reviewCommunityReport(c.db, await staff(c, "conduct"), idOf(c.form.report), c.form.decision, c.form.remove === "1"); },
+  "clan.relationship": async c => { await clanRelationships.proposeClanRelationship(c.db, u(c), idOf(c.form.clan), c.form.tag, c.form.kind); },
+  "clan.relationship_respond": async c => { await clanRelationships.respondClanRelationship(c.db, u(c), idOf(c.form.id), idOf(c.form.clan), c.form.step); },
   "marketplace.publish": async c => { await marketplace.publishListing(c.db,u(c),idOf(c.form.id),c.form.publish==="1"); },
   "marketplace.request": async c => { await marketplace.requestDemoOrder(c.db,u(c),idOf(c.form.id)); return `/${c.lang}/marketplace#orders`; },
   "marketplace.step": async c => { await marketplace.demoOrderStep(c.db,u(c),idOf(c.form.id),c.form.step); },
@@ -266,9 +278,13 @@ const handlers: Record<string, Handler> = {
   "team.invite": async (c) => {
     const { reserveOrInvite } = await import("@/server/username-reservations.ts");
     const result = await reserveOrInvite(c.db, u(c), idOf(c.form.team), c.form.username);
-    return result === "reserved"
-      ? { to: c.back.split("#")[0] + "#invitation-" + c.form.username.trim().toLowerCase(), ok: "username_reserved" }
-      : { ok: "invite_sent" };
+    if (result !== "reserved") return { ok: "invite_sent" };
+    const username = c.form.username.trim().replace(/^@/, "").toLowerCase();
+    const destination = new URL(`/${c.lang}/my-teams`, "https://internal.invalid");
+    destination.searchParams.set("team", c.form.team);
+    destination.searchParams.set("username", username);
+    destination.hash = "invitation-" + username;
+    return { to: destination.pathname + destination.search + destination.hash, ok: "username_reserved" };
   },
   "team.respond": async (c) => {
     const team = await teams.respondToInvite(c.db, u(c), idOf(c.form.invite), c.form.accept === "1");
