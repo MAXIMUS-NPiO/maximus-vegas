@@ -105,6 +105,10 @@ export async function reconcileBroadcastPayment(db: Database, orderId: string, s
       (o.session_id && o.session_id !== s.id) || o.amount_minor !== s.amountTotal || o.currency !== s.currency ||
       s.livemode !== (o.mode === "live") || p.mode !== o.mode) return fail("provider_error");
     await q.query("update broadcast_orders set session_id=coalesce(session_id,$2),payment_intent_id=coalesce(payment_intent_id,$3) where id=$1", [o.id, s.id, s.paymentIntentId]);
+    if (s.disputed || s.voided || (s.refundedTotal ?? 0) > 0) {
+      if (o.state !== "revoked") await revoke(q, o);
+      return "revoked";
+    }
     if (o.state === "revoked" || o.state === "paid") return o.state;
     if (s.status === "complete" && s.paymentStatus === "paid" && s.paymentIntentId) {
       const b = await getBroadcast(q, o.broadcast_id);

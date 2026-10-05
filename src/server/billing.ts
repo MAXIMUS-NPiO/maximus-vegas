@@ -22,6 +22,7 @@ import { enqueueMail, link, mailConfigured } from "./mail.ts";
 import { requireStepUp } from "./mfa.ts";
 import { siteOrigin } from "../lib/site.ts";
 import { createStripeProvider, stripeModeOf } from "./payments/stripe.ts";
+import { createMpgsProvider, mpgsConfig } from "./payments/mpgs.ts";
 import { WebhookSignatureError, type PaymentProvider, type ProviderEvent, type SessionState } from "./payments/provider.ts";
 import * as v from "./validate.ts";
 
@@ -194,7 +195,7 @@ export async function retireOffer(db: Database, user: SessionUser, offerId: stri
 
 // ---------- Payment readiness ----------
 
-export type Readiness = { ready: boolean; reasons: string[]; mode: "test" | "live" | null; provider: string | null };
+export type Readiness = { ready: boolean; reasons: string[]; mode: "test" | "live" | null; provider: string | null; collector: string | null };
 
 type Holder = { __mvPaymentProvider?: PaymentProvider | null };
 
@@ -206,6 +207,10 @@ export function setPaymentProviderForTests(p: PaymentProvider | null) {
 export function paymentProvider(): PaymentProvider | null {
   const injected = (globalThis as Holder).__mvPaymentProvider;
   if (injected !== undefined) return injected;
+  if (process.env.PAYMENT_PROVIDER === "mpgs") {
+    const config = mpgsConfig();
+    return config ? createMpgsProvider(config) : null;
+  }
   const key = process.env.STRIPE_SECRET_KEY?.trim();
   const secret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
   if (!key || !secret || !stripeModeOf(key)) return null;
@@ -216,9 +221,14 @@ export function paymentReadiness(offer?: Offer | null): Readiness {
   const reasons: string[] = [];
   const injected = (globalThis as Holder).__mvPaymentProvider;
   const key = process.env.STRIPE_SECRET_KEY?.trim() ?? "";
-  const keyMode = injected ? injected.mode : stripeModeOf(key);
+  const mpgs = !injected && process.env.PAYMENT_PROVIDER === "mpgs";
+  const config = mpgs ? mpgsConfig() : null;
+  const keyMode = injected ? injected.mode : mpgs ? config ? createMpgsProvider(config).mode : null : stripeModeOf(key);
   if (process.env.PAYMENTS_ENABLED !== "1") reasons.push("payments_disabled");
-  if (!injected) {
+  if (mpgs) {
+    if (!config) reasons.push("provider_not_configured");
+    if (offer?.currency && offer.currency !== config?.currency) reasons.push("provider_currency_mismatch");
+  } else if (!injected) {
     if (!key) reasons.push("provider_not_configured");
     else if (!keyMode) reasons.push("provider_key_unrecognised");
     if (!process.env.STRIPE_WEBHOOK_SECRET?.trim()?.startsWith("whsec_")) reasons.push("webhook_secret_missing");
@@ -227,16 +237,24 @@ export function paymentReadiness(offer?: Offer | null): Readiness {
   if (!declared) reasons.push("mode_not_declared");
   else if (keyMode && declared !== keyMode) reasons.push("mode_mismatch");
   if (keyMode === "live" && process.env.PAYMENTS_LIVE_CONFIRMED !== "1") reasons.push("live_not_confirmed");
-  if (process.env.MERCHANT_VERIFIED !== "1") reasons.push("merchant_not_verified");
-  const merchant = process.env.MERCHANT_LEGAL_NAME?.trim();
-  if (!merchant) reasons.push("merchant_name_missing");
-  else if (offer && merchant !== offer.legal_recipient) reasons.push("recipient_mismatch");
+  // The owner expressly authorized temporary collection through Maximus Sports under an internal
+  // agreement (5 October 2026). Preserve the invoice beneficiary and disclose the actual collector.
+  // This records owner authorization, not a claim of independent bank approval.
+  const intercompany = mpgs && process.env.MPGS_INTERCOMPANY_AUTHORIZED === "1" &&
+    !!process.env.MPGS_AGREEMENT_REF?.trim() && process.env.MPGS_BENEFICIARY_LEGAL_NAME?.trim() === (offer?.legal_recipient ?? RECIPIENT);
+  const collector = intercompany && config ? config.merchantName : null;
+  if (!intercompany) {
+    if (process.env.MERCHANT_VERIFIED !== "1") reasons.push("merchant_not_verified");
+    const merchant = process.env.MERCHANT_LEGAL_NAME?.trim();
+    if (!merchant) reasons.push("merchant_name_missing");
+    else if (offer && merchant !== offer.legal_recipient) reasons.push("recipient_mismatch");
+  }
   if (!siteOrigin() && !injected) reasons.push("site_origin_missing");
   if (offer) {
     if (offer.status !== "active") reasons.push("offer_not_active");
     if (missingFields(offer).length) reasons.push("offer_incomplete");
   }
-  return { ready: reasons.length === 0, reasons, mode: keyMode ?? null, provider: injected ? injected.name : key ? "stripe" : null };
+  return { ready: reasons.length === 0, reasons, mode: keyMode ?? null, provider: injected ? injected.name : mpgs ? "mpgs" : key ? "stripe" : null, collector };
 }
 
 // ---------- Applications (admission) ----------
@@ -471,6 +489,7 @@ export async function startCheckout(db: Database, user: SessionUser, invoiceId: 
   });
 
   if (attempt.row.status === "processing") fail("checkout_in_progress");
+  if (attempt.row.provider !== provider!.name || attempt.row.mode !== provider!.mode) fail("payments_unavailable");
   if (!attempt.fresh && attempt.row.provider_session_id) {
     // Resume the same hosted session instead of creating a second one; the provider decides its state.
     const state = await provider!.retrieveSession(attempt.row.provider_session_id);
@@ -478,6 +497,7 @@ export async function startCheckout(db: Database, user: SessionUser, invoiceId: 
     if (result === "open" && state.url && provider!.checkoutHosts.includes(new URL(state.url).host)) return state.url;
     if (result === "succeeded") fail("invoice_not_payable");
     if (result === "processing") fail("checkout_in_progress");
+    if (result === "open" && provider!.name === "mpgs" && !state.url) fail("checkout_in_progress");
     if (result === "open") {
       await setAttemptStatus(db, attempt.row.id, "canceled", ["open"]);
     }
@@ -503,7 +523,9 @@ export async function startCheckout(db: Database, user: SessionUser, invoiceId: 
       metadata: { invoice_id: inv.id, attempt_id: attempt.row.id, invoice_number: inv.number, terms: inv.terms_version },
     });
   } catch (error) {
-    await db.query("update payment_attempts set status = 'failed', updated_at = now() where id = $1 and status = 'created'", [attempt.row.id]);
+    // A lost MPGS response is ambiguous: keep this attempt and its unique order for reconciliation.
+    // Never turn a network retry into a second potentially payable order.
+    if (provider!.name !== "mpgs") await db.query("update payment_attempts set status = 'failed', updated_at = now() where id = $1 and status = 'created'", [attempt.row.id]);
     console.error("[checkout] provider error:", (error as Error).message);
     fail("provider_error");
   }
@@ -529,6 +551,7 @@ type Source = "webhook" | "return" | "resume" | "sweep" | "admin";
  */
 export async function applySessionState(db: Database, attempt: AttemptRow, state: SessionState, source: Source, eventType?: string) {
   const mismatch =
+    (attempt.provider_session_id !== null && state.id !== attempt.provider_session_id) ||
     state.metadata.attempt_id !== attempt.id ||
     state.clientReferenceId !== attempt.invoice_id ||
     (state.amountTotal !== null && state.amountTotal !== Number(attempt.amount_minor)) ||
@@ -541,8 +564,16 @@ export async function applySessionState(db: Database, attempt: AttemptRow, state
     });
     return "mismatch" as const;
   }
+  if (state.voided && attempt.status === "succeeded") {
+    await applyDispute(db, attempt, `mpgs-dispute:${state.id}`, Number(attempt.amount_minor), "created");
+    return "succeeded" as const;
+  }
   if (state.paymentStatus === "paid" && state.status === "complete") {
-    await markSucceeded(db, attempt.id, state.paymentIntentId, source);
+    if (state.amountTotal !== Number(attempt.amount_minor) || state.currency?.toUpperCase() !== attempt.currency.toUpperCase() || !state.paymentIntentId) return "mismatch" as const;
+    const adjusted = (state.refundedTotal ?? 0) > 0 || state.disputed || state.voided;
+    await markSucceeded(db, attempt.id, state.paymentIntentId, source, !!adjusted);
+    if ((state.refundedTotal ?? 0) > 0) await applyRefund(db, attempt, state.paymentIntentId, state.refundedTotal!);
+    if (state.disputed || state.voided) await applyDispute(db, attempt, `mpgs-dispute:${state.paymentIntentId}`, Number(attempt.amount_minor), "created");
     return "succeeded" as const;
   }
   if (eventType === "checkout.session.async_payment_failed") {
@@ -567,7 +598,7 @@ async function setAttemptStatus(db: Database, id: string, status: string, from: 
   });
 }
 
-async function markSucceeded(db: Database, attemptId: string, paymentIntentId: string | null, source: Source) {
+async function markSucceeded(db: Database, attemptId: string, paymentIntentId: string | null, source: Source, settlementAdjusted = false) {
   await db.tx(async (q) => {
     const [a] = await q.query<AttemptRow>("select * from payment_attempts where id = $1 for update", [attemptId]);
     const [inv] = await q.query<InvoiceRow & { offer_snapshot: { duration_days: number; title: Texts }; lang: "ru" | "en" }>("select * from invoices where id = $1 for update", [a.invoice_id]);
@@ -585,6 +616,10 @@ async function markSucceeded(db: Database, attemptId: string, paymentIntentId: s
     }
     await q.query("update invoices set status = 'paid', paid_at = now() where id = $1", [inv.id]);
     await audit(q, { actorId: null, action: "payment.succeeded", entity: "invoice", entityId: inv.id, data: { attemptId: a.id, source, amount: a.amount_minor, currency: a.currency } });
+    if (settlementAdjusted) {
+      await audit(q, { actorId: null, action: "payment.requires_review", entity: "invoice", entityId: inv.id, data: { attemptId: a.id, source, settlementAdjusted: true } });
+      return;
+    }
     await activateMembership(q, inv.id);
     await notify(q, [inv.user_id], "payment_received", { number: inv.number });
     const [u] = await q.query<{ email: string }>("select email from users where id = $1", [inv.user_id]);
@@ -804,8 +839,8 @@ async function applyDispute(db: Database, attempt: AttemptRow, disputeId: string
 export async function reconcileAttempt(db: Database, attemptId: string, source: Source) {
   const provider = paymentProvider();
   const [a] = await db.query<AttemptRow>("select * from payment_attempts where id = $1", [attemptId]);
-  if (!a || !provider || !a.provider_session_id) return a?.status ?? null;
-  if (!["open", "processing"].includes(a.status)) return a.status;
+  if (!a || !provider || !a.provider_session_id || a.provider !== provider.name || a.mode !== provider.mode) return a?.status ?? null;
+  if (!["open", "processing"].includes(a.status) && !(provider.name === "mpgs" && a.status === "succeeded")) return a.status;
   const state = await provider.retrieveSession(a.provider_session_id);
   await applySessionState(db, a, state, source);
   const [fresh] = await db.query<{ status: string }>("select status from payment_attempts where id = $1", [a.id]);
@@ -838,6 +873,7 @@ export async function refundInvoice(db: Database, user: SessionUser, invoiceId: 
     await audit(q, { actorId: user.id, action: "payment.refund_requested", entity: "invoice", entityId: inv.id, data: { amount, refundId: refund.id } });
   });
   // Balances change when the provider confirms the refund (charge.refunded webhook).
+  if (provider!.name === "mpgs") await reconcileAttempt(db, a!.id, "admin");
 }
 
 // ---------- Membership administration ----------

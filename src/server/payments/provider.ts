@@ -36,6 +36,10 @@ export type SessionState = {
   clientReferenceId: string | null;
   metadata: Record<string, string>;
   livemode: boolean;
+  /** Authoritative settlement adjustments, when supported by the provider. */
+  refundedTotal?: number;
+  disputed?: boolean;
+  voided?: boolean;
 };
 
 export type PaymentIntentInfo = { id: string; metadata: Record<string, string>; amount: number; currency: string; status: string; livemode: boolean };
