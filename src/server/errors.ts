@@ -48,6 +48,7 @@ export const ERROR_CODES = [
   "not_editable",
   "admin_token_invalid",
   "admin_claim_disabled",
+  "owner_account_not_found",
   "db_unavailable",
   "bad_origin",
   "server_error",
