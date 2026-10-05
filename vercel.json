@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/payments",
       "schedule": "37 3 * * *"
+    },
+    {
+      "path": "/api/cron/experience",
+      "schedule": "47 4 * * *"
     }
   ]
 }

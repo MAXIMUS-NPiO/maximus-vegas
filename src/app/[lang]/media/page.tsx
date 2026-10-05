@@ -77,9 +77,8 @@ export default async function Media({ params, searchParams }: { params: Promise<
           </form>
           <section className="section-tight stack-sm" id="live">
             <h2 className="h3">{x.live}</h2>
-            <p className="small muted">{x.liveNote}</p>
             {native.length ? <div className="grid grid-2">{native.map(b => <Link key={b.id} className="card card-link" href={`/${lang}/watch/${b.id}`}><span className="small muted">LIVE · {b.display_name}</span><h3>{b.title}</h3></Link>)}</div> : null}
-            <Cards rows={data.live} empty={x.noLive} />
+            {data.live.length || !native.length ? <><p className="small muted">{x.liveNote}</p><Cards rows={data.live} empty={x.noLive} /></> : null}
           </section>
           <section className="section-tight stack-sm" id="schedule">
             <h2 className="h3">{x.upcoming}</h2>

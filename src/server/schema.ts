@@ -1,5 +1,7 @@
 import { adminOperationsSchema } from "./admin-schema.ts";
 import { mpgsSchema } from "./payments/mpgs-schema.ts";
+import { playerExperienceSchema } from "./player-experience-schema.ts";
+import { teamInvitationStatements } from "./team-invitation-schema.ts";
 /**
  * Ordered, append-only migrations. Never edit an applied migration; add a new one.
  * Each entry is a list of single statements so both node-postgres and PGlite run them.
@@ -2250,5 +2252,7 @@ export const migrations: Migration[] = [
   },
   { id: 40, name: "mpgs_hosted_payment_sessions", statements: mpgsSchema },
   { id: 41, name: "operational_admin_catalog_and_decisions", statements: adminOperationsSchema },
+  { id: 42, name: "recipient_team_invitations", statements: teamInvitationStatements },
+  { id: 43, name: "verified_player_experience", statements: playerExperienceSchema },
 ];
 

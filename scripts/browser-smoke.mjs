@@ -10,7 +10,9 @@ import { createServer } from "node:http";
 import { chromium } from "playwright-core";
 
 const BASE = (process.env.BASE || "http://127.0.0.1:3100").replace(/\/$/, "");
-if (/maximus\.vegas/i.test(BASE)) throw new Error("browser-smoke creates test records: never run it against production");
+const target = new URL(BASE);
+if (target.protocol !== "http:" || !["127.0.0.1", "localhost"].includes(target.hostname) || target.username || target.password) throw new Error("Acceptance creates test records and requires an isolated loopback server");
+
 const RUN = (Date.now() % 1e9).toString(36);
 const PW = `browser-smoke-${RUN}`;
 const problems = [];
@@ -189,7 +191,11 @@ async function main(browser) {
   step("team, invitation, acceptance");
   await b.go("/ru/teams/new");
   await b.submit("team.create", { name: `Smoke Five ${RUN}`, tag: "SF", game: "cs2" });
-  await b.submit("team.invite", { username: c.username });
+  const invite = b.pg.locator('[data-invitation-composer]');
+  await invite.getByLabel("Игроку на сайте", { exact: true }).check();
+  await invite.locator('input[name="username"]').fill(c.username);
+  await invite.getByRole("button", { name: "Отправить приглашение игроку", exact: true }).click();
+  await invite.getByText("Приглашение появилось в кабинете игрока", { exact: true }).waitFor();
   await c.go("/ru/hub");
   await c.submit("team.respond", {}, { form: c.formWith("team.respond", "accept", "1") });
 

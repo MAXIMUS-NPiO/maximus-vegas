@@ -38,3 +38,6 @@ Content rules for every file, commit, branch name, pull request title and descri
 - Never claim that another worker received, read or accepted anything without a link to the evidence.
 
 Canonical production source: this repository; `main` deploys to www.maximus.vegas through the existing Vercel project. The older Sites project is a separate implementation with its own database, not a mirror of production: never copy it over this repository or move its data without a separately reviewed migration.
+
+
+For substantial multi-part changes, keep a source-based requirement inventory and observable acceptance gates with the project. Re-run the relevant gates before reporting completion; record skipped checks and external configuration gaps explicitly. The example in `GATES.md` supplements, and never replaces or weakens, the protected `check` job and shared work protocol above.

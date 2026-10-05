@@ -1,3 +1,5 @@
+import { experienceExport, eraseExperience } from "./player-experience.ts";
+import { invitationExport, eraseInvitations } from "./team-invitation-delivery.ts";
 import { arbitrationExport, eraseMarketData } from "./arbitration.ts";
 import { socialExport, eraseSocial } from "./social.ts";
 import { communityExport, eraseCommunity } from "./community.ts";
@@ -451,6 +453,8 @@ export async function exportAccount(db: Database, user: SessionUser) {
     portalMessages: await messageExport(db, user.id),
     academy: await academyExport(db, user.id),
     connections: await socialExport(db, user.id),
+    externalExperience: await experienceExport(db, user.id),
+    teamInvitations: await invitationExport(db, user.id),
     community: await communityExport(db, user.id),
     statistics: await statisticsExport(db, user.id),
     recurringMissions: await q("select mission,window_start,window_end,game,target,coins,xp,claimed_at from mission_assignments where user_id=$1 order by window_start"),
@@ -589,6 +593,8 @@ export async function deleteAccount(db: Database, user: SessionUser, confirmPass
     // Academy: the account's training records go; as a coach, open requests are cancelled and the profile goes.
     await eraseAcademyData(q, user.id);
     await eraseMarketData(q,user.id);
+    await eraseExperience(q, user.id);
+    await eraseInvitations(q, user.id);
     await eraseCommunity(q, user.id);
     await eraseSocial(q, user.id);
     await eraseClubhouse(q, user.id);

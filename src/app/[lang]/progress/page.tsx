@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { isLocale, type Locale } from "@/lib/i18n.ts";
@@ -107,8 +108,9 @@ export default async function Progress({ params, searchParams }: { params: Promi
 
       <section className="grid grid-3 facts">
         <div className="card">
-          <p className="field-label">{T("Ранг", "Rank")}</p>
+          <p className="field-label">{T("Прогресс в MAXIMUS", "MAXIMUS progression")}</p>
           <p className="big-number">{ru ? rank.ru : rank.en}</p>
+          <p className="small muted">{T("Этот уровень отражает активность на сайте. Ваш стаж и внешние ранги — в игровом паспорте.", "This level reflects activity on this site. Your experience and external ranks are in your gaming passport.")}</p><Link className="text-link" href={`/${lang}/experience`}>{T("Мой игровой опыт", "My gaming experience")} →</Link>
           <div className="progress-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
             <span style={{ width: `${Math.round(progress * 100)}%` }} />
           </div>

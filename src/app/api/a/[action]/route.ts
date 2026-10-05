@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import * as invitationDelivery from "@/server/team-invitation-delivery.ts";
 import * as marketplace from "@/server/marketplace.ts";
 import * as missions from "@/server/missions.ts";
 import * as social from "@/server/social.ts";
@@ -295,19 +297,21 @@ const handlers: Record<string, Handler> = {
     return { to: `/${c.lang}/teams/${t.slug}`, ok: "team_created" };
   },
   "team.invite": async (c) => {
-    const { reserveOrInvite } = await import("@/server/username-reservations.ts");
-    const result = await reserveOrInvite(c.db, u(c), idOf(c.form.team), c.form.username);
-    if (result !== "reserved") return { ok: "invite_sent" };
-    const username = c.form.username.trim().replace(/^@/, "").toLowerCase();
-    const destination = new URL(`/${c.lang}/my-teams`, "https://internal.invalid");
-    destination.searchParams.set("team", c.form.team);
-    destination.searchParams.set("username", username);
-    destination.hash = "invitation-" + username;
-    return { to: destination.pathname + destination.search + destination.hash, ok: "username_reserved" };
+    const invitation = await invitationDelivery.sendTeamInvitation(c.db, u(c), { teamId: idOf(c.form.team), username: c.form.username, email: c.form.email, lang: c.lang, requestId: c.form.requestId || randomUUID() });
+    return { to: `/${c.lang}/my-teams#delivery-${invitation.id}`, ok: invitation.channel === "site" ? "invite_sent" : "invitation_queued" };
+  },
+  "team.delivery_retry": async c => {
+    const invitation = await invitationDelivery.retryTeamInvitation(c.db, u(c), idOf(c.form.invitation));
+    return { ok: invitation.deliveryStatus === "queued" ? "invitation_queued" : "saved" };
+  },
+  "team.delivery_revoke": async c => { await invitationDelivery.revokeTeamInvitation(c.db, u(c), idOf(c.form.invitation)); return { ok: "saved" }; },
+  "team.delivery_respond": async c => {
+    const result = await invitationDelivery.respondToTeamInvitation(c.db, u(c), idOf(c.form.invitation), c.form.accept === "1");
+    return c.form.accept === "1" ? { to: `/${c.lang}/teams/${result.teamSlug}`, ok: "joined_team" } : { to: `/${c.lang}/my-teams`, ok: "invite_declined" };
   },
   "team.respond": async (c) => {
-    const team = await teams.respondToInvite(c.db, u(c), idOf(c.form.invite), c.form.accept === "1");
-    return c.form.accept === "1" ? { to: `/${c.lang}/teams/${team.slug}`, ok: "joined_team" } : { ok: "invite_declined" };
+    const team = await invitationDelivery.respondToAnyTeamInvite(c.db, u(c), idOf(c.form.invite), c.form.accept === "1");
+    return c.form.accept === "1" ? { to: `/${c.lang}/teams/${team.teamSlug}`, ok: "joined_team" } : { ok: "invite_declined" };
   },
   "team.reservation_revoke": async (c) => {
     const { revokeReservation } = await import("@/server/username-reservations.ts");
@@ -315,7 +319,7 @@ const handlers: Record<string, Handler> = {
     return { ok: "saved" };
   },
   "team.revoke": async (c) => {
-    await teams.revokeInvite(c.db, u(c), idOf(c.form.invite));
+    await invitationDelivery.revokeAnyTeamInvite(c.db, u(c), idOf(c.form.invite));
     return { ok: "saved" };
   },
   "team.leave": async (c) => {

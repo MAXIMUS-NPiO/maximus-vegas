@@ -26,7 +26,7 @@ export const XP = {
 } as const;
 
 export const RANKS = [
-  { key: "rookie", min: 0, ru: "Новичок", en: "Rookie" },
+  { key: "rookie", min: 0, ru: "Новый участник", en: "New member" },
   { key: "bronze", min: 250, ru: "Бронза", en: "Bronze" },
   { key: "silver", min: 750, ru: "Серебро", en: "Silver" },
   { key: "gold", min: 1500, ru: "Золото", en: "Gold" },

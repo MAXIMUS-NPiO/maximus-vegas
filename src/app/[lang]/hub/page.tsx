@@ -1,3 +1,5 @@
+import { profileExperience } from "@/server/player-experience.ts";
+import { PlayerExperienceCard } from "@/components/player-experience";
 import Link from "next/link";
 import { lobbyTitle } from "@/components/tournament";
 import type { Metadata } from "next";
@@ -34,7 +36,7 @@ export default async function Hub({ params, searchParams }: { params: Promise<{ 
       </div>
     );
   if (!user) redirect(`/${lang}/signin?next=/${lang}/hub`);
-  const [data, notes, termsUpdate, xp, coins, [waiting]] = await Promise.all([
+  const [data, notes, termsUpdate, xp, coins, [waiting], experience] = await Promise.all([
     hub(db, user),
     notifications(db, user.id, 8),
     needsTermsAcceptance(db, user.id),
@@ -46,6 +48,7 @@ export default async function Hub({ params, searchParams }: { params: Promise<{ 
            or (status = 'reported' and reported_by <> $1 and $1 in (challenger_id, opponent_id))`,
       [user.id],
     ),
+    profileExperience(db, user.id, user.id),
   ]);
   const ru = lang === "ru";
   const T = (a: string, b: string) => (ru ? a : b);
@@ -70,9 +73,10 @@ export default async function Hub({ params, searchParams }: { params: Promise<{ 
       <Flash lang={lang} params={sp} />
       <nav className="grid grid-3 section-tight" aria-label={T("Быстрые действия", "Quick actions")}>
         <Link className="card card-link" href={`/${lang}/my-teams`}><strong>{T("Мои команды и приглашения", "My teams & invitations")}</strong><span className="small muted">{T("Игроки, составы, зарезервированные имена", "Players, rosters and reserved usernames")}</span></Link>
-        <Link className="card card-link" href={`/${lang}/my-teams#invite-player`}><strong>{T("Пригласить игрока", "Invite a player")}</strong><span className="small muted">{T("Выбрать команду и имя → отправить ссылку", "Choose a team and username → share a link")}</span></Link>
+        <Link className="card card-link" href={`/${lang}/my-teams#invite-player`}><strong>{T("Пригласить игрока", "Invite a player")}</strong><span className="small muted">{T("Команда, получатель, отправка и статус", "Team, recipient, sending and status")}</span></Link>
         <Link className="card card-link" href={`/${lang}/community`}><strong>{T("Моё сообщество", "My community")}</strong><span className="small muted">{T("Друзья, чаты, кланы и поддержка", "Friends, chats, clans and support")}</span></Link>
       </nav>
+      <PlayerExperienceCard lang={lang} data={experience} />
       <Link className="btn btn-secondary" href={`/${lang}/studio`}>{T("Студия эфиров и POV", "Live & POV studio")}</Link>
       {termsUpdate ? (
         <div className="notice notice-warn" role="status">
@@ -108,7 +112,7 @@ export default async function Hub({ params, searchParams }: { params: Promise<{ 
       ) : null}
       <div className="grid grid-3 section-tight">
         <Link href={`/${lang}/progress`} className="card card-link">
-          <span className="field-label">{T("Ранг", "Rank")}</span>
+          <span className="field-label">{T("Прогресс в MAXIMUS", "MAXIMUS progression")}</span>
           <strong>{ru ? rank.ru : rank.en}</strong>
           <span className="small muted">{xp} XP</span>
         </Link>

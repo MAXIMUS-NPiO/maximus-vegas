@@ -4,6 +4,8 @@ export const ERROR_CODES = [
   "not_found",
   "invalid_input",
   "invalid_email",
+  "recipient_required",
+  "invitation_recipient_mismatch",
   "invalid_username",
   "invalid_name",
   "weak_password",

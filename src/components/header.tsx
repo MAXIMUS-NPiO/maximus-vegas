@@ -40,9 +40,11 @@ export function Header({ lang, nav, extra, common, user }: { lang: Locale; nav: 
       headerRef.current?.querySelectorAll("details[open]").forEach((d) => d.removeAttribute("open"));
     };
     const onClick = (e: MouseEvent) => {
-      if (!headerRef.current?.contains(e.target as Node)) setOpen(false);
+      const link = e.target instanceof Element ? e.target.closest("a[href]") : null;
+      const navigating = Boolean(link && headerRef.current?.contains(link));
+      if (navigating || !headerRef.current?.contains(e.target as Node)) setOpen(false);
       headerRef.current?.querySelectorAll("details[open]").forEach((d) => {
-        if (!d.contains(e.target as Node)) d.removeAttribute("open");
+        if (navigating || !d.contains(e.target as Node)) d.removeAttribute("open");
       });
     };
     window.addEventListener("keydown", onKey);
@@ -125,6 +127,8 @@ export function Header({ lang, nav, extra, common, user }: { lang: Locale; nav: 
                 </summary>
                 <div className="account-panel">
                   <Link href={`/${lang}/hub`}>{nav.hub}</Link>
+                  <Link href={`/${lang}/my-teams#invite-player`}>{lang === "ru" ? "Пригласить игрока" : "Invite a player"}</Link>
+                  <Link href={`/${lang}/experience`}>{lang === "ru" ? "Мой игровой опыт" : "My gaming experience"}</Link>
                   <Link href={`/${lang}/my-teams`}>{lang === "ru" ? "Мои команды и приглашения" : "My teams & invitations"}</Link>
                   <Link href={`/${lang}/community`}>{lang === "ru" ? "Моё сообщество" : "My community"}</Link>
                   <Link href={`/${lang}/gameday`}>{extra.gameDay}</Link>
