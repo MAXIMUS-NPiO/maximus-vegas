@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { dict, isLocale } from "@/lib/i18n.ts";
 import { pageMeta } from "@/lib/meta.ts";
 import { viewer } from "@/server/viewer.ts";
-import { adminClaimMode } from "@/server/auth.ts";
+import { adminClaimMode, adminCount } from "@/server/auth.ts";
 import { ActionForm, DbDown, Field, Flash, type SearchParams } from "@/components/ui";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string }> }): Promise<Metadata> {
@@ -24,9 +25,35 @@ export default async function Claim({ params, searchParams }: { params: Promise<
         <DbDown lang={lang} />
       </div>
     );
-  if (!user) redirect(`/${lang}/signin?next=/${lang}/admin/claim`);
-  const [admins] = await db.query<{ n: number }>("select count(*)::int as n from user_roles where role = 'admin'");
-  const enabled = adminClaimMode() === "env" || (admins?.n ?? 0) === 0;
+  const admins = await adminCount(db);
+  // Signed out, while no administrator exists: the owner may recover the account without its password.
+  if (!user && admins > 0) redirect(`/${lang}/signin?next=/${lang}/admin/claim`);
+  if (!user)
+    return (
+      <div className="container narrow page">
+        <h1>{d.admin.recoverTitle}</h1>
+        <p className="lead">{d.admin.recoverText}</p>
+        <Flash lang={lang} params={sp} />
+        <ActionForm action="account.owner_recover" lang={lang} back={`/${lang}/admin/claim`} className="card form-card">
+          <Field label={d.admin.recoverLogin}>
+            <input name="login" required autoComplete="username" />
+          </Field>
+          <Field label={d.admin.claimToken}>
+            <input name="token" type="password" required autoComplete="off" />
+          </Field>
+          <Field label={d.admin.recoverPassword}>
+            <input name="password" type="password" required minLength={10} autoComplete="new-password" />
+          </Field>
+          <button className="btn btn-primary">{d.admin.recover}</button>
+        </ActionForm>
+        <p className="small muted">
+          <Link href={`/${lang}/signin?next=/${lang}/admin/claim`} className="text-link">
+            {d.admin.recoverSignin}
+          </Link>
+        </p>
+      </div>
+    );
+  const enabled = adminClaimMode() === "env" || admins === 0;
   return (
     <div className="container narrow page">
       <h1>{d.admin.claimTitle}</h1>

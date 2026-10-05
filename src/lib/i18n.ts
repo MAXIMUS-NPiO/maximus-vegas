@@ -636,6 +636,13 @@ const ru = {
     claimText:
       "Первый администратор назначается одноразовым кодом владельца. На портале хранится только его хеш; после появления первого администратора код перестаёт действовать.",
     claimToken: "Секретный код",
+    recoverTitle: "Вход владельца",
+    recoverText:
+      "Пока на портале нет ни одного администратора, владелец с одноразовым кодом может задать новый пароль своему аккаунту и сразу получить права администратора. Другие сеансы аккаунта завершатся, дальше откроется подключение второго фактора. Как только администратор появится, форма закрывается навсегда.",
+    recoverLogin: "Email или имя пользователя аккаунта",
+    recoverPassword: "Новый пароль — не короче 10 символов",
+    recover: "Задать пароль и получить права",
+    recoverSignin: "Знаете пароль? Войти",
     claim: "Подтвердить",
     claimDisabled: "Администратор уже назначен. Новые роли выдаются в разделе администрирования.",
   },
@@ -843,6 +850,7 @@ const ru = {
     not_editable: "Сейчас это нельзя изменить.",
     admin_token_invalid: "Код не подошёл.",
     admin_claim_disabled: "Администратор уже назначен — код больше не действует.",
+    owner_account_not_found: "Аккаунт с таким email или именем пользователя не найден. Проверьте написание.",
     db_unavailable: "База данных недоступна. Попробуйте позже.",
     bad_origin: "Запрос отклонён: отправьте форму со страницы портала.",
     server_error: "Не удалось выполнить действие. Попробуйте ещё раз.",
@@ -1483,6 +1491,13 @@ const en: BaseDict = {
     claimText:
       "The first administrator is assigned with the owner's one-time code. The portal stores only its hash; once the first administrator exists, the code stops working.",
     claimToken: "Secret code",
+    recoverTitle: "Owner access",
+    recoverText:
+      "While the portal has no administrator at all, the owner with the one-time code can set a new password for their account and receive administrator rights at once. The account's other sessions end; the second factor is set up next. Once an administrator exists, this form closes for good.",
+    recoverLogin: "Account email or username",
+    recoverPassword: "New password — 10 characters or more",
+    recover: "Set the password and claim rights",
+    recoverSignin: "Know the password? Sign in",
     claim: "Confirm",
     claimDisabled: "An administrator already exists. New roles are granted in the administration area.",
   },
@@ -1690,6 +1705,7 @@ const en: BaseDict = {
     not_editable: "This cannot be changed right now.",
     admin_token_invalid: "The code did not match.",
     admin_claim_disabled: "An administrator already exists — the code no longer works.",
+    owner_account_not_found: "No account with this email or username. Check the spelling.",
     db_unavailable: "The database is unavailable. Please try later.",
     bad_origin: "Request rejected: submit the form from a portal page.",
     server_error: "The action could not be completed. Please try again.",

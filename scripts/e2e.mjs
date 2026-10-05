@@ -123,6 +123,32 @@ async function playOut(players, maxPasses = 40) {
   return passes;
 }
 
+// ---------- Owner access recovery (C-34): only on a database without an administrator ----------
+if (process.env.OWNER_CODE) {
+  const anon = new Client("anon");
+  const page = await anon.get("/ru/admin/claim");
+  if (page.status === 200 && page.text.includes("Вход владельца")) {
+    const owner = await signup("owner");
+    const fresh = "owner-new-password-" + RUN;
+    const recover = (fields) => anon.post("account.owner_recover", { password: fresh, back: "/ru/admin/claim", ...fields });
+    assert.equal((await recover({ login: owner.username, token: "MV-not-the-owner-code" })).e, "admin_token_invalid");
+    assert.equal((await recover({ login: `nobody_${RUN}`, token: process.env.OWNER_CODE })).e, "owner_account_not_found");
+    const done = await recover({ login: owner.username, token: process.env.OWNER_CODE });
+    assert.equal(done.ok, "admin_granted", done.location);
+    assert.equal(done.path, "/ru/admin/security");
+    assert.ok(anon.jar.get("mv_session"), "the owner is signed in");
+    assert.equal((await anon.get("/ru/admin")).status, 307, "the second factor is still required");
+    assert.equal((await anon.get("/ru/admin/security")).status, 200);
+    assert.ok((await owner.get("/ru/hub")).location?.includes("/signin"), "the earlier session ended");
+    const later = new Client("later");
+    const closed = await later.get("/ru/admin/claim");
+    assert.ok(closed.status === 307 && closed.location.includes("/ru/signin"), "the form closes once an administrator exists");
+    assert.equal((await later.post("auth.signin", { login: owner.username, password: PASSWORD })).e, "invalid_credentials");
+    assert.equal((await later.post("auth.signin", { login: owner.username, password: fresh })).path, "/ru/hub");
+    log("owner access recovery while no administrator exists");
+  }
+}
+
 // ---------- Public surface ----------
 const guest = new Client("guest");
 const pages = ["", "/tournaments", "/circuits", "/games", "/games/cs2", "/rankings", "/players", "/teams", "/finder", "/membership", "/matchmaking", "/challenges", "/partners", "/organizer",
@@ -141,8 +167,9 @@ assert.ok(faq.includes("/ru/help#faq-"), "search covers help articles");
 const privacy = (await guest.get("/en/privacy")).text;
 assert.ok(privacy.includes("Services connected right now"), "privacy lists live services");
 const pubgPage = (await guest.get("/en/games/pubg")).text;
-assert.ok(pubgPage.includes("FFA tournaments: lobbies with placement and kill points") && pubgPage.includes("A referee enters the placements and kills"), "battle royale games state FFA tournaments and how their results are entered");
-assert.ok(!pubgPage.includes("battle royale format — in development") && pubgPage.includes("squads of 4"), "no stale battle royale label; squads, not 4v4");
+// Since C-33 the page reads the persisted game registry: FFA lobbies, referee-entered placements, roster of 4.
+assert.ok(pubgPage.includes("FFA lobbies") && pubgPage.includes("referees enter placements and points"), "battle royale games state FFA tournaments and how their results are entered");
+assert.ok(!pubgPage.includes("battle royale format — in development") && pubgPage.includes("4 players per roster") && !pubgPage.includes("4v4"), "no stale battle royale label; a roster of 4, not 4v4");
 assert.ok((await guest.get("/ru/tournaments")).text.includes('value="pubg"'), "the tournament list filters by battle royale games");
 const health = await (await fetch(`${BASE}/api/health`)).json();
 assert.equal(health.status, "ok");
@@ -789,8 +816,9 @@ if (process.env.OWNER_CODE) {
     const r = await org.get(`/ru/admin?tab=${tab}`);
     assert.equal(r.status, 200, `admin tab ${tab}`);
   }
-  const audit = (await org.get("/ru/admin?tab=audit")).text;
-  assert.ok(audit.includes("Цепочка целостна"), "audit chain verified");
+  // Since C-33 the full SHA-256 verification runs on request.
+  const audit = (await org.get("/ru/admin?tab=audit&verify=1")).text;
+  assert.ok(audit.includes("Цепочка целостна") && !audit.includes("Нарушение целостности"), "audit chain verified");
   const payments = (await org.get("/ru/admin?tab=payments")).text;
   assert.ok(payments.includes("Оплаты выключены"), "readiness explains why collection is off");
   log("owner code grants admin once; second factor enrolled with TOTP; recovery codes shown once; all control-centre tabs render");

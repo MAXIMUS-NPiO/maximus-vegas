@@ -246,6 +246,16 @@ const handlers: Record<string, Handler> = {
     await auth.claimAdmin(c.db, u(c), c.form.token);
     return { to: `/${c.lang}/admin/security`, ok: "admin_granted" };
   },
+  "account.owner_recover": async (c) => {
+    const s = await auth.recoverOwnerAccess(c.db, {
+      login: c.form.login,
+      token: c.form.token,
+      password: c.form.password,
+      userAgent: c.request.headers.get("user-agent") ?? "",
+      clientKey: c.request.headers.get("x-forwarded-for")?.split(",")[0]?.trim(),
+    });
+    return { to: `/${c.lang}/admin/security`, ok: "admin_granted", cookie: sessionCookie(s.token, s.expires) };
+  },
   "onboarding.done": async (c) => {
     await accounts.completeOnboarding(c.db, u(c));
     return { to: c.form.next === "tournaments" ? `/${c.lang}/tournaments` : `/${c.lang}/hub`, ok: "welcome" };

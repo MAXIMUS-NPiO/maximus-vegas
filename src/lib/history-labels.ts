@@ -18,6 +18,7 @@ const LABELS: Record<string, { ru: string; en: string }> = {
   "tournament.stage_started": { ru: "Старт следующего этапа", en: "Next stage started" },
   "tournament.stage_skipped": { ru: "Этап не проводится", en: "Stage skipped" },
   "tournament.stage_regenerated": { ru: "Этап пересоздан", en: "Stage regenerated" },
+  "owner.access_recovered": { ru: "Владелец восстановил доступ", en: "Owner access recovered" },
   "tournament.reopened_for_reset": { ru: "Назначен перезапуск финала", en: "Bracket reset scheduled" },
   "tournament.results_annulled": { ru: "Результаты аннулированы", en: "Results annulled" },
   "tournament.ffa_started": { ru: "Старт FFA", en: "FFA started" },
