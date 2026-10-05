@@ -166,7 +166,9 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
   const calls = viewerSide || referee ? await refereeCalls(db, m.id) : [];
   const g = gameDayText[lang];
   const confirmed = results.find((r) => r.status === "confirmed");
-  const back = `/${lang}/matches/${m.id}`;
+  const inControl=first(sp.control)==="1" && Boolean(user?.roles.includes("admin"));
+  const controlBack=`/${lang}/admin?tab=tournaments&event=${encodeURIComponent(m.t_slug)}`;
+  const back = inControl?`${controlBack}&match=${m.id}`:`/${lang}/matches/${m.id}`;
   const hidden = { match: m.id };
   const open = !["completed", "cancelled"].includes(m.status);
   const both = Boolean(a && b);
@@ -205,7 +207,7 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
   return (
     <div className="container page">
       <p className="eyebrow">
-        <Link href={`/${lang}/tournaments/${m.t_slug}`}>{m.t_name}</Link> · {roundLabel} · {d.match.gameDay}
+        <Link href={inControl?controlBack:`/${lang}/tournaments/${m.t_slug}`}>{m.t_name}</Link> · {roundLabel} · {d.match.gameDay}
       </p>
       <div className="row-between">
         <h1>
@@ -554,7 +556,8 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
             <details className="disclosure" id="repair" open={Boolean(repairView)}>
               <summary>{lo.repairTitle}</summary>
               <p className="small muted">{lo.repairLead}</p>
-              <form method="get" action={`/${lang}/matches/${m.id}#repair`} className="stack">
+              <form method="get" action={inControl?`/${lang}/admin#repair`:`/${lang}/matches/${m.id}#repair`} className="stack">
+                {inControl?<><input type="hidden" name="tab" value="tournaments"/><input type="hidden" name="event" value={m.t_slug}/><input type="hidden" name="match" value={m.id}/></>:null}
                 <input type="hidden" name="repair" value="1" />
                 <div className="score-inputs">
                   <Field label={`${d.match.scoreFor}: ${a?.name}`}>
@@ -780,7 +783,7 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
       ) : null}
 
       <div className="row">
-        <Link href={`/${lang}/tournaments/${m.t_slug}#bracket`} className="btn btn-ghost btn-sm">
+        <Link href={inControl?controlBack:`/${lang}/tournaments/${m.t_slug}#bracket`} className="btn btn-ghost btn-sm">
           {d.match.toTournament}
         </Link>
         {data.nextMatch ? (

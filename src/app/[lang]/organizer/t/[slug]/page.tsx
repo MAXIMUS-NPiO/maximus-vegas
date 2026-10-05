@@ -189,7 +189,9 @@ export default async function ManageTournament({ params, searchParams }: { param
   );
   const lines = leaderboard ? await scoreLog(db, t.id) : [];
   const pendingLines = lines.filter((l) => l.review === "pending");
-  const back = `/${lang}/organizer/t/${t.slug}`;
+  const inControl=String(sp.control??"")==="1" && user.roles.includes("admin");
+  const back = inControl ? `/${lang}/admin?tab=tournaments&event=${encodeURIComponent(t.slug)}` : `/${lang}/organizer/t/${t.slug}`;
+  const matchPath=(id:string)=>inControl?`${back}&match=${id}`:`/${lang}/matches/${id}`;
   const hidden = { tournament: t.id };
   const status = t.status as TournamentStatus;
   const editable = ["DRAFT", "PUBLISHED", "REGISTRATION_OPEN", "REGISTRATION_CLOSED"].includes(status);
@@ -504,7 +506,7 @@ export default async function ManageTournament({ params, searchParams }: { param
             {openPostDisputes.map((x) => (
               <li key={x.id}>
                 <span className="grow small prewrap">{x.reason}</span>
-                <Link href={`/${lang}/matches/${x.match_id}`} className="btn btn-ghost btn-xs">
+                <Link href={matchPath(x.match_id)} className="btn btn-ghost btn-xs">
                   {o.open}
                 </Link>
               </li>
@@ -807,7 +809,7 @@ export default async function ManageTournament({ params, searchParams }: { param
                     {label(m)}: {m.a_name ?? d.common.tbd} {d.common.vs} {m.b_name ?? d.common.tbd}
                   </span>
                   <Badge status={m.status}>{d.statuses.match[m.status]}</Badge>
-                  <Link href={`/${lang}/matches/${m.id}`} className="btn btn-ghost btn-xs">
+                  <Link href={matchPath(m.id)} className="btn btn-ghost btn-xs">
                     {o.open}
                   </Link>
                 </li>
@@ -1044,7 +1046,7 @@ export default async function ManageTournament({ params, searchParams }: { param
                         <LocalTime iso={m.scheduled_at!} lang={lang} />
                       </td>
                       <td>
-                        <Link href={`/${lang}/matches/${m.id}`}>{matchName(m.id)}</Link>
+                        <Link href={matchPath(m.id)}>{matchName(m.id)}</Link>
                         {conflicted.has(m.id) ? <span className="small"> · {ru ? "пересечение" : "overlap"}</span> : null}
                       </td>
                       <td>{m.venue_name ?? "—"}</td>

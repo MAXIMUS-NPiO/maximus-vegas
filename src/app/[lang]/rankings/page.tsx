@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { dict, isLocale } from "@/lib/i18n.ts";
-import { GAMES, gameBySlug, isGame } from "@/lib/games.ts";
+import { publicGames } from "@/server/catalog.ts";
 import { pageMeta } from "@/lib/meta.ts";
 import { viewer } from "@/server/viewer.ts";
 import { rankings } from "@/server/queries.ts";
@@ -19,8 +19,9 @@ export default async function Rankings({ params, searchParams }: { params: Promi
   if (!isLocale(lang)) notFound();
   const d = dict(lang);
   const sp = await searchParams;
-  const game = isGame(one(sp.game)) ? one(sp.game) : "cs2";
   const { db, dbError } = await viewer();
+  const games=await publicGames(db,true);
+  const game = games.some(g=>g.slug===one(sp.game)) ? one(sp.game) : "cs2";
   const data = db ? await rankings(db, game).catch(() => ({ solo: [], teams: [] })) : { solo: [], teams: [] };
   const table = (rows: typeof data.solo, kind: "players" | "teams") =>
     rows.length ? (
@@ -59,13 +60,13 @@ export default async function Rankings({ params, searchParams }: { params: Promi
     <div className="container page">
       <PageHead title={d.rankings.title} lead={d.rankings.lead} />
       <nav className="chips" aria-label={d.tournaments.game}>
-        {GAMES.map((g) => (
+        {games.map((g) => (
           <Link key={g.slug} href={`/${lang}/rankings?game=${g.slug}`} className={g.slug === game ? "chip is-active" : "chip"}>
             {g.name}
           </Link>
         ))}
       </nav>
-      <h2 className="h3">{gameBySlug(game)?.name}</h2>
+      <h2 className="h3">{games.find(g=>g.slug===game)?.name}</h2>
       {dbError ? (
         <DbDown lang={lang} />
       ) : (

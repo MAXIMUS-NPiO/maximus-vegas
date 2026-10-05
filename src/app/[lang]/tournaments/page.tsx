@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { dict, isLocale } from "@/lib/i18n.ts";
-import { GAMES, isGame } from "@/lib/games.ts";
+import { publicGames } from "@/server/catalog.ts";
 import { pageMeta } from "@/lib/meta.ts";
 import { viewer } from "@/server/viewer.ts";
 import { listTournaments } from "@/server/queries.ts";
@@ -24,8 +24,9 @@ export default async function Tournaments({ params, searchParams }: { params: Pr
   const d = dict(lang);
   const sp = await searchParams;
   const filter = (FILTERS as readonly string[]).includes(one(sp.f)) ? (one(sp.f) as (typeof FILTERS)[number]) : "all";
-  const game = isGame(one(sp.game)) ? one(sp.game) : undefined;
   const { db, dbError } = await viewer();
+  const games=await publicGames(db,true);
+  const game = games.some(g=>g.slug===one(sp.game)) ? one(sp.game) : undefined;
   const list = db ? await listTournaments(db, { filter, game, limit: 90 }).catch(() => []) : [];
   const href = (f: string, g?: string) => {
     const q = new URLSearchParams();
@@ -57,7 +58,7 @@ export default async function Tournaments({ params, searchParams }: { params: Pr
           </label>
           <select id="game-filter" name="game" defaultValue={game ?? ""}>
             <option value="">{d.tournaments.anyGame}</option>
-            {GAMES.map((g) => (
+            {games.map((g) => (
               <option key={g.slug} value={g.slug}>
                 {g.name}
               </option>

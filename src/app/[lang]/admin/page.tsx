@@ -1,3 +1,4 @@
+import { OperationsDashboard, OperationsTournaments, OperationsUser, OperationsGames, OperationsApplications, OperationsAudit, OperationsSponsors } from "@/components/admin-operations";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
@@ -15,15 +16,12 @@ import {
   readinessReason,
 } from "@/lib/labels.ts";
 import { viewer } from "@/server/viewer.ts";
-import { adminApplications, adminAudit, adminDisputes, adminOverview, adminTournaments, adminUsers } from "@/server/queries.ts";
-import { verifyAuditChain } from "@/server/audit.ts";
+import { adminDisputes, adminOverview, adminUsers } from "@/server/queries.ts";
 import { isAdmin, isStaff } from "@/server/access.ts";
 import { MFA_SESSION_HOURS, mfaStatus, secretEncryption, staffMfaOverview } from "@/server/mfa.ts";
 import { adminBilling, CURRENCIES, formatMoney, missingFields, offers as allOffers, paymentReadiness, publicOffer, type Offer } from "@/server/billing.ts";
 import { mailConfigured, mailTransport, outboxSummary } from "@/server/mail.ts";
-import { allSponsors, SPONSOR_TIERS } from "@/server/sponsors.ts";
 import { disputedChallenges } from "@/server/challenges.ts";
-import { mediaUrl } from "@/server/media.ts";
 import type { Database } from "@/server/db.ts";
 import type { SessionUser } from "@/server/auth.ts";
 import { ActionForm, Badge, DbDown, Empty, Field, Flash, one, type SearchParams } from "@/components/ui";
@@ -63,6 +61,7 @@ const TABS = [
   "outbox",
   "messages",
   "tournaments",
+  "games",
   "sponsors",
   "system",
   "security",
@@ -71,6 +70,7 @@ const TABS = [
 type Tab = (typeof TABS)[number];
 
 const TAB_LABELS: Record<Tab, { ru: string; en: string }> = {
+  games: {ru:"Каталог игр",en:"Games catalog"},
   overview: { ru: "Обзор", en: "Overview" },
   users: { ru: "Пользователи", en: "Users" },
   disputes: { ru: "Споры матчей", en: "Match disputes" },
@@ -155,6 +155,7 @@ export default async function Admin({ params, searchParams }: { params: Promise<
     const mail = mailConfigured();
     body = (
       <>
+        <h2 className="h3">{T("Рабочая сводка", "Operations overview")}</h2>
         <dl className="stat-grid">
           {Object.entries(counts).map(([k, v]) => {
             const label = COUNT_LABELS[k];
@@ -187,10 +188,11 @@ export default async function Admin({ params, searchParams }: { params: Promise<
             </div>
           ) : null}
         </div>
+        <OperationsDashboard {...ctx}/>
       </>
     );
   } else if (tab === "users") {
-    body = await UsersTab(ctx);
+    body = one(sp.user) ? await OperationsUser(ctx) : await UsersTab(ctx);
   } else if (tab === "disputes") {
     const list = await adminDisputes(db);
     body = list.length ? (
@@ -250,45 +252,13 @@ export default async function Admin({ params, searchParams }: { params: Promise<
       <Empty title={T("Спорных вызовов нет.", "No disputed challenges.")} />
     );
   } else if (tab === "conduct") {
-    body = <><CommunityReportsAdmin db={db} user={user} lang={lang} back={back} /><SocialAdmin db={db} user={user} lang={lang} back={back} /><ConductTab db={db} user={user} lang={lang} back={back} /></>;
+    body = <><CommunityReportsAdmin db={db} user={user} lang={lang} back={back} /><SocialAdmin db={db} user={user} lang={lang} back={back} /><ConductTab db={db} user={user} lang={lang} back={back} subject={one(sp.subject)} /></>;
   } else if (tab === "venues") {
     body = <VenuesTab db={db} lang={lang} back={back} />;
   } else if (tab === "academy") {
     body = <><CommunityHostsAdmin db={db} user={user} lang={lang} back={back} /><AcademyTab db={db} lang={lang} back={back} /></>;
   } else if (tab === "applications") {
-    const list = await adminApplications(db);
-    body = list.length ? (
-      <ul className="list">
-        {list.map((x) => (
-          <li key={x.id} className="stack-sm">
-            <div className="row-between">
-              <strong>
-                {d.forms.kinds[x.kind] ?? x.kind} · {x.name}
-              </strong>
-              <Badge status={x.status}>{a.applicationStatus[x.status]}</Badge>
-            </div>
-            <span className="small">
-              <a href={`mailto:${x.email}`} className="text-link">
-                {x.email}
-              </a>
-              {x.company ? ` · ${x.company}` : ""} · {x.lang.toUpperCase()} · <LocalTime iso={x.created_at} lang={lang} />
-            </span>
-            {x.message ? <p className="small prewrap">{x.message}</p> : null}
-            <div className="row">
-              {(["new", "in_review", "closed"] as const)
-                .filter((s) => s !== x.status)
-                .map((s) => (
-                  <ActionForm key={s} action="admin.application" lang={lang} back={back} hidden={{ application: x.id, status: s }}>
-                    <button className="btn btn-ghost btn-xs">{a.applicationStatus[s]}</button>
-                  </ActionForm>
-                ))}
-            </div>
-          </li>
-        ))}
-      </ul>
-    ) : (
-      <Empty title={a.noApplications} />
-    );
+    body = await OperationsApplications(ctx);
   } else if (tab === "memberships") {
     body = await MembershipsTab(ctx);
   } else if (tab === "offers") {
@@ -298,9 +268,11 @@ export default async function Admin({ params, searchParams }: { params: Promise<
   } else if (tab === "outbox") {
     body = await OutboxTab(ctx);
   } else if (tab === "tournaments") {
-    body = await TournamentsTab(ctx);
+    body = await OperationsTournaments(ctx);
+  } else if (tab === "games") {
+    body = await OperationsGames(ctx);
   } else if (tab === "sponsors") {
-    body = await SponsorsTab(ctx);
+    body = await OperationsSponsors(ctx);
   } else if (tab === "messages") {
     body = <MessagesTab db={db} user={user} lang={lang} back={back} />;
   } else if (tab === "system") {
@@ -308,38 +280,11 @@ export default async function Admin({ params, searchParams }: { params: Promise<
   } else if (tab === "security") {
     body = await SecurityTab(ctx);
   } else if (tab === "audit") {
-    const [chain, rows] = await Promise.all([verifyAuditChain(db), adminAudit(db)]);
-    body = (
-      <>
-        <p className={chain.valid ? "notice notice-ok" : "notice notice-warn"}>
-          <strong>{a.chain}:</strong> {chain.valid ? fill(a.chainOk, { n: chain.records }) : fill(a.chainBroken, { id: chain.brokenAt })}
-        </p>
-        <div className="table-wrap">
-          <table className="table small">
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id}>
-                  <td className="mono">#{r.id}</td>
-                  <td>
-                    <LocalTime iso={r.at} lang={lang} />
-                  </td>
-                  <td>{r.actor ? `@${r.actor}` : "system"}</td>
-                  <td className="mono">{r.action}</td>
-                  <td className="mono muted">
-                    {r.entity}:{r.entity_id.slice(0, 8)}
-                  </td>
-                  <td className="mono muted">{r.hash.slice(0, 12)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </>
-    );
+    body = await OperationsAudit(ctx);
   }
 
   return (
-    <div className="container page">
+    <div className="container page admin-shell">
       <div className="row-between">
         <h1>{a.title}</h1>
         <Link href={`/${lang}/admin/security`} className="text-link small">
@@ -347,13 +292,15 @@ export default async function Admin({ params, searchParams }: { params: Promise<
         </Link>
       </div>
       <Flash lang={lang} params={sp} />
-      <nav className="chips" aria-label={a.title}>
+      <div className="admin-layout">
+      <nav className="admin-nav" aria-label={a.title}>
         {TABS.filter((k) => allowed.has(k)).map((k) => (
-          <Link key={k} href={`/${lang}/admin?tab=${k}`} className={k === tab ? "chip is-active" : "chip"} aria-current={k === tab ? "page" : undefined}>
+          <Link key={k} href={`/${lang}/admin?tab=${k}`} className={k === tab ? "admin-nav-link is-active" : "admin-nav-link"} aria-current={k === tab ? "page" : undefined}>
             {ru ? TAB_LABELS[k].ru : TAB_LABELS[k].en}
           </Link>
         ))}
       </nav>
+      <div className="admin-main">
       <p className="small muted">
         {T(
           "Критичные действия (роли, блокировки, решения по заявкам, счета, возвраты, предложения) требуют свежего кода второго фактора, если с последнего прошло больше 15 минут.",
@@ -361,6 +308,7 @@ export default async function Admin({ params, searchParams }: { params: Promise<
         )}
       </p>
       <section className="section-tight">{body}</section>
+      </div></div>
     </div>
   );
 }
@@ -404,7 +352,7 @@ async function UsersTab({ db, user, lang, back, admin, sp }: Ctx) {
             {users.map((u) => (
               <tr key={u.id}>
                 <td>
-                  <Link href={`/${lang}/players/${u.username}`}>{u.display_name}</Link>
+                  <Link href={`${back}&user=${encodeURIComponent(u.username)}`}>{u.display_name}</Link>
                   <div className="small muted">
                     @{u.username} · <LocalTime iso={u.created_at} lang={lang} dateOnly />
                   </div>
@@ -969,163 +917,6 @@ async function OutboxTab({ db, lang, back, T }: Ctx) {
       ) : (
         <Empty title={T("Писем в очереди нет.", "No emails queued.")} />
       )}
-    </div>
-  );
-}
-
-async function TournamentsTab({ db, lang, back, admin, T }: Ctx) {
-  const d = dict(lang);
-  const [list, sponsors, pending] = await Promise.all([
-    adminTournaments(db),
-    allSponsors(db),
-    db.query<{ slug: string; name: string; n: number }>(
-      "select t.slug, t.name, count(*)::int as n from score_entries s join tournaments t on t.id = s.tournament_id where s.review = 'pending' group by t.slug, t.name order by n desc",
-    ),
-  ]);
-  const activeSponsors = sponsors.filter((s) => s.active);
-  return (
-    <div className="stack">
-      {pending.length ? (
-        <div className="notice">
-          <p>{T("Результаты leaderboard ждут проверки организатора:", "Leaderboard results waiting for the organiser's review:")}</p>
-          <ul className="bullets small">
-            {pending.map((p) => (
-              <li key={p.slug}>
-                <Link href={`/${lang}/organizer/t/${p.slug}`} className="text-link">
-                  {p.name}
-                </Link>{" "}
-                — {p.n}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      <div className="table-wrap">
-        <table className="table">
-          <tbody>
-            {list.map((x) => (
-              <tr key={x.slug}>
-                <td>
-                  <Link href={`/${lang}/organizer/t/${x.slug}`}>{x.name}</Link>
-                  <div className="small muted">
-                    {x.org_name} · {x.format}
-                  </div>
-                </td>
-                <td>{gameBySlug(x.game)?.name ?? x.game}</td>
-                <td>
-                  <Badge status={x.status}>{d.statuses.tournament[x.status]}</Badge>
-                </td>
-                <td className="small">
-                  <LocalTime iso={x.starts_at} lang={lang} />
-                </td>
-                <td>
-                  {admin && !["COMPLETED", "CANCELLED", "ARCHIVED"].includes(x.status) ? (
-                    <details className="disclosure">
-                      <summary>
-                        {T("Награда", "Award")}: {x.prize_coins}
-                      </summary>
-                      <ActionForm action="tournament.prize" lang={lang} back={back} hidden={{ tournament: x.id }} className="inline-form">
-                        <input name="coins" type="number" min={0} max={100000} defaultValue={x.prize_coins} aria-label={T("Монеты победителю", "Coins for the winner")} />
-                        <button className="btn btn-ghost btn-xs">{T("Сохранить", "Save")}</button>
-                      </ActionForm>
-                      <p className="small muted">
-                        {T(
-                          "Монеты победителю назначает оператор; взносы участников в призы не идут. Монеты не имеют денежной стоимости.",
-                          "The operator sets the winner's coins; no participant fees fund prizes. Coins have no cash value.",
-                        )}
-                      </p>
-                      {activeSponsors.length ? (
-                        <ActionForm action="sponsor.attach" lang={lang} back={back} hidden={{ tournament: x.id, attach: "1" }} className="inline-form">
-                          <select name="sponsor" aria-label={T("Спонсор", "Sponsor")}>
-                            {activeSponsors.map((s) => (
-                              <option key={s.id} value={s.id}>
-                                {s.name}
-                              </option>
-                            ))}
-                          </select>
-                          <button className="btn btn-ghost btn-xs">{T("Привязать спонсора", "Attach sponsor")}</button>
-                        </ActionForm>
-                      ) : null}
-                    </details>
-                  ) : (
-                    <span className="small muted">
-                      {T("Награда", "Award")}: {x.prize_coins}
-                    </span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-async function SponsorsTab({ db, lang, back, admin, T }: Ctx) {
-  const list = await allSponsors(db);
-  const tierName = (t: string) => ({ title: T("Титульный", "Title"), gold: T("Золотой", "Gold"), silver: T("Серебряный", "Silver"), partner: T("Партнёр", "Partner") })[t] ?? t;
-  return (
-    <div className="stack">
-      <p className="small muted">
-        {T(
-          "Добавляйте только спонсоров с подписанным соглашением. Активные спонсоры показываются на главной и на страницах привязанных турниров.",
-          "Add only sponsors with a signed agreement. Active sponsors appear on the home page and on the pages of tournaments they are attached to.",
-        )}
-      </p>
-      {list.length ? (
-        <ul className="list">
-          {list.map((s) => (
-            <li key={s.id}>
-              {s.logo_media_id ? <img src={mediaUrl(s.logo_media_id)!} alt="" width={40} height={40} className="sponsor-thumb" /> : null}
-              <span className="grow">
-                <strong>{s.name}</strong> <span className="small muted">· {tierName(s.tier)}</span>
-                {s.website_url ? (
-                  <div className="small">
-                    <a href={s.website_url} className="text-link" rel="noopener noreferrer" target="_blank">
-                      {s.website_url}
-                    </a>
-                  </div>
-                ) : null}
-              </span>
-              <Badge status={s.active ? "ok" : "muted"}>{s.active ? T("Активен", "Active") : T("Скрыт", "Hidden")}</Badge>
-              {admin ? (
-                <ActionForm action="sponsor.toggle" lang={lang} back={back} hidden={{ sponsor: s.id, active: s.active ? "0" : "1" }}>
-                  <button className="btn btn-ghost btn-xs">{s.active ? T("Скрыть", "Hide") : T("Показать", "Show")}</button>
-                </ActionForm>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <Empty title={T("Спонсоров нет.", "No sponsors.")} />
-      )}
-      {admin ? (
-        <ActionForm action="sponsor.create" lang={lang} back={back} className="card form-card" multipart>
-          <h2 className="h4">{T("Добавить спонсора", "Add a sponsor")}</h2>
-          <div className="form-grid">
-            <Field label={T("Название", "Name")}>
-              <input name="name" required minLength={2} maxLength={80} />
-            </Field>
-            <Field label={T("Уровень", "Tier")}>
-              <select name="tier">
-                {SPONSOR_TIERS.map((t) => (
-                  <option key={t} value={t}>
-                    {tierName(t)}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </div>
-          <Field label={T("Сайт", "Website")} hint="https://">
-            <input name="website" type="url" maxLength={300} />
-          </Field>
-          <Field label={T("Логотип (PNG, JPEG или WebP)", "Logo (PNG, JPEG or WebP)")}>
-            <input name="logo" type="file" accept="image/png,image/jpeg,image/webp" />
-          </Field>
-          <button className="btn btn-primary">{T("Добавить", "Add")}</button>
-        </ActionForm>
-      ) : null}
     </div>
   );
 }

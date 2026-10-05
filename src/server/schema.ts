@@ -1,3 +1,4 @@
+import { adminOperationsSchema } from "./admin-schema.ts";
 import { mpgsSchema } from "./payments/mpgs-schema.ts";
 /**
  * Ordered, append-only migrations. Never edit an applied migration; add a new one.
@@ -2248,5 +2249,6 @@ export const migrations: Migration[] = [
     ],
   },
   { id: 40, name: "mpgs_hosted_payment_sessions", statements: mpgsSchema },
+  { id: 41, name: "operational_admin_catalog_and_decisions", statements: adminOperationsSchema },
 ];
 

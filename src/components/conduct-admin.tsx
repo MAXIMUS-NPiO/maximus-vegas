@@ -1,3 +1,4 @@
+import { eligibleAppealReviewers } from "@/server/conduct.ts";
 import Link from "next/link";
 import type { Locale } from "@/lib/i18n.ts";
 import { conductText } from "@/lib/conduct-text.ts";
@@ -139,7 +140,7 @@ function IssueForm({
 }: {
   lang: Locale;
   back: string;
-  rules: { code: string; title: string }[];
+  rules: { code: string; title: string; version:number }[];
   username?: string;
   report?: string;
   defaultRule?: string;
@@ -151,7 +152,7 @@ function IssueForm({
       <div className="form-grid">
         {report ? null : (
           <Field label={x.username}>
-            <input name="username" required minLength={3} maxLength={24} />
+            <input name="username" defaultValue={username} required minLength={3} maxLength={24} />
           </Field>
         )}
         <Field label={x.kind}>
@@ -164,10 +165,10 @@ function IssueForm({
           </select>
         </Field>
         <Field label={c.rule}>
-          <select name="rule" defaultValue={defaultRule && defaultRule !== OTHER_RULE ? defaultRule : undefined}>
+          <select name="rule" defaultValue={rules.find(r=>r.code===defaultRule)?`${defaultRule}.${rules.find(r=>r.code===defaultRule)!.version}`:undefined}>
             {rules.map((r) => (
-              <option key={r.code} value={r.code}>
-                {r.title} ({r.code})
+              <option key={r.code} value={`${r.code}.${r.version}`}>
+                {r.title} ({r.code}.{r.version})
               </option>
             ))}
           </select>
@@ -208,12 +209,13 @@ function IssueForm({
 }
 
 /** Control-centre tab: reports, appeals, measures in force, rules. */
-export async function ConductTab({ db, user, lang, back }: { db: Database; user: SessionUser; lang: Locale; back: string }) {
+export async function ConductTab({ db, user, lang, back, subject }: { db: Database; user: SessionUser; lang: Locale; back: string;subject?:string }) {
   const x = T[lang];
   const c = conductText[lang];
   const [queue, rules, transferDisputes, warDisputes] = await Promise.all([conductQueue(db), currentRules(db), openTransferDisputes(db), openWarDisputes(db)]);
-  const ruleList = rules.map((r) => ({ code: r.code, title: lang === "ru" ? r.title_ru : r.title_en }));
+  const ruleList = rules.map((r) => ({ code: r.code, version:r.version, title: lang === "ru" ? r.title_ru : r.title_en }));
   const admin = user.roles.includes("admin");
+  const reviewers=await eligibleAppealReviewers(db);
   return (
     <div className="stack">
       <section className="stack-sm">
@@ -299,10 +301,16 @@ export async function ConductTab({ db, user, lang, back }: { db: Database; user:
                     {a.evidence_url}
                   </a>
                 ) : null}
-                {a.issued_by === user.id ? (
+                <p className="small">{lang==="ru"?"Независимый рецензент":"Independent reviewer"}: {a.reviewer ? `@${a.reviewer}` : (lang==="ru"?"Не назначен — требуется другой сотрудник":"Unassigned — another staff member is required")}</p>
+                {a.issued_by!==user.id && a.user_id!==user.id ? <details className="disclosure"><summary>{lang==="ru"?"Назначить рецензента":"Assign reviewer"}</summary>
+                  <ActionForm action="conduct.assign_appeal" lang={lang} back={back} hidden={{appeal:a.id}} className="stack-sm">
+                    <Field label={lang==="ru"?"Рецензент":"Reviewer"}><select name="reviewer" required defaultValue={a.assigned_to??""}><option value="">—</option>{reviewers.filter(r=>r.id!==a.issued_by&&r.id!==a.user_id).map(r=><option key={r.id} value={r.id}>@{r.username}</option>)}</select></Field>
+                    <Field label={lang==="ru"?"Причина назначения":"Assignment reason"}><input name="reason" required minLength={10} maxLength={500}/></Field><button className="btn btn-ghost btn-sm">{lang==="ru"?"Назначить":"Assign"}</button>
+                  </ActionForm></details> : null}
+                {a.issued_by === user.id || a.user_id===user.id ? (
                   <p className="small muted">{x.yourDecision}</p>
                 ) : (
-                  <ActionForm action="conduct.decide" lang={lang} back={back} hidden={{ appeal: a.id }} className="stack-sm">
+                  a.assigned_to && a.assigned_to!==user.id ? <p className="small muted">{lang==="ru"?"Решение доступно назначенному рецензенту.":"Only the assigned reviewer can decide."}</p> : <ActionForm action="conduct.decide" lang={lang} back={back} hidden={{ appeal: a.id }} className="stack-sm">
                     <Field label={x.answer}>
                       <textarea name="decision" required minLength={20} maxLength={2000} rows={2} />
                     </Field>
@@ -429,9 +437,9 @@ export async function ConductTab({ db, user, lang, back }: { db: Database; user:
         ) : (
           <Empty title={x.noLive} />
         )}
-        <details className="disclosure card">
+        <details className="disclosure card" id="sanction-form" open={!!subject}>
           <summary>{x.issueStandalone}</summary>
-          <IssueForm lang={lang} back={back} rules={ruleList} />
+          <IssueForm lang={lang} back={back} rules={ruleList} username={subject}/>
         </details>
       </section>
 

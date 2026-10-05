@@ -1,5 +1,7 @@
+import { TournamentGameFields } from "./tournament-game-fields";
 import { dict, type Locale } from "@/lib/i18n.ts";
-import { GAMES } from "@/lib/games.ts";
+import { publicGames } from "@/server/catalog.ts";
+import { viewer } from "@/server/viewer.ts";
 import { DEFAULT_WEIGHTS, mergeWeights, WEIGHT_KEYS } from "@/server/scoring.ts";
 import {
   CHAIN_SIZE_MAX,
@@ -71,7 +73,7 @@ const WEIGHT_NAMES: Record<string, { ru: string; en: string }> = {
   place3: { ru: "За 3-е место", en: "For 3rd place" },
 };
 
-export function TournamentForm({
+export async function TournamentForm({
   lang,
   back,
   orgId,
@@ -86,6 +88,8 @@ export function TournamentForm({
   structuralLocked?: boolean;
   circuits?: CircuitOption[];
 }) {
+  const {db}=await viewer();
+  const games=(await publicGames(db,true)).filter(g=>!g.retired || g.slug===t?.game);
   const d = dict(lang);
   const o = d.organizer;
   const ru = lang === "ru";
@@ -167,35 +171,7 @@ export function TournamentForm({
         <input name="name" required minLength={2} maxLength={80} defaultValue={t?.name} />
       </Field>
       <div className="form-grid">
-        <Field
-          label={ru ? "Формат" : "Format"}
-          hint={
-            ru
-              ? "Сетки, круговая, швейцарская, группы и лесенка — для игр с матчами «сторона против стороны»; FFA — лобби, где все играют против всех (королевские битвы); leaderboard — самостоятельная отправка статистики."
-              : "Brackets, round robin, Swiss, groups and the gauntlet suit head-to-head games; FFA is lobbies where everyone plays everyone (battle royales); a leaderboard collects self-submitted stats."
-          }
-        >
-          <select name="format" defaultValue={t?.format ?? "single_elimination"}>
-            <option value="single_elimination">{ru ? "Олимпийская система" : "Single elimination"}</option>
-            <option value="double_elimination">{ru ? "Двойное выбывание (с перезапуском финала)" : "Double elimination (with bracket reset)"}</option>
-            <option value="round_robin">{ru ? `Круговая система — каждый с каждым (до ${RR_MAX_ENTRANTS})` : `Round robin — everyone plays everyone (up to ${RR_MAX_ENTRANTS})`}</option>
-            <option value="swiss">{ru ? "Швейцарская система — пары по очкам" : "Swiss system — pairings by points"}</option>
-            <option value="groups">{ru ? "Группы + плей-офф" : "Groups + playoff"}</option>
-            <option value="gauntlet">{ru ? `Лесенка (gauntlet) — до ${GAUNTLET_MAX}` : `Gauntlet (stepladder) — up to ${GAUNTLET_MAX}`}</option>
-            <option value="ffa">{ru ? "FFA — лобби с очками за места" : "FFA — lobbies with placement points"}</option>
-            <option value="leaderboard">{ru ? "Leaderboard по очкам" : "Points leaderboard"}</option>
-          </select>
-        </Field>
-        <Field label={o.game} hint={ru ? "Игры без сетки доступны только в формате leaderboard." : "Games without brackets are available in the leaderboard format only."}>
-          <select name="game" required defaultValue={t?.game ?? "cs2"}>
-            {GAMES.map((g) => (
-              <option key={g.slug} value={g.slug}>
-                {g.name}
-                {g.bracket ? "" : ru ? " — только leaderboard" : " — leaderboard only"}
-              </option>
-            ))}
-          </select>
-        </Field>
+        <TournamentGameFields lang={lang} games={games.map(({slug,name,formats})=>({slug,name,formats}))} initialGame={t?.game} initialFormat={t?.format} editing={editing}/>
         <Field label={o.participantType}>
           <select name="participantType" defaultValue={t?.participant_type ?? "team"}>
             <option value="team">{o.team}</option>

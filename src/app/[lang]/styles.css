@@ -2845,3 +2845,24 @@ button:disabled {
 .call-media figure { margin: 0; min-width: 0; }
 .call-media video { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #111; border-radius: 12px; }
 .call-media figcaption { margin-top: .4rem; }
+/* Operational control centre: one persistent navigation, protected sections inside. */
+.admin-layout { display: grid; grid-template-columns: 210px minmax(0,1fr); gap: 28px; align-items: start; margin-top: 24px; }
+.admin-nav { display: flex; flex-direction: column; gap: 4px; position: sticky; top: 90px; max-height: calc(100dvh - 110px); overflow-y: auto; }
+.admin-nav-link { padding: 9px 12px; border-radius: 8px; color: var(--muted); font-size: 14px; text-decoration: none; }
+.admin-nav-link:hover, .admin-nav-link.is-active { background: rgba(217,174,76,.12); color: var(--text); }
+.admin-nav-link.is-active { box-shadow: inset 3px 0 #d9ae4c; font-weight: 700; }
+.admin-main { min-width: 0; }
+.admin-filter { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.admin-filter .field { flex: 1 1 155px; min-width: 0; }
+.admin-filter input, .admin-filter select { width: 100%; min-width: 0; }
+.admin-hash { overflow-wrap: anywhere; font-size: 12px; }
+.admin-json { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; max-height: 420px; overflow-y: auto; }
+.admin-event > .container { width: 100%; max-width: none; padding-inline: 0; padding-top: 0; }
+.admin-main fieldset { border: 1px solid var(--line); padding: 12px; border-radius: 8px; min-width: 0; }
+.admin-main legend { font-size: 13px; padding-inline: 6px; }
+@media (max-width: 860px) {
+  .admin-layout { grid-template-columns: minmax(0,1fr); gap: 16px; }
+  .admin-nav { position: static; flex-direction: row; overflow-x: auto; max-height: none; padding-bottom: 8px; }
+  .admin-nav-link { flex-shrink: 0; }
+  .admin-filter .field { flex-basis: 100%; }
+}

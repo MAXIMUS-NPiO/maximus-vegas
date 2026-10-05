@@ -3,7 +3,7 @@ import type { SessionUser } from "./auth.ts";
 import { audit } from "./audit.ts";
 import { notify } from "./access.ts";
 import { fail, isUniqueViolation } from "./errors.ts";
-import { isGame } from "../lib/games.ts";
+import { requireCatalogGame } from "./catalog.ts";
 import * as v from "./validate.ts";
 
 type Team = { id: string; slug: string; name: string; owner_id: string; captain_id: string; game: string };
@@ -34,8 +34,8 @@ export async function createTeam(
 ) {
   const name = v.displayName(input.name, 48);
   const tag = v.oneLine(input.tag, 6).toUpperCase().replace(/[^A-Z0-9]/g, "");
-  if (!isGame(input.game)) fail("invalid_game");
   return db.tx(async (q) => {
+    await requireCatalogGame(q,input.game);
     const slug = await uniqueSlug(q, "teams", name);
     const [team] = await q.query<{ id: string; slug: string }>(
       `insert into teams (slug, name, tag, game, owner_id, captain_id) values ($1, $2, $3, $4, $5, $5) returning id, slug`,
