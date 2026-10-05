@@ -208,3 +208,8 @@ MIPA internal implementation record: owner-directed personal invitation/reservat
 ## 5 October 2026 — C-32: temporary intercompany MPGS payments
 
 MIPA internal implementation record: owner-directed reuse of existing Maximus Sports acquiring under the owner-confirmed internal agreement. Original additions include durable hosted-payment sessions, exact server-side order reconciliation, retry fencing, settlement adjustment handling, explicit payer disclosure and isolated acceptance fixtures. No new copyright registration, bank approval or successful live charge is asserted. Credentials remain outside the repository. PR #35; operating boundaries in `docs/MPGS_PAYMENTS.md`. Existing ownership and attribution are preserved.
+
+
+## 5 October 2026 — C-33: operational administration
+
+MIPA internal implementation record: owner-directed extension of the existing protected control centre, persisted game catalog with independent metadata and retirement, scoped organizer administration, independently routed appeals, version-bound application and sponsor decisions, reasoned tournament transitions, inspectable integrity verification and same-source transparency reporting. Original additions include bilingual administration components, migration 41 and isolated domain/HTTP acceptance. No new copyright registration, connected publisher service, trusted external audit anchor or live financial acceptance is asserted. PR #37; requirements, pre-code assessment and operating limits in `docs/ADMIN_OPERATIONS.md`. Existing ownership and third-party licences are preserved.

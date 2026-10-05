@@ -48,7 +48,7 @@ export async function audit(q: Queryable, input: AuditEntry): Promise<void> {
 
 export type ChainReport = { records: number; valid: boolean; brokenAt: number | null };
 
-/** Recomputes the whole chain; any edited, removed or reordered record breaks it. */
+/** Recomputes stored records and links. Detects edits and interior removal; tail truncation requires an external trusted checkpoint. */
 export async function verifyAuditChain(q: Queryable): Promise<ChainReport> {
   const rows = await q.query<{
     id: string | number;

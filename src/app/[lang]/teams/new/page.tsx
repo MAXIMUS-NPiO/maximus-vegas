@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { dict, isLocale } from "@/lib/i18n.ts";
-import { GAMES, isGame } from "@/lib/games.ts";
+import { publicGames } from "@/server/catalog.ts";
 import { pageMeta } from "@/lib/meta.ts";
 import { viewer } from "@/server/viewer.ts";
 import { ActionForm, DbDown, Field, Flash, one, SignInPrompt, type SearchParams } from "@/components/ui";
@@ -17,8 +17,9 @@ export default async function NewTeam({ params, searchParams }: { params: Promis
   if (!isLocale(lang)) notFound();
   const d = dict(lang);
   const sp = await searchParams;
-  const preset = isGame(one(sp.game)) ? one(sp.game) : "cs2";
-  const { user, dbError } = await viewer();
+  const { db, user, dbError } = await viewer();
+  const games=await publicGames(db);
+  const preset=games.some(g=>g.slug===one(sp.game))?one(sp.game):games[0]?.slug;
   const back = `/${lang}/teams/new`;
   return (
     <div className="container narrow page">
@@ -38,7 +39,7 @@ export default async function NewTeam({ params, searchParams }: { params: Promis
           </Field>
           <Field label={d.teams.game}>
             <select name="game" defaultValue={preset} required>
-              {GAMES.map((g) => (
+              {games.map((g) => (
                 <option key={g.slug} value={g.slug}>
                   {g.name}
                 </option>

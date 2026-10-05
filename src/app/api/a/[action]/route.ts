@@ -22,6 +22,8 @@ import * as leaderboard from "@/server/leaderboard.ts";
 import * as progression from "@/server/progression.ts";
 import * as challenges from "@/server/challenges.ts";
 import * as sponsors from "@/server/sponsors.ts";
+import * as operations from "@/server/admin-operations.ts";
+import { saveGame, requireCatalogGame } from "@/server/catalog.ts";
 import * as billing from "@/server/billing.ts";
 import * as mfa from "@/server/mfa.ts";
 import * as admin from "@/server/admin.ts";
@@ -93,6 +95,8 @@ const signupDraft = (c: Ctx) => ({ email: c.form.email ?? "", username: c.form.u
 const RESTRICTED_OK = new Set(["arbitration.open", "arbitration.evidence", "arbitration.appeal", "marketplace.delete", "auth.signout", "conduct.appeal", "notifications.read", "account.session", "account.password", "account.delete", "account.accept_terms"]);
 for (const action of ["community.friend_cancel", "social.withdraw", "social.block", "social.close", "social.report", "stats.unlink", "stats.share", "reward.cancel", "club.rsvp_cancel", "club.booking_status"]) RESTRICTED_OK.add(action);
 for (const action of ["rental.stop", "rental.release"]) RESTRICTED_OK.add(action);
+// Staff using the shared organizer/referee endpoints must pass the same factor gate as the control centre.
+const STAFF_EVENT_ACTIONS = new Set(["tournament.create","tournament.update","tournament.transition","tournament.approve","tournament.reject","tournament.substitute","tournament.reschedule","tournament.waves","tournament.venue_add","tournament.venue_remove","tournament.checkin_window","tournament.checkin_override","tournament.seeds","tournament.disqualify","tournament.coorg_add","tournament.coorg_remove","tournament.clone","tournament.regenerate","tournament.banner","tournament.prize","tournament.venue_set","template.save","template.create","match.official","match.noshow","match.correct","match.details","match.format","match.pause","match.resume","match.veto_reset","match.repair","match.call_close","lobby.result","lobby.details","lobby.uphold","score.log","score.review"]);
 const conductAdmin = (c: Ctx) => `/${c.lang}/admin?tab=conduct`;
 const venueForm = (c: Ctx) => ({
   name: c.form.name,
@@ -116,6 +120,12 @@ const oneTimeSecret = (c: Ctx, kind: "key" | "webhook", value: string, clear = f
 };
 
 const handlers: Record<string, Handler> = {
+  "admin.game": async c => { await saveGame(c.db,await staff(c),{...c.form,platforms:c.multi.platforms??[],formats:c.multi.formats??[]}); return {ok:"saved"}; },
+  "admin.transition": async c => { await operations.adminTransition(c.db,await staff(c),idOf(c.form.tournament),c.form.to,c.form.reason); return {ok:"saved"}; },
+  "admin.organizer_access": async c => { await operations.setOrganizerAccess(c.db,await staff(c),idOf(c.form.user),idOf(c.form.org),c.form.role,c.form.reason); return {ok:"saved"}; },
+  "admin.application_decide": async c => { await operations.decideApplication(c.db,await staff(c,"applications"),idOf(c.form.application),c.form); return {ok:"saved"}; },
+  "conduct.assign_appeal": async c => { await conduct.assignAppeal(c.db,await staff(c,"conduct"),c.form.appeal,c.form.reviewer,c.form.reason); return {ok:"saved"}; },
+  "sponsor.update": async c => { await sponsors.updateSponsor(c.db,await staff(c,"sponsors"),idOf(c.form.sponsor),c.form,c.files.logo); return {ok:"saved"}; },
   "community.friend": async c => { await community.requestFriend(c.db, u(c), c.form.username); },
   "community.friend_respond": async c => { const match = await community.respondFriend(c.db, u(c), idOf(c.form.id), c.form.accept === "1"); return match ? `/${c.lang}/dating/${match}` : undefined; },
   "community.friend_cancel": async c => { await community.cancelFriendRequest(c.db, u(c), idOf(c.form.id)); },
@@ -215,8 +225,7 @@ const handlers: Record<string, Handler> = {
   },
   "account.game": async (c) => {
     const game = c.form.game;
-    const { isGame } = await import("@/lib/games.ts");
-    if (!isGame(game)) fail("invalid_game");
+    await requireCatalogGame(c.db,game,false);
     const { changeGameName } = await import("@/server/game-names.ts");
     await changeGameName(c.db, u(c).id, game, c.form.handle, c.form.removeHandle);
     return { ok: "saved" };
@@ -332,7 +341,7 @@ const handlers: Record<string, Handler> = {
   // ---------- Tournaments ----------
   "tournament.create": async (c) => {
     const t = await tournaments.createTournament(c.db, u(c), idOf(c.form.org), tournamentInput(c));
-    return { to: `/${c.lang}/organizer/t/${t.slug}`, ok: "tournament_created" };
+    return { to: c.back.startsWith(`/${c.lang}/admin?tab=tournaments`) ? `/${c.lang}/admin?tab=tournaments&event=${encodeURIComponent(t.slug)}` : `/${c.lang}/organizer/t/${t.slug}`, ok: "tournament_created" };
   },
   "tournament.update": async (c) => {
     await tournaments.updateTournament(c.db, u(c), idOf(c.form.tournament), tournamentInput(c));
@@ -390,7 +399,7 @@ const handlers: Record<string, Handler> = {
   },
   "template.create": async (c) => {
     const t = await templates.createFromTemplate(c.db, u(c), idOf(c.form.template), { name: c.form.name, startsAt: c.form.startsAt, timeZone: c.form.tz });
-    return { to: `/${c.lang}/organizer/t/${t.slug}`, ok: "tournament_created" };
+    return { to: c.back.startsWith(`/${c.lang}/admin?tab=tournaments`) ? `/${c.lang}/admin?tab=tournaments&event=${encodeURIComponent(t.slug)}` : `/${c.lang}/organizer/t/${t.slug}`, ok: "tournament_created" };
   },
   "template.delete": async (c) => {
     await templates.deleteTemplate(c.db, u(c), idOf(c.form.template));
@@ -1063,7 +1072,8 @@ const handlers: Record<string, Handler> = {
       username: c.form.username,
       kind: c.form.kind,
       protective: c.form.protective,
-      rule: c.form.rule,
+      rule: c.form.rule?.split(".")[0],
+      ruleVersion: c.form.rule?.split(".")[1],
       confidence: c.form.confidence,
       days: c.form.days,
       hours: c.form.hours,
@@ -1191,7 +1201,7 @@ const handlers: Record<string, Handler> = {
   },
   "admin.application": async (c) => {
     const user = await staff(c, "applications");
-    await admin.setApplicationStatus(c.db, user, idOf(c.form.application), c.form.status);
+    await operations.decideApplication(c.db,user,idOf(c.form.application),c.form);
     return { ok: "saved" };
   },
   "sponsor.create": async (c) => {
@@ -1464,6 +1474,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
     if (c.user?.restricted && !RESTRICTED_OK.has(action)) fail("account_restricted");
     // Maintenance and feature switches (MV-STAFF-1): refused before anything changes; staff keep working.
     await system.gate(c.db, action, c.user);
+    if(STAFF_EVENT_ACTIONS.has(action)) await mfa.requireStaffMfa(c.db,c.user);
     const result = await handler(c);
     const r = typeof result === "string" ? { to: result } : result ?? {};
     if (r.external) return redirect(r.to!, r.cookie);

@@ -8,6 +8,7 @@ import { createOrg } from "../src/server/teams.ts";
 import { createTournament, register, transition } from "../src/server/tournaments.ts";
 import {
   conductQueue,
+  assignAppeal,
   currentRules,
   decideAppeal,
   dismissReport,
@@ -157,9 +158,13 @@ test("suspension: high confidence only; the account reads and appeals; another s
   await rejects(fileAppeal(db, player, s.id, "коротко", ""), "invalid_input");
   await fileAppeal(db, player, s.id, "Переписка вырвана из контекста, прилагаю полную запись.", "https://example.org/full");
   await rejects(fileAppeal(db, player, s.id, "Повторная апелляция с другими словами.", ""), "appeal_exists");
-  assert.equal((await notes(reviewer.id, "conduct_appeal")).length, 1);
   const { appeals } = await conductQueue(db);
   const appeal = appeals.find((a) => a.sanction_id === s.id)!;
+  assert.ok(appeal.assigned_to);
+  assert.notEqual(appeal.assigned_to,issuer.id);
+  assert.notEqual(appeal.assigned_to,player.id);
+  assert.equal((await notes(appeal.assigned_to!,"conduct_appeal")).length,1);
+  await assignAppeal(db,{...reviewer,mfaAt:new Date()},appeal.id,reviewer.id,"Independent colleague accepts the appeal for review.");
   await rejects(decideAppeal(db, issuer, appeal.id, true, "Пересмотрел своё решение и отменяю меру."), "appeal_needs_other_reviewer");
   assert.deepEqual(await decideAppeal(db, reviewer, appeal.id, true, "Полная запись показывает, что сговора не было."), { changed: true });
   assert.deepEqual(await decideAppeal(db, reviewer, appeal.id, false, "Повторное решение ничего не меняет."), { changed: false });
