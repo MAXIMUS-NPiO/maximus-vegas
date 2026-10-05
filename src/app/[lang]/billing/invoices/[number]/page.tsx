@@ -75,6 +75,7 @@ export default async function Invoice({ params, searchParams }: { params: Promis
             <dt>{T("Назначение", "Purpose")}</dt>
             <dd>{snap.title[lang]}</dd>
           </div>
+          {readiness.collector ? <div><dt>{T("Приём оплаты", "Payment collection")}</dt><dd>{readiness.collector} — {T("по внутреннему соглашению с получателем", "under an internal agreement with the beneficiary")}</dd></div> : null}
           <div>
             <dt>{T("Срок", "Term")}</dt>
             <dd>
@@ -161,8 +162,8 @@ export default async function Invoice({ params, searchParams }: { params: Promis
                 name="accept"
                 required
                 label={T(
-                  `Я принимаю условия членства, отмены и возврата (версия ${inv.terms_version}) и понимаю, что получатель платежа — ${inv.recipient}.`,
-                  `I accept the membership, cancellation and refund terms (version ${inv.terms_version}) and understand the payment recipient is ${inv.recipient}.`,
+                  `Я принимаю условия членства, отмены и возврата (версия ${inv.terms_version}). Получатель — ${inv.recipient}.${readiness.collector ? ` Оплату принимает ${readiness.collector} по внутреннему соглашению.` : ""}`,
+                  `I accept the membership, cancellation and refund terms (version ${inv.terms_version}). The beneficiary is ${inv.recipient}.${readiness.collector ? ` Payment is collected by ${readiness.collector} under an internal agreement.` : ""}`,
                 )}
               />
               <button className="btn btn-primary">

@@ -202,3 +202,9 @@ MIPA internal implementation record: owner-directed native screen/audio studio, 
 ## 4 October 2026 — C-30: community home and clear invitations
 
 MIPA internal implementation record: owner-directed personal invitation/reservation desk; independent mutual friendships; membership-scoped community rooms; privacy-scoped photo avatars; bilateral clan relationships; transparent host/practitioner review; bounded audio-only group room lifecycle and provider cleanup; RU/EN flows and isolated acceptance fixtures. Source trace: the owner's gamer feedback and four-page EC-01-004170 certificate attachment. No full 81-page source, new copyright registration, provider partnership, hired host or operating clinical service is asserted. Technical dependencies retain their licences. PR #33; requirements in `docs/C30_IMPLEMENTATION_STATE.md`, operating boundaries in `docs/COMMUNITY.md`. Ownership remains with the owner under this repository's existing record.
+
+
+
+## 5 October 2026 — C-32: temporary intercompany MPGS payments
+
+MIPA internal implementation record: owner-directed reuse of existing Maximus Sports acquiring under the owner-confirmed internal agreement. Original additions include durable hosted-payment sessions, exact server-side order reconciliation, retry fencing, settlement adjustment handling, explicit payer disclosure and isolated acceptance fixtures. No new copyright registration, bank approval or successful live charge is asserted. Credentials remain outside the repository. PR #35; operating boundaries in `docs/MPGS_PAYMENTS.md`. Existing ownership and attribution are preserved.

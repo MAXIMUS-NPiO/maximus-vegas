@@ -1,3 +1,4 @@
+import { mpgsSchema } from "./payments/mpgs-schema.ts";
 /**
  * Ordered, append-only migrations. Never edit an applied migration; add a new one.
  * Each entry is a list of single statements so both node-postgres and PGlite run them.
@@ -2246,4 +2247,6 @@ export const migrations: Migration[] = [
       `insert into community_voice_worker(id) values(true)`,
     ],
   },
+  { id: 40, name: "mpgs_hosted_payment_sessions", statements: mpgsSchema },
 ];
+
