@@ -12,7 +12,7 @@ The owner explicitly authorized temporary reuse of the existing Maximus Sports a
 - A return URL or result indicator never grants access. Authenticated Retrieve Order must match merchant, order, currency and the exact captured amount. Authorization alone does not count as payment.
 - Membership/broadcast reconciliation applies refunds and disputes conservatively. Replayed successful payment cannot restore revoked access. A local timeout alone stays processing, because MPGS timeouts do not interrupt every 3-D Secure interaction. Operations must reconcile an unresolved expired interaction before allowing another attempt.
 - Private RU/EN handoff explains that Maximus Sports collects payment under the internal agreement for MAXIMUS VEGAS L.L.C-FZ. The invoice issuer and beneficiary remain unchanged.
-- Protected `/api/cron/payments` rotates up to 20 known orders per run, with an execution deadline, every ten minutes. It reads the gateway; it cannot create a purchase. No CS-Cart notification setting is repointed. Existing Stripe webhooks stay separate.
+- Protected `/api/cron/payments` rotates up to 20 known orders per run, with an execution deadline, once daily on the existing hosting plan; browser returns verify immediately. A ten-minute schedule was rejected by the current plan, so no paid plan upgrade was made. The protected endpoint can be called by an approved external scheduler if faster unattended reconciliation is needed. It reads the gateway; it cannot create a purchase. No CS-Cart notification setting is repointed. Existing Stripe webhooks stay separate.
 - Migration 40 creates only portal-owned session records. No change is made to CS-Cart or its backup/migration work.
 
 ## Configuration
