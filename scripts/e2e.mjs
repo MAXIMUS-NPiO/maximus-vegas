@@ -172,6 +172,7 @@ const pubgPage = (await guest.get("/en/games/pubg")).text;
 // Since C-33 the page reads the persisted game registry: FFA lobbies, referee-entered placements, roster of 4.
 assert.ok(pubgPage.includes("FFA lobbies") && pubgPage.includes("referees enter placements and points"), "battle royale games state FFA tournaments and how their results are entered");
 assert.ok(!pubgPage.includes("battle royale format — in development") && pubgPage.includes("4 players per roster") && !pubgPage.includes("4v4"), "no stale battle royale label; a roster of 4, not 4v4");
+assert.ok((await guest.get("/ru/games/pubg")).text.includes("4 игрока в составе"), "Russian roster size uses the plural form");
 assert.ok((await guest.get("/ru/tournaments")).text.includes('value="pubg"'), "the tournament list filters by battle royale games");
 const health = await (await fetch(`${BASE}/api/health`)).json();
 assert.equal(health.status, "ok");
