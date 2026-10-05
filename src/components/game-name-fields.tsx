@@ -1,12 +1,11 @@
 "use client";
 import { useState } from "react";
-import { GAMES } from "@/lib/games.ts";
 import type { Locale } from "@/lib/i18n.ts";
 
-export function GameNameFields({ lang, linkedGames, accounts }: { lang: Locale; linkedGames: string[]; accounts: {game:string;handle:string}[] }) {
+export function GameNameFields({ lang, linkedGames, accounts, catalog }: { lang: Locale; linkedGames: string[]; accounts: {game:string;handle:string}[]; catalog:{slug:string;name:string}[] }) {
   const T = (ru: string, en: string) => lang === "ru" ? ru : en;
-  const remaining = GAMES.filter(g => !linkedGames.includes(g.slug));
-  const linked = GAMES.filter(g => linkedGames.includes(g.slug));
+  const remaining = catalog.filter(g => !linkedGames.includes(g.slug));
+  const linked = catalog.filter(g => linkedGames.includes(g.slug));
   const [mode, setMode] = useState(remaining.length ? "new" : "another");
   const games = mode === "new" ? remaining : linked;
   const [selected, setSelected] = useState("");

@@ -331,6 +331,65 @@ export async function claimAdmin(db: Database, user: SessionUser, token: unknown
   });
 }
 
+/** Administrators on the platform; the owner's recovery is open only while there are none. */
+export async function adminCount(q: Queryable): Promise<number> {
+  const [row] = await q.query<{ n: number }>("select count(*)::int as n from user_roles where role = 'admin'");
+  return row?.n ?? 0;
+}
+
+/**
+ * Owner access recovery for the bootstrap window, while the platform has no administrator at all: the holder
+ * of either bootstrap secret (the owner code, or ADMIN_BOOTSTRAP_TOKEN when it is configured) sets a new
+ * password for an existing account and makes that account the first administrator. It exists for an owner who
+ * cannot sign in while email delivery, and therefore password reset, is not connected. Every other session of
+ * the account ends; the control centre then requires the second factor as usual. Closed for good once any
+ * administrator exists. Failed codes count per client towards the sign-in limit.
+ */
+export async function recoverOwnerAccess(
+  db: Database,
+  input: { login: unknown; token: unknown; password: unknown; userAgent?: string; clientKey?: string },
+) {
+  const login = v.oneLine(input.login, 254).toLowerCase();
+  const given = typeof input.token === "string" ? input.token.trim() : "";
+  if (!login || !given) fail("admin_token_invalid");
+  const password = v.password(input.password);
+  const keys = [`owner-recovery:${input.clientKey ? sha256(input.clientKey) : "anon"}`];
+  if (await limited(db, keys)) fail("too_many_attempts");
+  if ((await adminCount(db)) > 0) fail("admin_claim_disabled");
+  // Either bootstrap secret opens the window: the owner code, or ADMIN_BOOTSTRAP_TOKEN when it is configured.
+  const envToken = process.env.ADMIN_BOOTSTRAP_TOKEN?.trim();
+  const digest = Buffer.from(sha256(given));
+  const matches = (hash: string) => timingSafeEqual(digest, Buffer.from(hash));
+  const secret = matches(OWNER_BOOTSTRAP_SHA256) ? "owner_code" : envToken && envToken.length >= 24 && matches(sha256(envToken)) ? "env" : null;
+  if (!secret) {
+    for (const key of keys) await db.query("insert into auth_attempts (key, ok) values ($1, false)", [key]);
+    fail("admin_token_invalid");
+  }
+  const passwordHash = await hashPassword(password);
+  return db.tx(async (q) => {
+    await q.query("select pg_advisory_xact_lock($1)", [7461003]);
+    if ((await adminCount(q)) > 0) fail("admin_claim_disabled");
+    const [user] = await q.query<{ id: string; email: string; username: string; status: string }>(
+      "select id, email, username, status from users where (email = $1 or username = $1) and status <> 'deleted' for update",
+      [login],
+    );
+    if (!user) fail("owner_account_not_found");
+    if (user.status === "suspended") fail("account_suspended");
+    await q.query("update users set password_hash = $2, status = 'active' where id = $1", [user.id, passwordHash]);
+    await q.query("delete from sessions where user_id = $1", [user.id]);
+    await q.query("insert into user_roles (user_id, role, granted_by) values ($1, 'admin', $1) on conflict do nothing", [user.id]);
+    await q.query("delete from auth_attempts where key = any($1)", [[...keys, `login:${sha256(user.email)}`, `login:${sha256(user.username)}`]]);
+    await audit(q, {
+      actorId: user.id,
+      action: "owner.access_recovered",
+      entity: "user",
+      entityId: user.id,
+      data: { role: "admin", password: "replaced", sessionsEnded: true, secret },
+    });
+    return createSession(q, user.id, input.userAgent ?? "");
+  });
+}
+
 export async function exportAccount(db: Database, user: SessionUser) {
   const [profile] = await db.query(
     `select id, email, username, display_name, country, country_code, bio, profile_public, avatar_color, referral_code,

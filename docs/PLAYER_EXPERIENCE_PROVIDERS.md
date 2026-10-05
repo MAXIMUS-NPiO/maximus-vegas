@@ -52,7 +52,7 @@ Endpoints are constructed from fixed provider hosts and strict paths. Imported p
 
 ## Integration and verification
 
-- Migration statements: `playerExperienceSchema` from `src/server/player-experience-schema.ts`, appended by the core lane as migration 41.
+- Migration statements: `playerExperienceSchema` from `src/server/player-experience-schema.ts`, appended by the core lane as migration 43 (integrated after migrations 40–41 of C-32 and C-33).
 - Read model: `profileExperience(q, userId, viewerId?)`; `PlayerExperienceCard` accepts `lang`, `data`, optional `availability` and optional `manage`.
 - Directory badges: `publicExperienceBadges(q, usernames)` returns a bounded `Map<string, string[]>`; it returns only source labels backed by shared, verified, non-empty experience on active public profiles.
 - Lifecycle: `experienceExport(q, userId)`, `eraseExperience(q, userId)`, `syncExperience(db, limit = 5)` and `syncOwnExperience(db, user)`.

@@ -1,3 +1,5 @@
+import { adminOperationsSchema } from "./admin-schema.ts";
+import { mpgsSchema } from "./payments/mpgs-schema.ts";
 import { playerExperienceSchema } from "./player-experience-schema.ts";
 import { teamInvitationStatements } from "./team-invitation-schema.ts";
 /**
@@ -2248,6 +2250,9 @@ export const migrations: Migration[] = [
       `insert into community_voice_worker(id) values(true)`,
     ],
   },
-  { id: 40, name: "recipient_team_invitations", statements: teamInvitationStatements },
-  { id: 41, name: "verified_player_experience", statements: playerExperienceSchema },
+  { id: 40, name: "mpgs_hosted_payment_sessions", statements: mpgsSchema },
+  { id: 41, name: "operational_admin_catalog_and_decisions", statements: adminOperationsSchema },
+  { id: 42, name: "recipient_team_invitations", statements: teamInvitationStatements },
+  { id: 43, name: "verified_player_experience", statements: playerExperienceSchema },
 ];
+

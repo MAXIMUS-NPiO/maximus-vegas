@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { dict, isLocale } from "@/lib/i18n.ts";
-import { GAMES, gameBySlug, isGame } from "@/lib/games.ts";
+import { publicGames } from "@/server/catalog.ts";
 import { pageMeta } from "@/lib/meta.ts";
 import { viewer } from "@/server/viewer.ts";
 import { listTeams } from "@/server/queries.ts";
@@ -19,8 +19,9 @@ export default async function Teams({ params, searchParams }: { params: Promise<
   if (!isLocale(lang)) notFound();
   const d = dict(lang);
   const sp = await searchParams;
-  const game = isGame(one(sp.game)) ? one(sp.game) : undefined;
   const { db, user, dbError } = await viewer();
+  const games=await publicGames(db,true);
+  const game=games.some(g=>g.slug===one(sp.game))?one(sp.game):undefined;
   const list = db ? await listTeams(db, game).catch(() => []) : [];
   return (
     <div className="container page">
@@ -35,7 +36,7 @@ export default async function Teams({ params, searchParams }: { params: Promise<
       <form method="get" className="inline-form toolbar">
         <select name="game" defaultValue={game ?? ""} aria-label={d.teams.game}>
           <option value="">{d.tournaments.anyGame}</option>
-          {GAMES.map((g) => (
+          {games.map((g) => (
             <option key={g.slug} value={g.slug}>
               {g.name}
             </option>
@@ -53,7 +54,7 @@ export default async function Teams({ params, searchParams }: { params: Promise<
                 <h3>{t.name}</h3>
                 {t.tag ? <span className="badge badge-muted">{t.tag}</span> : null}
               </div>
-              <p className="muted small">{gameBySlug(t.game)?.name ?? t.game}</p>
+              <p className="muted small">{games.find(g=>g.slug===t.game)?.name ?? t.game}</p>
               <p className="small">
                 {d.teams.members}: {t.members} · {t.wins} {d.teams.wins}
               </p>

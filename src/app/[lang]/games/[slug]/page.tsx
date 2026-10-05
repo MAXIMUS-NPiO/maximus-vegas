@@ -2,28 +2,24 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { dict, isLocale } from "@/lib/i18n.ts";
-import { GAMES, gameBySlug } from "@/lib/games.ts";
+import { publicGames } from "@/server/catalog.ts";
+import { gameModeLabel, gameRosterLabel, gameFormatsLabel } from "@/lib/catalog-labels.ts";
 import { pageMeta } from "@/lib/meta.ts";
 import { viewer } from "@/server/viewer.ts";
 import { listTeams, listTournaments } from "@/server/queries.ts";
 import { DbDown, Empty, PageHead } from "@/components/ui";
 import { TournamentCard } from "@/components/tournament";
 
-export function generateStaticParams() {
-  return GAMES.map((g) => ({ slug: g.slug }));
-}
-export const dynamicParams = false;
-
 export async function generateMetadata({ params }: { params: Promise<{ lang: string; slug: string }> }): Promise<Metadata> {
   const { lang, slug } = await params;
-  const game = gameBySlug(slug);
+  const game = (await publicGames((await viewer()).db,true)).find(g=>g.slug===slug);
   if (!isLocale(lang) || !game) return {};
   return pageMeta(lang, `games/${slug}`, game.name, `${game.name} — ${game.genre[lang]}`);
 }
 
 export default async function GamePage({ params }: { params: Promise<{ lang: string; slug: string }> }) {
   const { lang, slug } = await params;
-  const game = gameBySlug(slug);
+  const game = (await publicGames((await viewer()).db,true)).find(g=>g.slug===slug);
   if (!isLocale(lang) || !game) notFound();
   const d = dict(lang);
   const { db, dbError } = await viewer();
@@ -32,12 +28,13 @@ export default async function GamePage({ params }: { params: Promise<{ lang: str
   return (
     <div className="container page">
       <PageHead eyebrow={`${game.genre[lang]} · ${game.platforms.map((p) => d.games.platforms[p]).join(" · ")}`} title={game.name}>
-        <span className="badge badge-ok">{game.scoring === "racing" ? d.games.formatRacing : game.bracket ? d.games.formatBracket : d.games.formatFfa}</span>
+        <span className="badge badge-ok">{gameModeLabel(game.mode,lang) + " · " + gameFormatsLabel(game.formats,lang)}</span>
       </PageHead>
+      {game.retired ? <p className="notice">{lang==="ru"?"Игра выведена из каталога. История турниров сохранена; новые турниры и команды не создаются.":"This game is retired. Tournament history remains available; new events and teams are disabled."}</p> : null}
       <div className="split">
         <section>
           <h2 className="h3">{d.games.verificationTitle}</h2>
-          <p>{game.scoring === "racing" ? d.games.verificationRacing : game.bracket ? d.games.verificationManual : d.games.verificationFfa}</p>
+          <p>{lang==="ru" ? "Результаты подтверждают участники и судьи. Для таблицы результатов участник отправляет статистику с доказательствами; в многосторонних лобби судья вводит места и очки. Автоматический сбор зависит от отдельно подключённого источника данных." : "Results are confirmed by participants and referees. Leaderboard entrants submit statistics with evidence; referees enter placements and points in multi-party lobbies. Automatic collection requires a separately connected data source."}</p>
           {game.apiNote ? (
             <div className="notice">
               <strong>{d.games.apiTitle}</strong>
@@ -48,15 +45,12 @@ export default async function GamePage({ params }: { params: Promise<{ lang: str
         <section>
           <h2 className="h3">{d.games.matrixTitle}</h2>
           <dl className="kv">
-            {(game.scoring === "racing" ? d.games.matrixRacing : game.bracket ? d.games.matrix : d.games.matrixFfa).map(([k, v]) => (
-              <div key={k}>
-                <dt>{k}</dt>
-                <dd>{v}</dd>
-              </div>
-            ))}
+            <div><dt>{lang==="ru"?"Игровой режим":"Game mode"}</dt><dd>{gameModeLabel(game.mode,lang)}</dd></div>
+            <div><dt>{lang==="ru"?"Форматы турниров":"Tournament formats"}</dt><dd>{gameFormatsLabel(game.formats,lang)}</dd></div>
+            <div><dt>{lang==="ru"?"Подтверждение результатов":"Result verification"}</dt><dd>{lang==="ru"?"Участники и судьи; спорные результаты рассматриваются отдельно":"Participants and referees; disputed results are reviewed separately"}</dd></div>
             <div>
               <dt>{d.games.teamSize}</dt>
-              <dd>{game.teamSize === 1 ? d.games.solo : game.bracket ? `${game.teamSize}v${game.teamSize}` : d.games.squads.replace("{n}", String(game.teamSize))}</dd>
+              <dd>{gameRosterLabel(game,lang)}</dd>
             </div>
           </dl>
         </section>

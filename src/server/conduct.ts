@@ -24,6 +24,8 @@ import { notify, requireSection, staffWith } from "./access.ts";
 import { fail } from "./errors.ts";
 import { removeFromQueue } from "./quickmatch.ts";
 import * as v from "./validate.ts";
+import { requireStepUp } from "./mfa.ts";
+import { rolesOf } from "./staff-roles.ts";
 
 export const SANCTION_KINDS = ["warning", "queue_ban", "tournament_ban", "suspension"] as const;
 export type SanctionKind = (typeof SANCTION_KINDS)[number];
@@ -192,6 +194,7 @@ export type IssueInput = {
   kind: unknown;
   protective: unknown;
   rule: unknown;
+  ruleVersion?: unknown;
   confidence: unknown;
   days: unknown;
   hours: unknown;
@@ -222,6 +225,7 @@ export async function issueSanction(db: Database, staff: SessionUser, input: Iss
     await q.query("select id from users where id=$1 for update", [subject.id]);
     const [rule] = await q.query<{ code: string; version: number }>("select code, version from conduct_rules where code = $1 and retired_at is null", [String(input.rule ?? "").toUpperCase()]);
     if (!rule) fail("rule_not_found");
+    if(input.ruleVersion!==undefined && Number(input.ruleVersion)!==rule.version) fail("not_editable");
     const [{ now }] = await q.query<{ now: Date }>("select now() as now");
     const endsAt = sanctionTerm({ kind, protective, confidence, days: Number.isNaN(days) ? -1 : days, hours: Number.isNaN(hours) ? -1 : hours }, new Date(now));
     let report: { id: string; reporter_id: string; subject_id: string; status: string } | undefined;
@@ -290,8 +294,8 @@ export async function fileAppeal(db: Database, user: SessionUser, sanctionId: un
   if (statement.length < 20) fail("invalid_input");
   const evidence = v.optionalUrl(evidenceInput);
   return db.tx(async (q) => {
-    const [s] = await q.query<{ user_id: string; revoked_at: Date | null; open: boolean }>(
-      `select user_id, revoked_at, created_at > now() - ($2 || ' days')::interval as open from sanctions where id = $1 for update`,
+    const [s] = await q.query<{ user_id: string; issued_by: string; revoked_at: Date | null; open: boolean }>(
+      `select user_id, issued_by, revoked_at, created_at > now() - ($2 || ' days')::interval as open from sanctions where id = $1 for update`,
       [sanctionId, String(APPEAL_DAYS)],
     );
     if (!s || s.user_id !== user.id) fail("not_found");
@@ -302,9 +306,40 @@ export async function fileAppeal(db: Database, user: SessionUser, sanctionId: un
       "insert into sanction_appeals (sanction_id, user_id, statement, evidence_url) values ($1, $2, $3, $4) returning id",
       [sanctionId, user.id, statement, evidence],
     );
-    await notify(q, (await staffIds(q)).filter((id) => id !== user.id), "conduct_appeal", { conductAdmin: "1" });
+    // Route to a different, active reviewer. With no eligible colleague, leave a visible unassigned queue item.
+    const [reviewer] = await eligibleAppealReviewers(q, s.issued_by, user.id);
+    if (reviewer) {
+      await q.query("update sanction_appeals set assigned_to=$2,assigned_at=now() where id=$1", [row.id, reviewer.id]);
+      await audit(q,{actorId:null,action:"sanction.appeal_assigned",entity:"appeal",entityId:row.id,data:{reviewer:reviewer.id,reason:"automatic independent routing"}});
+      await notify(q, [reviewer.id], "conduct_appeal", { conductAdmin: "1" });
+    }
     await audit(q, { actorId: user.id, action: "sanction.appealed", entity: "sanction", entityId: sanctionId as string, data: { appeal: row.id } });
     return { id: row.id };
+  });
+}
+
+export async function eligibleAppealReviewers(q: Queryable, issuer = "", appellant = "") {
+  return q.query<{id:string;username:string}>(`select u.id,u.username from users u
+    where u.status='active' and u.id::text<>$1 and u.id::text<>$2
+      and not exists(select 1 from sanctions s where s.user_id=u.id and s.kind='suspension' and s.revoked_at is null and (s.ends_at is null or s.ends_at>now()))
+      and exists(select 1 from user_roles r where r.user_id=u.id and r.role=any($3::text[]))
+    order by (select count(*) from sanction_appeals a where a.assigned_to=u.id and a.status='open'),u.username`,
+    [issuer,appellant,rolesOf("conduct")]);
+}
+
+export async function assignAppeal(db:Database, staff:SessionUser, appealId:unknown, reviewerId:unknown, reasonInput:unknown) {
+  requireSection(staff,"conduct"); requireStepUp(staff);
+  if(!isId(appealId)||!isId(reviewerId)) fail("not_found");
+  const reason=v.clean(reasonInput,500); if(reason.length<10) fail("invalid_input");
+  await db.tx(async q=>{
+    const [a]=await q.query<{issued_by:string;user_id:string;status:string;assigned_to:string|null}>(`select a.user_id,a.status,a.assigned_to,s.issued_by from sanction_appeals a
+      join sanctions s on s.id=a.sanction_id where a.id=$1 for update of a`,[appealId]);
+    if(!a) fail("not_found"); if(a.status!=="open") fail("appeal_closed");
+    if(a.issued_by===staff.id||a.user_id===staff.id) fail("appeal_needs_other_reviewer");
+    if(!(await eligibleAppealReviewers(q,a.issued_by,a.user_id)).some(r=>r.id===reviewerId)) fail("appeal_needs_other_reviewer");
+    await q.query("update sanction_appeals set assigned_to=$2,assigned_at=now() where id=$1",[appealId,reviewerId]);
+    await audit(q,{actorId:staff.id,action:"sanction.appeal_assigned",entity:"appeal",entityId:appealId as string,data:{before:a.assigned_to,reviewer:reviewerId,reason}});
+    if(a.assigned_to!==reviewerId) await notify(q,[reviewerId as string],"conduct_appeal",{conductAdmin:"1"});
   });
 }
 
@@ -315,11 +350,17 @@ export async function decideAppeal(db: Database, staff: SessionUser, appealId: u
   const decision = v.clean(decisionInput, 2000);
   if (decision.length < 20) fail("invalid_input");
   return db.tx(async (q) => {
-    const [a] = await q.query<{ sanction_id: string; user_id: string; status: string }>("select sanction_id, user_id, status from sanction_appeals where id = $1 for update", [appealId]);
+    const [a] = await q.query<{ sanction_id: string; user_id: string; status: string; assigned_to:string|null }>("select sanction_id, user_id, status, assigned_to from sanction_appeals where id = $1 for update", [appealId]);
     if (!a) fail("not_found");
     const [s] = await q.query<{ issued_by: string; revoked_at: Date | null }>("select issued_by, revoked_at from sanctions where id = $1 for update", [a.sanction_id]);
-    if (s.issued_by === staff.id) fail("appeal_needs_other_reviewer");
+    if (s.issued_by === staff.id || a.user_id===staff.id) fail("appeal_needs_other_reviewer");
     if (a.status !== "open") return { changed: false };
+    if(a.assigned_to && a.assigned_to!==staff.id) fail("appeal_needs_other_reviewer");
+    if(!(await eligibleAppealReviewers(q,s.issued_by,a.user_id)).some(r=>r.id===staff.id)) fail("forbidden");
+    if(!a.assigned_to) {
+      await q.query("update sanction_appeals set assigned_to=$2,assigned_at=now() where id=$1",[appealId,staff.id]);
+      await audit(q,{actorId:staff.id,action:"sanction.appeal_assigned",entity:"appeal",entityId:appealId as string,data:{reviewer:staff.id,reason:"independent reviewer accepted unassigned appeal"}});
+    }
     await q.query("update sanction_appeals set status = $2, decided_by = $3, decision = $4, decided_at = now() where id = $1", [appealId, grant ? "granted" : "upheld", staff.id, decision]);
     if (grant && !s.revoked_at)
       await q.query("update sanctions set revoked_at = now(), revoked_by = $2, revoke_reason = $3 where id = $1", [a.sanction_id, staff.id, `appeal granted: ${decision}`.slice(0, 1000)]);
@@ -426,11 +467,12 @@ export async function conductQueue(q: Queryable) {
   );
   const appeals = await q.query<{
     id: string; sanction_id: string; username: string; statement: string; evidence_url: string; created_at: Date; kind: string; rule_code: string;
-    rule_version: number; decision: string; issued_by: string; issuer: string; ends_at: Date | null;
+    rule_version: number; decision: string; issued_by: string; issuer: string; ends_at: Date | null; user_id:string; assigned_to:string|null; reviewer:string|null;
   }>(
     `select a.id, a.sanction_id, u.username, a.statement, a.evidence_url, a.created_at, s.kind, s.rule_code, s.rule_version, s.decision, s.issued_by,
-            iu.username as issuer, s.ends_at
+            iu.username as issuer, s.ends_at, a.user_id, a.assigned_to, au.username as reviewer
        from sanction_appeals a join sanctions s on s.id = a.sanction_id join users u on u.id = a.user_id join users iu on iu.id = s.issued_by
+       left join users au on au.id=a.assigned_to
       where a.status = 'open' order by a.created_at`,
   );
   const sanctions = await q.query<SanctionView & { username: string; issuer: string }>(

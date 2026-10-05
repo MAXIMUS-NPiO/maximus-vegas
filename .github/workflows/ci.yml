@@ -31,6 +31,16 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: python3 -m unittest discover -s server-agent -v
+      - name: Admin HTTP acceptance (isolated database)
+        run: node scripts/admin-http.mjs
+      - name: Admin acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-acceptance
+          path: |
+            artifacts/c33-http-report.json
+            artifacts/c33-server.log
       - name: Install acceptance browser
         run: node node_modules/playwright-core/cli.js install --with-deps chromium
       - name: Studio browser acceptance

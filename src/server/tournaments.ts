@@ -7,7 +7,7 @@ import { fail, isUniqueViolation } from "./errors.ts";
 import { planSingleElimination } from "./bracket.ts";
 import { planDoubleElimination, refKey, deStage } from "./double.ts";
 import { mergeWeights, WEIGHT_KEYS, type Weights } from "./scoring.ts";
-import { gameBySlug } from "../lib/games.ts";
+import { requireCatalogGame, type CatalogGame } from "./catalog.ts";
 import { isCountry } from "../lib/countries.ts";
 import { uniqueSlug } from "./teams.ts";
 import { grantXp, settleChampionAward, XP } from "./progression.ts";
@@ -311,14 +311,12 @@ function parseWeights(input: Record<string, unknown> | undefined): Weights | nul
 const optionalInt = (value: unknown, min: number, max: number) =>
   value === undefined || value === null || String(value).trim() === "" ? null : v.intIn(value, min, max);
 
-function parseInput(input: TournamentInput) {
+function parseInput(input: TournamentInput, game: CatalogGame, preserveFormat = false) {
   const name = v.displayName(input.name, 80);
   const format = (FORMATS as readonly string[]).includes(String(input.format ?? "single_elimination"))
     ? (String(input.format ?? "single_elimination") as Format)
     : fail("invalid_input");
-  const game = gameBySlug(String(input.game ?? ""));
-  if (!game) fail("invalid_game");
-  if (isMatchFormat(format) && !game!.bracket) fail("format_not_supported");
+  if (!preserveFormat && !game.formats.includes(format)) fail("format_not_supported");
   const participantType = input.participantType === "team" ? "team" : input.participantType === "solo" ? "solo" : fail("invalid_input");
   const teamSize = participantType === "solo" ? 1 : v.intIn(input.teamSize || game!.teamSize, 2, 10);
   const leaderboard = format === "leaderboard";
@@ -376,19 +374,19 @@ export function editableFormatSettings(t: { format: string; format_settings?: un
 const defaultSettings = (format: string): object | null => (format === "ffa" ? parseFfaSettings({}) : parseFormatSettings(format, {}));
 
 export async function createTournament(db: Database, user: SessionUser, orgId: string, input: TournamentInput) {
-  const data = parseInput(input);
-  const settings = data.formatSettings ?? defaultSettings(data.format);
-  checkGroupCapacity(data.format, data.maxParticipants, settings);
-  checkFfaPlan(data.format, data.maxParticipants, settings);
-  const reg = parseRegistration(input.registration ?? {}, input.timeZone, data.startsAt);
-  const extras = {
-    series: seriesFor(data.format, input.series, null),
-    admission: input.admission ? parseAdmission(input.admission) : null,
-    matchMinutes: optionalInt(input.matchMinutes, 10, 600),
-    mapPool: isMatchFormat(data.format) && input.mapPool !== undefined ? parseMapPool(input.mapPool) : null,
-  };
   return db.tx(async (q) => {
     if (!(await canManageOrg(q, orgId, user))) fail("forbidden");
+    const data = parseInput(input, await requireCatalogGame(q,input.game));
+    const settings = data.formatSettings ?? defaultSettings(data.format);
+    checkGroupCapacity(data.format, data.maxParticipants, settings);
+    checkFfaPlan(data.format, data.maxParticipants, settings);
+    const reg = parseRegistration(input.registration ?? {}, input.timeZone, data.startsAt);
+    const extras = {
+      series: seriesFor(data.format, input.series, null),
+      admission: input.admission ? parseAdmission(input.admission) : null,
+      matchMinutes: optionalInt(input.matchMinutes, 10, 600),
+      mapPool: isMatchFormat(data.format) && input.mapPool !== undefined ? parseMapPool(input.mapPool) : null,
+    };
     const link = await validateCircuitLink(q, { orgId, game: data.game, participantType: data.participantType, format: data.format }, input.circuit ?? {});
     const slug = await uniqueSlug(q, "tournaments", data.name);
     const [t] = await q.query<{ id: string; slug: string }>(
@@ -417,10 +415,12 @@ export async function createTournament(db: Database, user: SessionUser, orgId: s
 }
 
 export async function updateTournament(db: Database, user: SessionUser, tournamentId: string, input: TournamentInput) {
-  const data = parseInput(input);
   await db.tx(async (q) => {
     const t = await lockTournament(q, tournamentId);
     await requireManager(q, t, user);
+    const sameGame=input.game===t.game;
+    const game=await requireCatalogGame(q,input.game,!sameGame);
+    const data=parseInput(input,game,sameGame && input.format===t.format);
     if (!["DRAFT", "PUBLISHED", "REGISTRATION_OPEN", "REGISTRATION_CLOSED"].includes(t.status)) fail("not_editable");
     const [count] = await q.query<{ n: number; active: number }>(
       "select count(*)::int as n, count(*) filter (where status = 'registered')::int as active from registrations where tournament_id = $1 and status not in ('withdrawn','rejected')",
@@ -1414,6 +1414,8 @@ export async function venuesOf(q: Queryable, tournamentId: string) {
 
 /** Inserts a draft from a copy source. The circuit link is kept only while that circuit is still active. */
 export async function insertDraft(q: Queryable, user: SessionUser, src: DraftSource, name: string, startsAt: Date, templateId: string | null) {
+  const game=await requireCatalogGame(q,src.game);
+  if(!game.formats.includes(src.format)) fail("format_not_supported");
   const [circuit] = src.circuit_id ? await q.query<{ status: string }>("select status from circuits where id = $1", [src.circuit_id]) : [];
   const keepCircuit = circuit?.status === "active";
   const slug = await uniqueSlug(q, "tournaments", name);

@@ -88,3 +88,8 @@ Title: Module registry · Status: PENDING MIPA REGISTRATION · Version: 6.1 · D
 The component registry in src/lib/directions.ts is the source for public feature states. Partners derives its lists from that registry. Home direction badges reuse the implemented academy/coaches, media and venue components; the accompanying text preserves unfinished extensions. Media clips/co-watch/creator profiles, venue maps/RSVP/station booking/Clubhouse, and sponsor workspace/partner sandbox remain in development. Working API/webhooks/widgets, media streams/VOD/overlays and online venue passes are not included in those unfinished rows.
 
 Rankings includes final placed participants without head-to-head matches, for individuals and teams; titles still require final first place in a completed or archived event. All catalogue games are selectable. Trackmania describes referee-entered placement scoring only: no automatic lap timing, and non-placement fields of the shared FFA form must remain zero.
+
+
+## Дополнение 5 октября 2026 — операционная администрация C-33
+
+`/ru/admin` и `/en/admin`: единая навигация по существующим рабочим разделам; поиск и управление турнирами и матчами, карточка пользователя с историей и игровыми аккаунтами, права организатора в конкретном пространстве, независимое назначение апелляций, версия правила в форме решения, поиск и полная проверка хеш-цепочки, редактируемый каталог игр, решения по обращениям, редактирование спонсоров и их турнирных привязок, публичные и внутренние показатели из одного источника. Миграция 41. Границы и проверка: `docs/ADMIN_OPERATIONS.md`. Добавление игры не подключает API издателя; одобрение обращения не запускает описанную услугу; оплата остаётся в текущем состоянии готовности.

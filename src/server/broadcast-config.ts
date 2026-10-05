@@ -44,7 +44,8 @@ export async function broadcastAvailability(db: Queryable) {
   const [run] = await db.query<{ last_at: Date; result: { healthy?: boolean } }>("select last_at,result from system_runs where name='broadcasts'");
   const scheduler = !!run && run.result.healthy === true && Date.now() - new Date(run.last_at).getTime() < 150000;
   const ready = process.env.MV_BROADCAST_ENABLED === "1" && broadcastConfig().ready && scheduler &&
-    !!tariff && paymentReadiness().ready && process.env.MERCHANT_LEGAL_NAME === RECIPIENT &&
+    !!tariff && paymentReadiness().ready && (process.env.MERCHANT_LEGAL_NAME === RECIPIENT || !!paymentReadiness().collector) &&
+    (paymentReadiness().provider !== "mpgs" || tariff.currency === "AED") &&
     (process.env.VERCEL_ENV !== "production" || paymentReadiness().mode === "live") &&
     await featureEnabled(db, "broadcasting") && !(await maintenanceState(db)).on;
   return { ready, tariff, paymentMode: paymentReadiness().mode };
