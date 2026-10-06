@@ -29,3 +29,8 @@ test("H6 device budget survives client IP changes",async()=>{
   await db.query("insert into auth_attempts(key,ok) select $1,true from generate_series(1,5)",[key]);
   await assert.rejects(auth.spendSignupBudget(db,"203.0.113.112",device),e=>typeof e==="object"&&e!==null&&"code" in e&&e.code==="signup_limited");
 });
+test('signup ignores spoofed proxy headers and invalid browser identifiers',async()=>{
+ const {signupAddress,signupDevice}=await import('../src/server/signup-device.ts');
+ const request=new Request('https://example.test',{headers:{'x-forwarded-for':'192.0.2.5','x-vercel-forwarded-for':'192.0.2.6'}});
+ assert.equal(signupAddress(request,{}),'unknown-address');assert.equal(signupAddress(request,{VERCEL:'1'}),'192.0.2.6');assert.equal(signupAddress(request,{TRUST_SIGNUP_PROXY:'1'}),'192.0.2.5');assert.equal(signupDevice('mv_signup_device=forged'),undefined);
+});
