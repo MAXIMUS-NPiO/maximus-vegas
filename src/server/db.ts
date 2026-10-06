@@ -46,7 +46,7 @@ export function postgresConnectionOptions(url: string, env: Partial<NodeJS.Proce
   const urlMode=parsed.searchParams.get("sslmode");
   if(!["disable","verify-full"].includes(mode) || (!local && (mode==="disable" || ["disable","no-verify","allow","prefer"].includes(urlMode ?? ""))))
     throw new DatabaseUnavailable("Database TLS must verify the remote certificate");
-  for(const key of ["sslmode","sslrootcert","sslcert","sslkey","uselibpqcompat"]) parsed.searchParams.delete(key);
+  for(const key of ["ssl","sslmode","sslrootcert","sslcert","sslkey","sslnegotiation","uselibpqcompat"]) parsed.searchParams.delete(key);
   return {connectionString:parsed.toString(),ssl:mode==="disable" ? false as const : {rejectUnauthorized:true,...(env.DATABASE_TLS_CA?{ca:env.DATABASE_TLS_CA.replace(/\\n/g,"\n")}: {})}};
 }
 

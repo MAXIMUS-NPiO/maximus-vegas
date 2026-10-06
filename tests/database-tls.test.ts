@@ -16,3 +16,10 @@ test("H3 only actual loopback hosts may disable TLS",()=>{
   assert.throws(()=>database.postgresConnectionOptions("postgresql://db.example.test/app?sslmode=no-verify",{}));
   assert.equal(database.postgresConnectionOptions("postgresql://db.example.test/app?application_name=localhost",{}).ssl && true,true);
 });
+test('H3 the actual pg parser cannot override CA or disable SSL through URL ssl=0',async()=>{
+ const {default:pg}=await import('pg');
+ for(const suffix of ['ssl=0','ssl=true','sslnegotiation=direct&ssl=0']){
+  const config=database.postgresConnectionOptions(`postgresql://db.example.test/app?${suffix}`,{DATABASE_TLS_CA:'approved-ca'});
+  const client=new pg.Client(config);assert.deepEqual((client as unknown as {connectionParameters:{ssl:unknown}}).connectionParameters.ssl,{rejectUnauthorized:true,ca:'approved-ca'});
+ }
+});
