@@ -111,3 +111,5 @@ Errors: structured JSON logs omit raw exception messages, bodies, cookies, crede
 Run `npm run acceptance:tournaments` on the candidate commit, followed by the complete CI workflow. This is isolated domain acceptance; real devices, emails, game accounts and payment acceptance are listed in `docs/QA_REMEDIATION.md`.
 
 `sponsor.toggle` is retained for compatibility. No current frontend caller was found (`rg 'sponsor.toggle' src` identifies the route only); mark for a separate removal proposal after checking external clients and deployment logs. C-37 explicitly supersedes C-36's deletion proposal and localhost signup exemption; no removal is authorized by this audit.
+
+Database URLs must put the target hostname in the authority (`postgresql://…@host/database`), not `host` or `hostaddr` query overrides. The actual `pg` connection parser is tested to ensure `ssl=0`, `ssl=true` and libpq options cannot replace the explicit verified TLS/CA configuration. No secret values are required in an audit report.
