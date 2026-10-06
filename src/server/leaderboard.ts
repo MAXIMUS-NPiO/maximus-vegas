@@ -152,12 +152,15 @@ export async function reviewScore(db: Database, user: SessionUser, entryId: stri
   const decision = decisionInput === "approve" ? "approved" : decisionInput === "reject" ? "rejected" : fail("invalid_input");
   const note = v.clean(noteInput, 500);
   await db.tx(async (q) => {
+    const [ref] = await q.query<{ tournament_id: string }>("select tournament_id from score_entries where id=$1", [entryId]);
+    if (!ref) fail("not_found");
+    // Match submit/correction lock order: tournament first, then the mutable entry.
+    const t = await lockTournament(q, ref.tournament_id);
     const [entry] = await q.query<{ id: string; tournament_id: string; registration_id: string; review: string }>(
-      "select id, tournament_id, registration_id, review from score_entries where id = $1 for update",
-      [entryId],
+      "select id, tournament_id, registration_id, review from score_entries where id = $1 and tournament_id=$2 for update",
+      [entryId,t.id],
     );
     if (!entry) fail("not_found");
-    const t = await lockTournament(q, entry.tournament_id);
     if (!(await canRefereeTournament(q, t, user))) fail("forbidden");
     if (!["IN_PROGRESS", "PAUSED"].includes(t.status)) fail("tournament_not_live");
     if (decision === "approved" && entry.review !== "pending") fail("not_editable");
