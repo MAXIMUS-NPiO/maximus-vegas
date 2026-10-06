@@ -45,15 +45,6 @@ export async function createSponsor(db: Database, user: SessionUser, input: { na
   });
 }
 
-export async function setSponsorActive(db: Database, user: SessionUser, id: string, active: boolean) {
-  requireSection(user, "sponsors");
-  await db.tx(async (q) => {
-    const rows = await q.query("update sponsors set active = $2,version=version+1 where id = $1 returning id", [id, active]);
-    if (!rows.length) fail("not_found");
-    await audit(q, { actorId: user.id, action: active ? "sponsor.activated" : "sponsor.deactivated", entity: "sponsor", entityId: id });
-  });
-}
-
 export async function attachSponsor(db: Database, user: SessionUser, tournamentId: string, sponsorId: string, attach: boolean) {
   requireSection(user, "sponsors");
   await db.tx(async (q) => {

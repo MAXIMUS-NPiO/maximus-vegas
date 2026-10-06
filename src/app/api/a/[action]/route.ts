@@ -161,6 +161,7 @@ const handlers: Record<string, Handler> = {
       marketing: c.form.marketing,
       userAgent: c.request.headers.get("user-agent") ?? "",
       lang: c.lang,
+      clientKey: c.request.headers.get("x-forwarded-for")?.split(",")[0]?.trim(),
     };
     if (accounts.emailFirstMode()) {
       await accounts.signUpEmailFirst(c.db, input);
@@ -1221,11 +1222,6 @@ const handlers: Record<string, Handler> = {
   "sponsor.create": async (c) => {
     const user = await staff(c, "sponsors");
     await sponsors.createSponsor(c.db, user, { name: c.form.name, tier: c.form.tier, website: c.form.website, logo: c.files.logo });
-    return { ok: "saved" };
-  },
-  "sponsor.toggle": async (c) => {
-    const user = await staff(c, "sponsors");
-    await sponsors.setSponsorActive(c.db, user, idOf(c.form.sponsor), c.form.active === "1");
     return { ok: "saved" };
   },
   // ---------- Streams and recordings (MV-MEDIA-1) ----------
