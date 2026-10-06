@@ -1,3 +1,4 @@
+import {reportError} from "./observability.ts";
 import { getDb } from "./db.ts";
 import { sessionUser, SESSION_COOKIE } from "./auth.ts";
 import { errorCode, parseCookies, sameOrigin } from "./http.ts";
@@ -27,8 +28,8 @@ export async function jsonContext(request: Request, action: string, maxBytes = 1
   await gate(db, action, user);
   return { db, user, data };
 }
-export function jsonError(error: unknown) {
+export async function jsonError(error: unknown) {
   const code = errorCode(error);
-  if (code === "server_error") console.error("[product-api]", error);
+  if (code === "server_error") await reportError("api.failure", error);
   return json({ error: code }, code === "unauthorized" ? 401 : code === "server_error" || code === "db_unavailable" ? 503 : 400);
 }

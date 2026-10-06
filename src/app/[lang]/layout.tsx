@@ -24,6 +24,8 @@ const manrope = localFont({
 
 export const viewport: Viewport = { themeColor: "#0b0b0e", width: "device-width", initialScale: 1 };
 export const dynamicParams = false;
+// Per-request CSP nonces must never be cached in a static document.
+export const dynamic = "force-dynamic";
 export function generateStaticParams() {
   return [{ lang: "ru" }, { lang: "en" }];
 }

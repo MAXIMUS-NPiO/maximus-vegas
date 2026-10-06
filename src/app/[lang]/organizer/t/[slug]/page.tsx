@@ -586,7 +586,7 @@ export default async function ManageTournament({ params, searchParams }: { param
                     </select>
                   </Field>
                   <Field label={ru ? "ID матча" : "Match ID"}>
-                    <input name="matchRef" maxLength={80} />
+                    <input name="matchRef" maxLength={80} required />
                   </Field>
                 </div>
                 <button className="btn btn-primary btn-sm">{ru ? "Внести" : "Log result"}</button>

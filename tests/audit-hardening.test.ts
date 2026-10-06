@@ -41,11 +41,11 @@ test("evidence: a signature alone is refused, a broken image is refused, a real 
   await rejects(storeUpload(db, null, "evidence", file(jpegHeaderOnly, "fake.jpg")), "invalid_file");
 
   const id = (await storeUpload(db, null, "evidence", file(png, "screenshot.png")))!;
-  const [row] = await db.query<{ content_type: string; bytes: number; sha256: string; data: Uint8Array }>("select content_type, bytes, sha256, data from media where id = $1", [id]);
-  assert.equal(row.content_type, "image/png");
-  assert.equal(row.bytes, png.length, "the original is stored unchanged");
-  assert.equal(row.sha256, createHash("sha256").update(png).digest("hex"));
-  assert.deepEqual(new Uint8Array(row.data), png);
+  const [row] = await db.query<{ content_type: string; bytes: number; sha256: string; data: Uint8Array; original_data: Uint8Array; original_sha256: string; original_bytes: number }>("select * from media where id = $1", [id]);
+  assert.equal(row.content_type, "image/webp");
+  assert.equal(row.original_bytes, png.length, "the original is stored unchanged");
+  assert.equal(row.original_sha256, createHash("sha256").update(png).digest("hex"));
+  assert.deepEqual(new Uint8Array(row.original_data), png);
 
   const webp = new Uint8Array(await sharp({ create: { width: 20, height: 20, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 1 } } }).webp().toBuffer());
   assert.ok(await storeUpload(db, null, "evidence", file(webp, "s.webp")), "a real WebP is accepted");
@@ -62,7 +62,10 @@ test("sign-up budget: an hourly and a daily limit per client, on both sign-up pa
   assert.ok(await signUp(db, account("198.51.100.7")), "another connection is not blocked");
   for (let i = 0; i < SIGNUP_PER_HOUR + 2; i++) assert.ok(await signUp(db, account()), "no client address (tests, local tools): no budget");
   for (const local of ["127.0.0.1", "::1", "::ffff:127.0.0.1"])
-    for (let i = 0; i < SIGNUP_PER_HOUR + 1; i++) assert.ok(await signUp(db, account(local)), `a loopback address (${local}) is this machine: no budget`);
+    {
+      for (let i = 0; i < SIGNUP_PER_HOUR; i++) assert.ok(await signUp(db, account(local)));
+      await rejects(signUp(db,account(local)),"signup_limited");
+    }
 
   // The daily limit counts older attempts of the same day.
   const busy = "192.0.2.77";

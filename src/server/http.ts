@@ -1,3 +1,4 @@
+import {boundedFormData} from "./request-body.ts";
 import { SESSION_COOKIE, SESSION_DAYS, sessionUser, type SessionUser } from "./auth.ts";
 import { getDb, DatabaseUnavailable, type Database } from "./db.ts";
 import { DomainError, ERROR_CODES, type ErrorCode } from "./errors.ts";
@@ -78,7 +79,7 @@ export const MAX_BODY_BYTES = 3 * 1024 * 1024;
 export async function context(request: Request): Promise<Ctx> {
   const length = Number(request.headers.get("content-length") ?? "0");
   if (length > MAX_BODY_BYTES) throw new DomainError("file_too_large");
-  const data = await request.formData();
+  const data = await boundedFormData(request, MAX_BODY_BYTES);
   const form: Record<string, string> = {};
   const multi: Record<string, string[]> = {};
   const files: Record<string, File> = {};

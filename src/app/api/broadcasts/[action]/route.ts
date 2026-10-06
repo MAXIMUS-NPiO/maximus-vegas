@@ -1,3 +1,4 @@
+import {reportError} from "@/server/observability.ts";
 import { json, jsonContext } from "@/server/json-api.ts";
 import { errorCode } from "@/server/http.ts";
 import { broadcastAvailability, broadcastQuote } from "@/server/broadcast-config.ts";
@@ -35,7 +36,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
     }
   } catch (error) {
     const code = errorCode(error);
-    if (code === "server_error") console.error("[broadcasts] request failed");
+    if (code === "server_error") await reportError("broadcast.failure",error);
     return json({ error: code }, code === "unauthorized" ? 401 : code === "forbidden" ? 403 : ["server_error", "db_unavailable", "provider_error"].includes(code) ? 503 : 400);
   }
 }

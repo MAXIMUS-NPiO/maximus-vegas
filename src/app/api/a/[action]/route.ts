@@ -1,3 +1,5 @@
+import {reportError} from "@/server/observability.ts";
+import {signupAddress,signupDevice} from "@/server/signup-device.ts";
 import { randomUUID } from "node:crypto";
 import * as invitationDelivery from "@/server/team-invitation-delivery.ts";
 import * as marketplace from "@/server/marketplace.ts";
@@ -161,7 +163,8 @@ const handlers: Record<string, Handler> = {
       marketing: c.form.marketing,
       userAgent: c.request.headers.get("user-agent") ?? "",
       lang: c.lang,
-      clientKey: c.request.headers.get("x-forwarded-for")?.split(",")[0]?.trim(),
+      clientKey: signupAddress(c.request),
+      deviceKey: signupDevice(c.request.headers.get("cookie")),
     };
     if (accounts.emailFirstMode()) {
       await accounts.signUpEmailFirst(c.db, input);
@@ -1224,6 +1227,12 @@ const handlers: Record<string, Handler> = {
     await sponsors.createSponsor(c.db, user, { name: c.form.name, tier: c.form.tier, website: c.form.website, logo: c.files.logo });
     return { ok: "saved" };
   },
+  // Deprecated compatibility alias: no UI caller. Retained pending owner-approved removal (C-37).
+  "sponsor.toggle": async (c) => {
+    const user = await staff(c, "sponsors");
+    await sponsors.setSponsorActive(c.db, user, idOf(c.form.sponsor), c.form.active === "1");
+    return { ok: "saved" };
+  },
   // ---------- Streams and recordings (MV-MEDIA-1) ----------
   "stream.add": async (c) => {
     await streams.addStream(c.db, u(c), c.form.tournament, {
@@ -1379,6 +1388,7 @@ function tournamentInput(c: Ctx) {
     description: c.form.description,
     rules: c.form.rules,
     bestOf: c.form.bestOf,
+    eligibleGameLimit: c.form.eligibleGameLimit,
     submissionHours: c.form.submissionHours,
     weights,
     prizeText: c.form.prizeText,
@@ -1459,6 +1469,9 @@ function scoreInput(c: Ctx) {
     distance: c.form.distance,
     placement: c.form.placement,
     matchRef: c.form.matchRef,
+    replaces: c.form.correction?.split(":")[0],
+    expectedRevision: c.form.correction?.split(":")[1],
+    correctionReason: c.form.correctionReason,
     evidenceUrl: c.form.evidence,
   };
 }
@@ -1473,12 +1486,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
   try {
     c = await context(request);
   } catch (error) {
-    console.error(`[action ${action}] context`, (error as Error).message);
+    await reportError("action.context_failed",error,{route:"/api/a/[action]"});
     return redirect(withParam(`/${fallbackLang}`, "e", errorCode(error)));
   }
-  if (mailConfigured()) after(() => drainOutbox(c.db, 10).catch((e) => console.error("[outbox]", (e as Error).message)));
+  if (mailConfigured()) after(() => drainOutbox(c.db, 10).catch((e) => reportError("outbox.failed",e)));
   // Webhooks: new audit entries become deliveries, and due deliveries are sent, after the response.
-  after(() => partner.pumpWebhooks(c.db).catch((e) => console.error("[webhooks]", (e as Error).message)));
+  after(() => partner.pumpWebhooks(c.db).catch((e) => reportError("webhooks.failed",e)));
   try {
     // A suspension sanction keeps the account signed in to read and appeal; every other action stops here.
     if (c.user?.restricted && !RESTRICTED_OK.has(action)) fail("account_restricted");
@@ -1492,7 +1505,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
     return redirect(r.ok ? withParam(to, "ok", r.ok) : to, r.cookie);
   } catch (error) {
     const code = errorCode(error);
-    if (code === "server_error" || code === "db_unavailable") console.error(`[action ${action}]`, error);
+    if (code === "server_error" || code === "db_unavailable") await reportError("action.failed",error,{route:"/api/a/[action]"});
     if (code === "unauthorized") return redirect(`/${c.lang}/signin?next=${encodeURIComponent(c.back)}&e=unauthorized`);
     if (code === "mfa_not_enrolled") return redirect(withParam(`/${c.lang}/admin/security`, "e", code));
     if (code === "mfa_required" || code === "step_up_required")

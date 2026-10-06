@@ -1,3 +1,4 @@
+import {reportError} from "@/server/observability.ts";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
@@ -36,7 +37,7 @@ export default async function Return({ params, searchParams }: { params: Promise
   let attempt = await attemptForUser(db, attemptId, user.id);
   if (!attempt) notFound();
   if (["open", "processing"].includes(attempt.status)) {
-    await reconcileAttempt(db, attempt.id, "return").catch((e) => console.error("[return] reconcile", (e as Error).message));
+    await reconcileAttempt(db, attempt.id, "return").catch((e) => reportError("checkout.return_failure", e));
     attempt = (await attemptForUser(db, attemptId, user.id))!;
   }
   const status = attempt.status;

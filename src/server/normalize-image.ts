@@ -27,7 +27,7 @@ export async function verifyEvidenceImage(input: Uint8Array, type: "image/png" |
   try {
     const image = sharp(input, { limitInputPixels: 50_000_000, animated: false, failOn: "error" });
     const meta = await image.metadata();
-    if (meta.format === expected && (meta.width ?? 0) > 0 && (meta.height ?? 0) > 0) {
+    if (meta.format === expected && (meta.width ?? 0) > 0 && (meta.height ?? 0) > 0 && (meta.pages ?? 1)===1) {
       await image.stats();
       ok = true;
     }
@@ -35,4 +35,17 @@ export async function verifyEvidenceImage(input: Uint8Array, type: "image/png" |
     ok = false;
   }
   if (!ok) fail("invalid_file");
+}
+
+/** Fully decoded safe derivative. The immutable submitted original is stored privately. */
+export async function normalizeEvidenceImage(input:Uint8Array,limit:number) {
+  try {
+    const output=await sharp(input,{limitInputPixels:50_000_000,animated:false,failOn:"error"}).rotate()
+      .resize({width:4096,height:4096,fit:"inside",withoutEnlargement:true}).webp({lossless:true}).toBuffer();
+    if(output.length>limit) fail("file_too_large");
+    return new Uint8Array(output);
+  } catch(error) {
+    if(error && typeof error==="object" && "code" in error && error.code==="file_too_large") throw error;
+    return fail("invalid_file");
+  }
 }

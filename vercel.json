@@ -15,6 +15,14 @@
     {
       "path": "/api/cron/experience",
       "schedule": "47 4 * * *"
+    },
+    {
+      "path": "/api/cron/community",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/broadcasts",
+      "schedule": "* * * * *"
     }
   ]
 }
