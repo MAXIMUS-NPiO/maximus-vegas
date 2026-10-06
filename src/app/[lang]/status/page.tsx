@@ -1,3 +1,7 @@
+import { componentReadiness } from "@/lib/component-readiness.ts";
+import { voiceAvailable } from "@/server/community-voice.ts";
+import { broadcastAvailability } from "@/server/broadcast-config.ts";
+import { featureEnabled, maintenanceState } from "@/server/system.ts";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { dict, isLocale } from "@/lib/i18n.ts";
@@ -29,6 +33,11 @@ export default async function Status({ params }: { params: Promise<{ lang: strin
   const mail = mailConfigured();
   const offer = db && latency !== null ? await publicOffer(db).catch(() => null) : null;
   const pay = paymentReadiness(offer);
+  const components = componentReadiness(
+    !!db && latency !== null && await featureEnabled(db,"connections") && !(await maintenanceState(db)).on,
+    !!db && latency !== null && await voiceAvailable(db).catch(()=>false),
+    !!db && latency !== null && (await broadcastAvailability(db).catch(()=>({ready:false}))).ready,
+  );
   const order: ModuleState[] = ["works", "connect", "dev", "research"];
   return (
     <div className="container page">
@@ -55,12 +64,12 @@ export default async function Status({ params }: { params: Promise<{ lang: strin
         </div>
         <div className="row-between">
           <span>{T("Служебные письма", "Service emails")}</span>
-          {mail ? <Badge status="works">{T("Подключены", "Connected")}</Badge> : <Badge status="dev">{T("Не подключены", "Not connected")}</Badge>}
+          {mail ? <Badge status="works">{T("Настроены · доставка не подтверждена", "Configured · delivery unverified")}</Badge> : <Badge status="dev">{T("Не подключены", "Not connected")}</Badge>}
         </div>
         <div className="row-between">
           <span>{T("Онлайн-оплата членства", "Online membership payment")}</span>
           {pay.ready ? (
-            <Badge status="works">{pay.mode === "live" ? T("Включена", "On") : T("Тестовый режим", "Test mode")}</Badge>
+            <Badge status="works">{pay.mode === "live" ? T("Настроена · приёмка не подтверждена", "Configured · acceptance unverified") : T("Тестовый режим", "Test mode")}</Badge>
           ) : (
             <Badge status="dev">{T("Не включена", "Not enabled")}</Badge>
           )}
@@ -68,6 +77,11 @@ export default async function Status({ params }: { params: Promise<{ lang: strin
         <p className="small muted">
           <LocalTime iso={new Date()} lang={lang} />
         </p>
+      </section>
+      <section className="section-tight">
+        <h2 className="h3">{T("Готовность компонентов", "Component readiness")}</h2>
+        <p>{T("Временный сбор оплаты членства через MPGS Maximus Sports по утверждённому внутреннему соглашению; получатель — MAXIMUS VEGAS L.L.C-FZ. Турниры без платного входа и денежных призов. Маркетплейс скинов — симуляция TEST MODE.", "Temporary membership collection through Maximus Sports MPGS under the approved internal arrangement; beneficiary: MAXIMUS VEGAS L.L.C-FZ. No paid tournament entry or cash prizes. Skins marketplace: simulated TEST MODE.")}</p>
+        <div className="table-wrap"><table className="table"><tbody>{components.map(row=><tr key={row.id}><td><strong>{t(row.name,lang)}</strong><p className="small muted">{t(row.note,lang)}</p></td><td><StateBadge lang={lang} state={row.state}/></td></tr>)}</tbody></table></div>
       </section>
       <section className="section-tight">
         <h2 className="h3">{d.status.registry}</h2>

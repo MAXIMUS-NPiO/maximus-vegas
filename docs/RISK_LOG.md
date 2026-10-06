@@ -197,3 +197,13 @@ R76. Пока администратора нет, секрет владельц
 R77. Лимит регистраций по адресу клиента (10 в час, 50 в сутки) может остановить игроков одной площадки за общим подключением. Числа выбраны с запасом для площадки; сообщение предлагает повторить позже или с другого подключения.
 R78. Изображение-доказательство, которое не декодируется полностью, отклоняется. Редкие файлы с повреждениями, которые просмотрщики терпят, придётся пересохранить. Оригинал принятого файла хранится без изменений.
 R79. Остаются открытыми выводы аудита, которые этот выпуск не закрывает: результаты таблицы принимаются без ссылки на матч и доказательства (H1), ничьи в «лучших N» решают незасчитанные игры (H2) — нужны решения владельца по правилам; проверка сертификата базы (H3, см. R3) — отдельным выпуском с проверкой на копии.
+
+## C-37 — release boundaries after code remediation
+
+- Publisher keys, real ownership proof, CS2 result authority, actual play timestamps and approved statistical/team rules remain necessary before automatic verification; provider receipts do not approve scores.
+- Default 20-game/best-N behavior and review/correction semantics require owner approval per event. Existing legacy blank references remain excluded by review status where applicable; audit existing production rows before making retrospective competition decisions. No production rows were changed.
+- TLS trust must be accepted against the actual provider. Backups, evidence retention, restore drill, alert routing and minute scheduler/hosting capacity remain operator tasks.
+- Full Sharp validation keeps a private original and normalized copy, increasing evidence storage; quotas count both. Owner must set retention.
+- Signup cookies are resettable supplementary signals; IP budgets remain durable. Custom proxy trust requires sanitized forwarding headers.
+- C-36's localhost exemption and sponsor action removal are superseded: C-37 applies signup budgets to loopback and retains `sponsor.toggle` pending separate compatibility review.
+- MPGS collection remains the approved temporary Maximus Sports arrangement; no paid event entry, cash prizes or real skins trade. No credential/production-data/payment changes authorized in this remediation.
