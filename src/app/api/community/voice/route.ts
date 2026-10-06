@@ -1,3 +1,4 @@
+import {reportError} from "@/server/observability.ts";
 import { json, jsonContext } from "@/server/json-api.ts";
 import { errorCode } from "@/server/http.ts";
 import { fail } from "@/server/errors.ts";
@@ -15,5 +16,5 @@ export async function POST(request: Request) {
     const scope=roomScope(data.scope,data.id);
     if(action==="join") return json(await joinVoice(db,user,scope,device));
     return json({available:await voiceAvailable(db),...await voiceStatus(db,user,scope,device)});
-  } catch(error) { const code=errorCode(error); if(code==="server_error") console.error("[community-voice] operation failed"); return json({error:code},code==="unauthorized"?401:code==="server_error"?503:400); }
+  } catch(error) { const code=errorCode(error); if(code==="server_error") await reportError("community.voice_failure",error); return json({error:code},code==="unauthorized"?401:code==="server_error"?503:400); }
 }

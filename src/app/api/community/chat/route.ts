@@ -1,3 +1,4 @@
+import {reportError} from "@/server/observability.ts";
 import { json, jsonContext } from "@/server/json-api.ts";
 import { gate } from "@/server/system.ts";
 import { errorCode } from "@/server/http.ts";
@@ -18,7 +19,7 @@ export async function POST(request: Request) {
     if (user.restricted && ["delete", "report", "block"].includes(action)) return json({ messages: [] });
     return json({ messages: await roomMessages(db, user, room, Number(data.before ?? 0)) });
   } catch (error) {
-    const code = errorCode(error); if (code === "server_error") console.error("[community] request failed");
+    const code = errorCode(error); if (code === "server_error") await reportError("community.chat_failure",error);
     return json({ error: code }, code === "unauthorized" ? 401 : code === "forbidden" ? 403 : code === "server_error" || code === "db_unavailable" ? 503 : 400);
   }
 }

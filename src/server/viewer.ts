@@ -1,3 +1,4 @@
+import {reportError} from "./observability.ts";
 import "server-only";
 import { cache } from "react";
 import { cookies } from "next/headers";
@@ -15,14 +16,14 @@ export const viewer = cache(async (): Promise<Viewer> => {
   try {
     db = await getDb();
   } catch (error) {
-    console.error("[db] unavailable:", (error as Error).message);
+    await reportError("database.unavailable", error);
     return { db: null, user: null, dbError: true };
   }
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   try {
     return { db, user: await sessionUser(db, token), dbError: false };
   } catch (error) {
-    console.error("[session] lookup failed:", (error as Error).message);
+    await reportError("session.lookup_failed", error);
     return { db, user: null, dbError: false };
   }
 });

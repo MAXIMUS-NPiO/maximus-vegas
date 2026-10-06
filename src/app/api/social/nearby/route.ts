@@ -1,3 +1,4 @@
+import {reportError} from "@/server/observability.ts";
 import { jsonContext, json } from "@/server/json-api.ts";
 import { saveNearby, disableNearby } from "@/server/social-nearby.ts";
 import { errorCode } from "@/server/http.ts";
@@ -14,7 +15,7 @@ export async function POST(request: Request) {
   } catch (error) {
     const code = errorCode(error);
     // Query diagnostics may contain a location. Never log request bodies or database errors here.
-    if (code === "server_error") console.error("[social-nearby] request failed");
+    if (code === "server_error") await reportError("social.nearby_failure",error);
     return json({ error: code }, code === "unauthorized" ? 401 : ["server_error", "db_unavailable"].includes(code) ? 503 : 400);
   }
 }
