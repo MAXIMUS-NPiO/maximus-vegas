@@ -16,3 +16,23 @@ export async function normalizeBrandImage(input: Uint8Array, logo: boolean, limi
   } catch { fail("invalid_file"); }
   return fail("file_too_large");
 }
+
+/**
+ * Evidence keeps its original bytes, so its digest still identifies what the participant submitted. It is
+ * accepted only when it decodes completely, within a pixel limit, as the format its signature claims.
+ */
+export async function verifyEvidenceImage(input: Uint8Array, type: "image/png" | "image/jpeg" | "image/webp") {
+  const expected = { "image/png": "png", "image/jpeg": "jpeg", "image/webp": "webp" }[type];
+  let ok = false;
+  try {
+    const image = sharp(input, { limitInputPixels: 50_000_000, animated: false, failOn: "error" });
+    const meta = await image.metadata();
+    if (meta.format === expected && (meta.width ?? 0) > 0 && (meta.height ?? 0) > 0) {
+      await image.stats();
+      ok = true;
+    }
+  } catch {
+    ok = false;
+  }
+  if (!ok) fail("invalid_file");
+}

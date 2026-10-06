@@ -1,7 +1,8 @@
 /**
  * Small image uploads stored in PostgreSQL (no external object storage is connected). Only PNG, JPEG and
- * WebP are accepted, identified by their file signature rather than the browser-supplied type. Evidence
- * images are visible only to the match's participants and its staff; logos and banners are public.
+ * WebP are accepted, identified by their file signature rather than the browser-supplied type. Brand images
+ * are re-encoded; evidence keeps its original bytes and must decode completely. Evidence images are visible
+ * only to the match's participants and its staff; logos and banners are public.
  */
 import { createHash } from "node:crypto";
 import type { Queryable } from "./db.ts";
@@ -47,6 +48,10 @@ export async function storeUpload(q: Queryable, ownerId: string | null, kind: Me
   }
   const type = sniffImage(bytes);
   if (!type) fail("invalid_file");
+  if (!brand) {
+    const { verifyEvidenceImage } = await import("./normalize-image.ts");
+    await verifyEvidenceImage(bytes, type!);
+  }
   if (ownerId) {
     const [usage] = await q.query<{ n: number; total: number }>(
       "select count(*)::int as n, coalesce(sum(bytes), 0)::int as total from media where owner_id = $1 and created_at > now() - interval '1 day'",

@@ -9,7 +9,7 @@ import { checkReservedName, claimReservedName } from "./username-reservations.ts
 import { randomBytes } from "node:crypto";
 import type { Database, Queryable } from "./db.ts";
 import type { SessionUser } from "./auth.ts";
-import { createSession, hashPassword, parseSignUp, recordSignupConsents, sha256, type SignUpInput } from "./auth.ts";
+import { createSession, hashPassword, parseSignUp, recordSignupConsents, sha256, spendSignupBudget, type SignUpInput } from "./auth.ts";
 import { audit } from "./audit.ts";
 import { fail, isUniqueViolation } from "./errors.ts";
 import { enqueueMail, link, mailConfigured } from "./mail.ts";
@@ -123,6 +123,7 @@ export async function resetPassword(db: Database, raw: unknown, passwordInput: u
  */
 export async function signUpEmailFirst(db: Database, input: SignUpInput) {
   const data = parseSignUp(input);
+  await spendSignupBudget(db, input.clientKey);
   const lang = input.lang ?? "ru";
   const passwordHash = await hashPassword(data.password);
   await db.tx(async (q) => {
