@@ -37,15 +37,26 @@ export function embeddedAllowed(): boolean {
   return process.env.NODE_ENV !== "production" || process.env.MV_LOCAL === "1";
 }
 
+/** URL ssl options must not override the explicit certificate policy passed to pg. */
+export function postgresConnectionOptions(url: string, env: Partial<NodeJS.ProcessEnv> = process.env) {
+  const parsed=new URL(url);
+  if(!["postgres:","postgresql:"].includes(parsed.protocol)) throw new DatabaseUnavailable("Invalid database protocol");
+  const local=["localhost","127.0.0.1","[::1]"].includes(parsed.hostname);
+  const mode=env.DATABASE_TLS_MODE || (local ? "disable" : "verify-full");
+  const urlMode=parsed.searchParams.get("sslmode");
+  if(!["disable","verify-full"].includes(mode) || (!local && (mode==="disable" || ["disable","no-verify","allow","prefer"].includes(urlMode ?? ""))))
+    throw new DatabaseUnavailable("Database TLS must verify the remote certificate");
+  for(const key of ["sslmode","sslrootcert","sslcert","sslkey","uselibpqcompat"]) parsed.searchParams.delete(key);
+  return {connectionString:parsed.toString(),ssl:mode==="disable" ? false as const : {rejectUnauthorized:true,...(env.DATABASE_TLS_CA?{ca:env.DATABASE_TLS_CA.replace(/\\n/g,"\n")}: {})}};
+}
+
 async function createPostgres(url: string): Promise<Database> {
   const { default: pg } = await import("pg");
-  const local = /localhost|127\.0\.0\.1/.test(url);
   const pool = new pg.Pool({
-    connectionString: url,
+    ...postgresConnectionOptions(url),
     max: Number(process.env.DATABASE_POOL_MAX || 5),
     idleTimeoutMillis: 10_000,
     connectionTimeoutMillis: 8_000,
-    ssl: local || /sslmode=disable/.test(url) ? undefined : { rejectUnauthorized: false },
   });
   const run = async <T>(
     client: { query: (t: string, p?: unknown[]) => Promise<{ rows: unknown[] }> },
