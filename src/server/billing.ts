@@ -1,3 +1,4 @@
+import {reportError} from "./observability.ts";
 /**
  * Membership offers, admission, invoices, hosted payments and membership state.
  *
@@ -526,7 +527,7 @@ export async function startCheckout(db: Database, user: SessionUser, invoiceId: 
     // A lost MPGS response is ambiguous: keep this attempt and its unique order for reconciliation.
     // Never turn a network retry into a second potentially payable order.
     if (provider!.name !== "mpgs") await db.query("update payment_attempts set status = 'failed', updated_at = now() where id = $1 and status = 'created'", [attempt.row.id]);
-    console.error("[checkout] provider error:", (error as Error).message);
+    await reportError("checkout.failure", error);
     fail("provider_error");
   }
   const host = new URL(session!.url).host;
@@ -851,7 +852,7 @@ export async function sweepPayments(db: Database) {
   const due = await db.query<{ id: string }>(
     "select id from payment_attempts where status in ('open','processing') and updated_at < now() - interval '10 minutes' order by updated_at asc limit 20",
   );
-  for (const a of due) await reconcileAttempt(db, a.id, "sweep").catch((e) => console.error("[sweep]", (e as Error).message));
+  for (const a of due) await reconcileAttempt(db, a.id, "sweep").catch((e) => reportError("checkout.sweep_failure", e));
   await db.query("update memberships set status = 'expired', updated_at = now() where status = 'active' and ends_at < now()");
 }
 

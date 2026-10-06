@@ -3,6 +3,7 @@ export const ERROR_CODES = [
   "forbidden",
   "not_found",
   "invalid_input",
+  "stale_submission",
   "invalid_email",
   "recipient_required",
   "invitation_recipient_mismatch",

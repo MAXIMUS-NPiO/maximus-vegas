@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "check": "npm run typecheck && npm test && npm run build",
-    "e2e": "node scripts/e2e.mjs"
+    "e2e": "node scripts/e2e.mjs",
+    "acceptance:tournaments": "node scripts/tournament-acceptance.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1146.0",
@@ -43,5 +44,9 @@
     "playwright-core": "1.56.0",
     "solc": "0.8.37",
     "typescript": "~5.9.3"
+  },
+  "overrides": {
+    "tmp": "0.2.7",
+    "source-map-js": "1.2.2"
   }
 }

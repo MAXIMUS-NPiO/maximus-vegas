@@ -1,3 +1,4 @@
+import {assertJourneyCompleted} from "./acceptance-proof.mjs";
 // Full existing HTTP and browser journeys, always on a fresh local database.
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
@@ -6,7 +7,9 @@ import { spawn } from "node:child_process";
 
 const BASE = "http://127.0.0.1:3112";
 const ownerCode = randomBytes(32).toString("hex");
-const env = { ...process.env, BASE, DATABASE_URL: "", POSTGRES_URL: "", NEON_DATABASE_URL: "",
+// This one isolated journey deliberately creates more than ten fixtures from one loopback IP.
+// Keep a finite explicit test budget; production defaults and the abuse regression stay unchanged.
+const env = { ...process.env, BASE, SIGNUP_IP_HOURLY: "30", SIGNUP_IP_DAILY: "100", DATABASE_URL: "", POSTGRES_URL: "", NEON_DATABASE_URL: "",
   MV_DATA_DIR: `/tmp/c31-platform-${process.pid}-${Date.now()}`, MV_EMBEDDED_DB: "1", MV_LOCAL: "1", MV_INSECURE_COOKIES: "1", VERCEL: "", VERCEL_ENV: "development", NEXT_PUBLIC_SITE_URL: BASE,
   OWNER_CODE: ownerCode, ADMIN_BOOTSTRAP_TOKEN: ownerCode, MV_WEBHOOK_ALLOW_LOCAL: "1", MAIL_TRANSPORT: "", MAIL_FROM: "", RESEND_API_KEY: "", SMTP_URL: "",
   MV_EXPERIENCE_DISABLED: "1", STEAM_WEB_API_KEY: "", FACEIT_API_KEY: "", MV_COMMUNITY_VOICE_ENABLED: "", MV_BROADCAST_ENABLED: "",
@@ -17,8 +20,9 @@ let logs = "";
 server.stdout.on("data", b => logs += b); server.stderr.on("data", b => logs += b);
 async function run(script) {
   await new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [script], { env, stdio: "inherit" });
-    child.on("error", reject); child.on("exit", code => code === 0 ? resolve() : reject(new Error(`${script}: exit ${code}`)));
+    const child = spawn(process.execPath, [script], { env, stdio: ["ignore", "pipe", "inherit"] });
+    let output="";child.stdout.on("data",chunk=>{output+=chunk;process.stdout.write(chunk);});
+    child.on("error", reject); child.on("close", code => {try{assertJourneyCompleted(script,code,output);resolve();}catch(error){reject(error);}});
   });
 }
 try {

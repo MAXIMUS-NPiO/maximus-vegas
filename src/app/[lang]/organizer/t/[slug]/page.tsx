@@ -541,11 +541,11 @@ export default async function ManageTournament({ params, searchParams }: { param
                     ) : null}
                   </p>
                   <div className="row">
-                    <ActionForm action="score.review" lang={lang} back={back} hidden={{ entry: l.id, decision: "approve" }} className="inline-form">
+                    <ActionForm action="score.review" lang={lang} back={back} hidden={{ entry: l.id, expectedRevision: String(l.revision), decision: "approve" }} className="inline-form">
                       <input name="note" maxLength={500} placeholder={ru ? "Комментарий" : "Note"} aria-label={ru ? "Комментарий" : "Note"} />
                       <button className="btn btn-primary btn-xs">{ru ? "Учесть" : "Approve"}</button>
                     </ActionForm>
-                    <ActionForm action="score.review" lang={lang} back={back} hidden={{ entry: l.id, decision: "reject" }} className="inline-form">
+                    <ActionForm action="score.review" lang={lang} back={back} hidden={{ entry: l.id, expectedRevision: String(l.revision), decision: "reject" }} className="inline-form">
                       <input name="note" maxLength={500} placeholder={ru ? "Причина" : "Reason"} aria-label={ru ? "Причина" : "Reason"} />
                       <button className="btn btn-danger btn-xs">{ru ? "Отклонить" : "Reject"}</button>
                     </ActionForm>
@@ -586,7 +586,7 @@ export default async function ManageTournament({ params, searchParams }: { param
                     </select>
                   </Field>
                   <Field label={ru ? "ID матча" : "Match ID"}>
-                    <input name="matchRef" maxLength={80} />
+                    <input name="matchRef" maxLength={80} required />
                   </Field>
                 </div>
                 <button className="btn btn-primary btn-sm">{ru ? "Внести" : "Log result"}</button>
@@ -630,7 +630,7 @@ export default async function ManageTournament({ params, searchParams }: { param
                           {["accepted", "approved"].includes(l.review) && ["IN_PROGRESS", "PAUSED"].includes(t.status) ? (
                             <details className="disclosure">
                               <summary>{ru ? "Отклонить" : "Reject"}</summary>
-                              <ActionForm action="score.review" lang={lang} back={back} hidden={{ entry: l.id, decision: "reject" }} className="inline-form">
+                              <ActionForm action="score.review" lang={lang} back={back} hidden={{ entry: l.id, expectedRevision: String(l.revision), decision: "reject" }} className="inline-form">
                                 <input name="note" required minLength={5} maxLength={500} placeholder={ru ? "Причина" : "Reason"} aria-label={ru ? "Причина" : "Reason"} />
                                 <button className="btn btn-danger btn-xs">{ru ? "Отклонить" : "Reject"}</button>
                               </ActionForm>
