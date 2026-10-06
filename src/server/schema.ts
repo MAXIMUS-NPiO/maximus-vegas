@@ -2256,4 +2256,10 @@ export const migrations: Migration[] = [
   { id: 42, name: "recipient_team_invitations", statements: teamInvitationStatements },
   { id: 43, name: "verified_player_experience", statements: playerExperienceSchema },
   { id: 44, name: "leaderboard_integrity", statements: leaderboardIntegritySchema },
+  { id: 45, name: "private_evidence_originals", statements: [
+    `alter table media add column original_data bytea`,
+    `alter table media add column original_sha256 text`,
+    `alter table media add column original_bytes int not null default 0`,
+    `alter table media add column original_content_type text`,
+  ] },
 ];

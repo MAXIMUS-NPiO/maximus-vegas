@@ -1,7 +1,7 @@
 /**
  * Small image uploads stored in PostgreSQL (no external object storage is connected). Only PNG, JPEG and
  * WebP are accepted, identified by their file signature rather than the browser-supplied type. Brand images
- * are re-encoded; evidence keeps its original bytes and must decode completely. Evidence images are visible
+ * are re-encoded; evidence serves a normalized derivative and keeps a private original/hash. Evidence images are visible
  * only to the match's participants and its staff; logos and banners are public.
  */
 import { createHash } from "node:crypto";
@@ -42,27 +42,31 @@ export async function storeUpload(q: Queryable, ownerId: string | null, kind: Me
   const brand = kind !== "evidence";
   if (file.size > (brand ? 20 * 1024 * 1024 : MEDIA_LIMITS[kind])) fail("file_too_large");
   let bytes = new Uint8Array(await file.arrayBuffer());
+  const original=brand?null:bytes;
   if (brand) {
     const { normalizeBrandImage } = await import("./normalize-image.ts");
     bytes = new Uint8Array(await normalizeBrandImage(bytes, kind === "team_logo" || kind === "sponsor_logo" || kind === "avatar", MEDIA_LIMITS[kind]));
   }
-  const type = sniffImage(bytes);
+  let type = sniffImage(bytes);
+  const originalType=type;
   if (!type) fail("invalid_file");
   if (!brand) {
-    const { verifyEvidenceImage } = await import("./normalize-image.ts");
+    const { verifyEvidenceImage, normalizeEvidenceImage } = await import("./normalize-image.ts");
     await verifyEvidenceImage(bytes, type!);
+    bytes=new Uint8Array(await normalizeEvidenceImage(bytes,MEDIA_LIMITS.evidence));
+    type="image/webp";
   }
   if (ownerId) {
     const [usage] = await q.query<{ n: number; total: number }>(
-      "select count(*)::int as n, coalesce(sum(bytes), 0)::int as total from media where owner_id = $1 and created_at > now() - interval '1 day'",
+      "select count(*)::int as n, coalesce(sum(bytes+original_bytes), 0)::int as total from media where owner_id = $1 and created_at > now() - interval '1 day'",
       [ownerId],
     );
-    if ((usage?.n ?? 0) >= DAILY_UPLOADS || (usage?.total ?? 0) + bytes.length > DAILY_BYTES) fail("upload_limit");
+    if ((usage?.n ?? 0) >= DAILY_UPLOADS || (usage?.total ?? 0) + bytes.length+(original?.length ?? 0) > DAILY_BYTES) fail("upload_limit");
   }
   const sha256 = createHash("sha256").update(bytes).digest("hex");
   const [row] = await q.query<{ id: string }>(
-    "insert into media (owner_id, kind, content_type, bytes, sha256, data) values ($1, $2, $3, $4, $5, $6) returning id",
-    [ownerId, kind, type, bytes.length, sha256, Buffer.from(bytes)],
+    "insert into media (owner_id, kind, content_type, bytes, sha256, data, original_data, original_sha256, original_bytes, original_content_type) values ($1, $2, $3, $4, $5, $6,$7,$8,$9,$10) returning id",
+    [ownerId, kind, type, bytes.length, sha256, Buffer.from(bytes),original?Buffer.from(original):null,original?createHash("sha256").update(original).digest("hex"):null,original?.length ?? 0,original?originalType:null],
   );
   return row.id;
 }
