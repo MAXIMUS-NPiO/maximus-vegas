@@ -44,5 +44,9 @@
     "playwright-core": "1.56.0",
     "solc": "0.8.37",
     "typescript": "~5.9.3"
+  },
+  "overrides": {
+    "tmp": "0.2.7",
+    "source-map-js": "1.2.2"
   }
 }
