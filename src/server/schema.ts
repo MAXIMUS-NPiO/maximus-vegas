@@ -2262,4 +2262,9 @@ export const migrations: Migration[] = [
     `alter table media add column original_bytes int not null default 0`,
     `alter table media add column original_content_type text`,
   ] },
+  { id: 46, name: "game_verification_preparation", statements: [
+    `create table game_api_limits(provider text primary key, requests integer not null default 0, window_at timestamptz not null default now(), retry_at timestamptz)`,
+    `create table game_account_bindings(game text not null check(game='pubg'),user_id uuid not null references users(id),account_id text not null,proof_reference text not null check(length(proof_reference)>10),verified_by uuid not null references users(id),verified_at timestamptz not null default now(),revoked_at timestamptz,primary key(game,user_id),unique(game,account_id))`,
+    `create table score_verification_receipts(game text not null,account_id text not null,match_id text not null,entry_id uuid not null references score_entries(id),revision integer not null,receipt jsonb not null,created_at timestamptz not null default now(),primary key(game,account_id,match_id))`,
+  ] },
 ];

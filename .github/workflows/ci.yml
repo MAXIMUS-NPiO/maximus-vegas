@@ -30,6 +30,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      - name: Bracket and twenty-game best-N acceptance
+        run: npm run acceptance:tournaments
       - run: python3 -m unittest discover -s server-agent -v
       - name: Admin HTTP acceptance (isolated database)
         run: node scripts/admin-http.mjs
