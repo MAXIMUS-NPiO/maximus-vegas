@@ -1383,6 +1383,7 @@ function tournamentInput(c: Ctx) {
     description: c.form.description,
     rules: c.form.rules,
     bestOf: c.form.bestOf,
+    eligibleGameLimit: c.form.eligibleGameLimit,
     submissionHours: c.form.submissionHours,
     weights,
     prizeText: c.form.prizeText,
@@ -1463,6 +1464,9 @@ function scoreInput(c: Ctx) {
     distance: c.form.distance,
     placement: c.form.placement,
     matchRef: c.form.matchRef,
+    replaces: c.form.correction?.split(":")[0],
+    expectedRevision: c.form.correction?.split(":")[1],
+    correctionReason: c.form.correctionReason,
     evidenceUrl: c.form.evidence,
   };
 }

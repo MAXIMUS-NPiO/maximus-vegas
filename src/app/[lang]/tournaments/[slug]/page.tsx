@@ -828,6 +828,9 @@ export default async function TournamentPage({ params, searchParams }: { params:
             <div className="card form-card">
               <h3 className="h4">{ru ? "Отправить результат матча" : "Submit a match result"}</h3>
               <ActionForm action="score.submit" lang={lang} back={`${back}#leaderboard`} hidden={hidden} className="stack">
+                <p>{ru ? `Лимит: ${t.eligible_game_limit} матчей. Каждый результат ждёт проверки. Отклонённый матч исправляется в той же записи и занимает одно место в лимите.` : `Limit: ${t.eligible_game_limit} games. Every self-report awaits review. Correct a rejected match in the same record; it still uses one game slot.`}</p>
+                <Field label={ru ? "Новый результат или исправление" : "New result or correction"}><select name="correction" defaultValue=""><option value="">{ru ? "Новый результат" : "New result"}</option>{myLines.filter(l=>l.review==="rejected").map(l=><option key={l.id} value={`${l.id}:${l.revision}`}>{l.match_ref}</option>)}</select></Field>
+                <Field label={ru ? "Причина исправления (обязательна для повторной отправки)" : "Correction reason (required when resubmitting)"}><input name="correctionReason" maxLength={500} /></Field>
                 <div className="form-grid form-grid-4">
                   {(["kills", "assists", "deaths", "headshots"] as const).map((k) => (
                     <Field key={k} label={{ kills: ru ? "Убийства" : "Kills", assists: ru ? "Помощь" : "Assists", deaths: ru ? "Смерти" : "Deaths", headshots: ru ? "В голову" : "Headshots" }[k]}>
@@ -848,12 +851,12 @@ export default async function TournamentPage({ params, searchParams }: { params:
                       <option value="3">3</option>
                     </select>
                   </Field>
-                  <Field label={ru ? "ID матча в игре" : "In-game match ID"} hint={d.common.optional}>
-                    <input name="matchRef" maxLength={80} />
+                  <Field label={ru ? "ID матча в игре" : "In-game match ID"}>
+                    <input name="matchRef" maxLength={80} required />
                   </Field>
                 </div>
                 <Field label={d.match.evidence} hint={ru ? "Ссылка на скриншот или запись" : "Link to a screenshot or recording"}>
-                  <input name="evidence" type="url" maxLength={500} placeholder="https://" />
+                  <input name="evidence" type="url" maxLength={500} placeholder="https://" required />
                 </Field>
                 <button className="btn btn-primary">{ru ? "Отправить" : "Submit"}</button>
               </ActionForm>

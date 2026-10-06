@@ -238,14 +238,15 @@ test("leaderboard: weights, best-of-N, flags, review, deadline, completion and p
   await rejects(createTournament(db, orgOwner, orgId, base({ format: "single_elimination", game: "pubg" })), "format_not_supported");
   await transition(db, orgOwner, t.id, "IN_PROGRESS");
   const [a, b, c] = players;
-  await submitScore(db, a, t.id, { kills: 10, assists: 0, deaths: 1, headshots: 2, damage: 0, distance: 0, placement: "1", matchRef: "m-1" }); // 50+6+80 = 136
-  await submitScore(db, a, t.id, { kills: 2, deaths: 1, headshots: 0, matchRef: "m-2" }); // 10
-  await submitScore(db, a, t.id, { kills: 4, deaths: 1, headshots: 0, matchRef: "m-3" }); // 20
-  await rejects(submitScore(db, a, t.id, { kills: 1, matchRef: "m-3" }), "duplicate_entry");
-  const flagged = await submitScore(db, b, t.id, { kills: 45, deaths: 1, headshots: 3, matchRef: "b-1" });
+  await submitScore(db, a, t.id, { kills: 10, assists: 0, deaths: 1, headshots: 2, damage: 0, distance: 0, placement: "1", evidenceUrl: "https://example.test/replay", matchRef: "m-1" }); // 50+6+80 = 136
+  await submitScore(db, a, t.id, { kills: 2, deaths: 1, headshots: 0, evidenceUrl: "https://example.test/replay", matchRef: "m-2" }); // 10
+  await submitScore(db, a, t.id, { kills: 4, deaths: 1, headshots: 0, evidenceUrl: "https://example.test/replay", matchRef: "m-3" }); // 20
+  await rejects(submitScore(db, a, t.id, { kills: 1, evidenceUrl: "https://example.test/replay", matchRef: "m-3" }), "duplicate_entry");
+  for (const e of await db.query<{id:string}>("select id from score_entries where tournament_id=$1 and submitted_by=$2",[t.id,a.id])) await reviewScore(db,orgOwner,e.id,"approve","Reviewed replay");
+  const flagged = await submitScore(db, b, t.id, { kills: 45, deaths: 1, headshots: 3, evidenceUrl: "https://example.test/replay", matchRef: "b-1" });
   assert.equal(flagged.review, "pending");
   assert.deepEqual(flagged.flags, ["kills_extreme"]);
-  const impossible = await submitScore(db, c, t.id, { kills: 2, headshots: 5, deaths: 3, matchRef: "c-1" });
+  const impossible = await submitScore(db, c, t.id, { kills: 2, headshots: 5, deaths: 3, evidenceUrl: "https://example.test/replay", matchRef: "c-1" });
   assert.deepEqual(impossible.flags, ["headshots_exceed_kills"]);
   let table = await leaderboardStandings(db, { id: t.id, scoring: { kills: 5, place1: 80 }, best_of: 2 });
   const rowA = table.find((r) => r.name === a.displayName)!;
@@ -258,9 +259,9 @@ test("leaderboard: weights, best-of-N, flags, review, deadline, completion and p
   await reviewScore(db, orgOwner, pc.id, "reject", "Impossible line");
   // Deadline passed: self-service closes, the organiser can still log.
   await db.query("update tournaments set submission_deadline = now() - interval '1 minute' where id = $1", [t.id]);
-  await rejects(submitScore(db, c, t.id, { kills: 1 }), "submission_closed");
+  await rejects(submitScore(db, c, t.id, { kills: 1, matchRef:"late-result", evidenceUrl:"https://example.test/replay" }), "submission_closed");
   const [cReg] = await db.query<{ id: string }>("select id from registrations where tournament_id = $1 and user_id = $2", [t.id, c.id]);
-  await submitScore(db, orgOwner, t.id, { kills: 3, deaths: 1, registration: cReg.id, matchRef: "c-2" }, true);
+  await submitScore(db, orgOwner, t.id, { kills: 3, deaths: 1, registration: cReg.id, evidenceUrl: "https://example.test/replay", matchRef: "c-2" }, true);
   table = await leaderboardStandings(db, { id: t.id, scoring: { kills: 5, place1: 80 }, best_of: 2 });
   assert.equal(table[0].name, b.displayName, "approved 45 kills (225 pts) leads");
   await transition(db, orgOwner, t.id, "COMPLETED");

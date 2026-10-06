@@ -39,6 +39,7 @@ export type TournamentDefaults = {
   description?: string;
   rules?: string;
   best_of?: number | null;
+  eligible_game_limit?: number;
   submission_hours?: number | null;
   scoring?: Record<string, number> | null;
   prize_text?: string;
@@ -549,10 +550,11 @@ export async function TournamentForm({
 
       <fieldset className="fieldset">
         <legend>{ru ? "Настройки leaderboard" : "Leaderboard settings"}</legend>
+        <Field label={ru ? "Лимит матчей участника (10–20)" : "Eligible games per participant (10–20)"}><input name="eligibleGameLimit" type="number" min={10} max={20} defaultValue={t?.eligible_game_limit ?? 20} required /></Field>
         <p className="small muted">{ru ? "Используются только в формате leaderboard. Веса фиксируются при старте." : "Used only in the leaderboard format. Weights lock when the tournament starts."}</p>
         <div className="form-grid">
           <Field label={ru ? "Учитывать лучшие N результатов" : "Count best N results"} hint={d.common.optional}>
-            <input name="bestOf" type="number" min={1} max={50} defaultValue={t?.best_of ?? ""} />
+            <input name="bestOf" type="number" min={1} max={20} defaultValue={t?.best_of ?? ""} />
           </Field>
           <Field label={ru ? "Окно отправки, часов" : "Submission window, hours"} hint={ru ? "Отсчёт со старта. Пусто — без срока." : "Counted from the start. Empty means no deadline."}>
             <input name="submissionHours" type="number" min={1} max={720} defaultValue={t?.submission_hours ?? ""} />
