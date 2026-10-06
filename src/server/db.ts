@@ -41,6 +41,7 @@ export function embeddedAllowed(): boolean {
 export function postgresConnectionOptions(url: string, env: Partial<NodeJS.ProcessEnv> = process.env) {
   const parsed=new URL(url);
   if(!["postgres:","postgresql:"].includes(parsed.protocol)) throw new DatabaseUnavailable("Invalid database protocol");
+  if(parsed.searchParams.has("host") || parsed.searchParams.has("hostaddr")) throw new DatabaseUnavailable("Put the database host in the URL authority, not query parameters");
   const local=["localhost","127.0.0.1","[::1]"].includes(parsed.hostname);
   const mode=env.DATABASE_TLS_MODE || (local ? "disable" : "verify-full");
   const urlMode=parsed.searchParams.get("sslmode");

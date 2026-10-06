@@ -23,3 +23,7 @@ test('H3 the actual pg parser cannot override CA or disable SSL through URL ssl=
   const client=new pg.Client(config);assert.deepEqual((client as unknown as {connectionParameters:{ssl:unknown}}).connectionParameters.ssl,{rejectUnauthorized:true,ca:'approved-ca'});
  }
 });
+test('H3 URL query host overrides cannot turn a loopback exemption into remote plaintext',()=>{
+ assert.throws(()=>database.postgresConnectionOptions('postgresql://localhost/app?host=db.example.test',{}));
+ assert.throws(()=>database.postgresConnectionOptions('postgresql://localhost/app?hostaddr=192.0.2.1',{}));
+});
