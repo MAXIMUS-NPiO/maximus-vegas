@@ -32,3 +32,10 @@ test("community and broadcast cleanup run every minute in Vercel configuration",
   const cfg=JSON.parse(readFileSync(new URL("../vercel.json",import.meta.url),"utf8"));
   for(const path of ["/api/cron/community","/api/cron/broadcasts"])assert.equal(cfg.crons.find((x:any)=>x.path===path)?.schedule,"* * * * *");
 });
+test('CSP permits LiveKit HTTPS negotiation and explicit region origins without taking down pages on bad configuration',async()=>{
+ const {contentSecurityPolicy}=await import('../src/lib/security-policy.ts');
+ const policy=contentSecurityPolicy('c'.repeat(32),false,false,{LIVEKIT_URL:'wss://relay.example.test',LIVEKIT_CSP_ORIGINS:'https://region.example.test wss://region.example.test'});
+ assert.match(policy,/connect-src[^;]*https:\/\/relay.example.test/);assert.match(policy,/connect-src[^;]*wss:\/\/region.example.test/);
+ const invalid=contentSecurityPolicy('c'.repeat(32),false,false,{LIVEKIT_URL:'not a url',MPGS_GATEWAY_URL:'javascript:alert(1)',LIVEKIT_CSP_ORIGINS:'https://user:password@example.test'});
+ assert.doesNotMatch(invalid,/javascript:|password|not a url/);
+});
