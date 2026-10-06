@@ -29,6 +29,8 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - name: Concurrent leaderboard review and retry
+        run: node --test tests/leaderboard-locking-postgres.test.ts
       - run: npm run check
       - name: Bracket and twenty-game best-N acceptance
         run: npm run acceptance:tournaments
