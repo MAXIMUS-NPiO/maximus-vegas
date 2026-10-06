@@ -105,7 +105,28 @@ export type SignUpInput = {
   marketing?: unknown;
   userAgent?: string;
   lang?: "ru" | "en";
+  clientKey?: string;
 };
+
+/**
+ * Sign-up budget per client address: bounds mass account creation and the password hashing it costs.
+ * Generous enough for players behind one venue connection; counted before the password is hashed.
+ */
+export const SIGNUP_PER_HOUR = 10;
+export const SIGNUP_PER_DAY = 50;
+/** Requests from this machine itself (local servers, tests and acceptance scripts) carry a loopback address. */
+const loopback = (address: string) => /^(127\.|::1$|::ffff:127\.)/.test(address);
+export async function spendSignupBudget(q: Queryable, clientKey: string | undefined) {
+  if (!clientKey || loopback(clientKey)) return;
+  const key = `signup-client:${sha256(clientKey)}`;
+  const [row] = await q.query<{ hour: number; day: number }>(
+    `select count(*) filter (where at > now() - interval '1 hour')::int as hour, count(*)::int as day
+       from auth_attempts where key = $1 and at > now() - interval '1 day'`,
+    [key],
+  );
+  if ((row?.hour ?? 0) >= SIGNUP_PER_HOUR || (row?.day ?? 0) >= SIGNUP_PER_DAY) fail("signup_limited");
+  await q.query("insert into auth_attempts (key, ok) values ($1, true)", [key]);
+}
 
 export function parseSignUp(input: SignUpInput) {
   const email = v.email(input.email);
@@ -134,6 +155,7 @@ export async function recordSignupConsents(q: Queryable, userId: string, marketi
  */
 export async function signUp(db: Database, input: SignUpInput) {
   const data = parseSignUp(input);
+  await spendSignupBudget(db, input.clientKey);
   const passwordHash = await hashPassword(data.password);
   try {
     return await db.tx(async (q) => {

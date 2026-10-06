@@ -161,6 +161,7 @@ const handlers: Record<string, Handler> = {
       marketing: c.form.marketing,
       userAgent: c.request.headers.get("user-agent") ?? "",
       lang: c.lang,
+      clientKey: c.request.headers.get("x-forwarded-for")?.split(",")[0]?.trim(),
     };
     if (accounts.emailFirstMode()) {
       await accounts.signUpEmailFirst(c.db, input);
@@ -1223,6 +1224,7 @@ const handlers: Record<string, Handler> = {
     await sponsors.createSponsor(c.db, user, { name: c.form.name, tier: c.form.tier, website: c.form.website, logo: c.files.logo });
     return { ok: "saved" };
   },
+  // Deprecated compatibility alias: no UI caller. Retained pending owner-approved removal (C-37).
   "sponsor.toggle": async (c) => {
     const user = await staff(c, "sponsors");
     await sponsors.setSponsorActive(c.db, user, idOf(c.form.sponsor), c.form.active === "1");

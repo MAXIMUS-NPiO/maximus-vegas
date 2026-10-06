@@ -18,12 +18,13 @@ Title: Runbook · Status: PENDING MIPA REGISTRATION · Version: 6.0 · Date: 1 O
 | `MFA_SECRET_KEY` (32+ символа) | Шифрование секретов TOTP | Секреты хранятся без шифрования; центр управления предупреждает об этом. Смена ключа делает существующие факторы нечитаемыми — потребуется сброс |
 | `CRON_SECRET` (16+ символов) | Плановое обслуживание (`vercel.json`, 03:17 UTC) | Маршрут отвечает 404; письма всё равно уходят после действий, но повторы и сверка оплат не выполняются по расписанию |
 | `PAYMENTS_ENABLED`, `PAYMENTS_MODE`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `MERCHANT_VERIFIED`, `MERCHANT_LEGAL_NAME`, `PAYMENTS_LIVE_CONFIRMED`, `PAYMENTS_ALLOW_REFUNDS` | Приём оплат | Оплата выключена; заявки и счета работают, кнопка оплаты не показывается |
+| `PAYMENT_PROVIDER=mpgs`, `MPGS_GATEWAY_URL`, `MPGS_MERCHANT_ID`, `MPGS_API_PASSWORD`, `MPGS_MERCHANT_NAME`, `MPGS_CURRENCY=AED` и `NEXT_PUBLIC_SITE_URL`; для утверждённого временного приёма — `MPGS_INTERCOMPANY_AUTHORIZED=1`, `MPGS_AGREEMENT_REF`, `MPGS_BENEFICIARY_LEGAL_NAME` | Приём оплат через Mastercard MPGS (`docs/MPGS_PAYMENTS.md`) | Без адреса сайта или без любой из переменных шлюза оплата выключена; без переменных временного приёма требуются `MERCHANT_VERIFIED` и `MERCHANT_LEGAL_NAME` |
 
 Webhook провайдера: `https://www.maximus.vegas/api/payments/stripe/webhook`, события `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired`, `charge.refunded`, `charge.dispute.created`, `charge.dispute.closed`.
 
 ## 3. Включение оплаты (порядок)
 
-1. Подтвердить действующую лицензию MAXIMUS VEGAS L.L.C-FZ и допуск этой деятельности у провайдера; юридическое имя на аккаунте мерчанта должно быть ровно `MAXIMUS VEGAS L.L.C-FZ`.
+1. Подтвердить действующую лицензию MAXIMUS VEGAS L.L.C-FZ и допуск этой деятельности у провайдера; юридическое имя на аккаунте мерчанта должно быть ровно `MAXIMUS VEGAS L.L.C-FZ`. Действующий вариант до появления собственного мерчанта — утверждённый владельцем временный приём через эквайринг Maximus Sports по внутреннему соглашению (`docs/MPGS_PAYMENTS.md`): получателем в счёте остаётся MAXIMUS VEGAS L.L.C-FZ, фактический сборщик платежа раскрывается плательщику, а проверку мерчанта заменяют переменные временного приёма.
 2. В центре управления → «Предложения» создать версию с ценой, валютой, налоговым режимом, сроком, текстами условий и возврата на RU и EN; утвердить с основанием (номер решения).
 3. Задать переменные в режиме `test`, провести тестовые оплаты на отдельной (не production) базе, проверить квитанции, возврат, истечение.
 4. Для `live` — отдельное решение владельца: `PAYMENTS_MODE=live`, live-ключи, `PAYMENTS_LIVE_CONFIRMED=1`. Возвраты — `PAYMENTS_ALLOW_REFUNDS=1` только по отдельному разрешению.
