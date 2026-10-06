@@ -5,7 +5,9 @@
  * only to the match's participants and its staff; logos and banners are public.
  */
 import { createHash } from "node:crypto";
-import type { Queryable } from "./db.ts";
+import type { Database, Queryable } from "./db.ts";
+import { audit } from "./audit.ts";
+import { DomainError } from "./errors.ts";
 import { fail } from "./errors.ts";
 import { hasSection } from "./staff-roles.ts";
 
@@ -72,6 +74,35 @@ export async function storeUpload(q: Queryable, ownerId: string | null, kind: Me
 }
 
 export const mediaUrl = (id: string | null | undefined) => (id ? `/api/media/${id}` : null);
+
+/** Explicit operator conversion only; never called by GET or an automatic migration. */
+export async function convertLegacyEvidence(db: Database, actor: { id: string; roles: string[] }, id: string, reason: string) {
+  if (!hasSection(actor.roles, "disputes")) fail("forbidden");
+  if (reason.trim().length < 5 || reason.length > 500) fail("invalid_input");
+  return db.tx(async q => {
+    const [row] = await q.query<{ data: Uint8Array; original_data: Uint8Array | null; sha256: string; content_type: string }>(
+      "select data,original_data,sha256,content_type from media where id=$1 and kind='evidence' for update", [id]);
+    if (!row) fail("not_found");
+    if (row.original_data) return { status: "already_normalized" };
+    const original = Buffer.from(row.data), hash = createHash("sha256").update(original).digest("hex"), type = sniffImage(original);
+    let derivative: Uint8Array;
+    try {
+      if (!type || original.length > MEDIA_LIMITS.evidence || hash !== row.sha256) fail("invalid_file");
+      const { verifyEvidenceImage, normalizeEvidenceImage } = await import("./normalize-image.ts");
+      await verifyEvidenceImage(original, type!);
+      derivative = await normalizeEvidenceImage(original, MEDIA_LIMITS.evidence);
+    } catch (error) {
+      if (!(error instanceof DomainError)) throw error;
+      await audit(q, { actorId: actor.id, action: "media.legacy_conversion_refused", entity: "media", entityId: id, data: { reason, originalSha256: hash, code: error.code } });
+      return { status: "invalid_legacy", code: error.code };
+    }
+    await q.query(`update media set original_data=$2,original_sha256=$3,original_bytes=$4,original_content_type=$5,
+      data=$6,sha256=$7,bytes=$8,content_type='image/webp' where id=$1`,
+      [id, original, hash, original.length, row.content_type, Buffer.from(derivative), createHash("sha256").update(derivative).digest("hex"), derivative.length]);
+    await audit(q, { actorId: actor.id, action: "media.legacy_converted", entity: "media", entityId: id, data: { reason, originalSha256: hash } });
+    return { status: "normalized" };
+  });
+}
 
 /** Whether `viewerId` may see an evidence image: a participant of the disputed match or its staff. */
 export async function canSeeEvidence(q: Queryable, mediaId: string, viewer: { id: string; roles: string[] } | null): Promise<boolean> {

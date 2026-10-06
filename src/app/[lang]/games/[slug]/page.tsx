@@ -28,7 +28,10 @@ export default async function GamePage({ params }: { params: Promise<{ lang: str
   return (
     <div className="container page">
       <PageHead eyebrow={`${game.genre[lang]} · ${game.platforms.map((p) => d.games.platforms[p]).join(" · ")}`} title={game.name}>
-        <span className="badge badge-ok">{gameModeLabel(game.mode,lang) + " · " + gameFormatsLabel(game.formats,lang)}</span>
+        <span className="badge badge-ok">{gameModeLabel(game.mode,lang)}</span>
+        {game.formats.map((f) => (
+          <span key={f} className="badge badge-muted">{gameFormatsLabel([f],lang)}</span>
+        ))}
       </PageHead>
       {game.retired ? <p className="notice">{lang==="ru"?"Игра выведена из каталога. История турниров сохранена; новые турниры и команды не создаются.":"This game is retired. Tournament history remains available; new events and teams are disabled."}</p> : null}
       <div className="split">

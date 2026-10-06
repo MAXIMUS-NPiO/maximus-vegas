@@ -580,6 +580,7 @@ export async function deleteAccount(db: Database, user: SessionUser, confirmPass
       [user.id, `deleted+${user.id}@invalid.local`, `deleted_${tag}`, `deleted$${randomBytes(16).toString("hex")}`],
     );
     await q.query("delete from username_reservations where invited_by = $1 or claimed_by = $1", [user.id]);
+    await q.query("update game_account_bindings set revoked_at=coalesce(revoked_at,now()) where user_id=$1", [user.id]);
     await q.query("delete from additional_game_accounts where user_id = $1", [user.id]);
     await q.query("delete from linked_game_accounts where user_id = $1", [user.id]);
     // Registration answers may hold contact details: erased with the account that gave them.

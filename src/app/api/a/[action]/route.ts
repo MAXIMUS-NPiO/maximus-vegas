@@ -711,7 +711,7 @@ const handlers: Record<string, Handler> = {
     return { ok: r.review === "pending" ? "score_flagged" : "score_saved" };
   },
   "score.review": async (c) => {
-    await leaderboard.reviewScore(c.db, u(c), idOf(c.form.entry), c.form.decision, c.form.note);
+    await leaderboard.reviewScore(c.db, u(c), idOf(c.form.entry), c.form.decision, c.form.note, c.form.expectedRevision);
     return { ok: "saved" };
   },
 

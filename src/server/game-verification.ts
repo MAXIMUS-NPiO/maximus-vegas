@@ -39,7 +39,7 @@ export class PubgAdapter {
       const raw=response!.headers.get('retry-after');const seconds=raw&&/^\d+$/.test(raw)?Number(raw):raw?(Date.parse(raw)-Date.now())/1000:60;
       const reset=Number(response!.headers.get('x-ratelimit-reset'))*1000;
       const until=Math.max(Date.now()+Math.max(1,Math.min(Number.isFinite(seconds)?seconds:60,3600))*1000,Math.min(Number.isFinite(reset)?reset:0,Date.now()+3600_000));
-      await this.db.query("update game_api_limits set retry_at=$1 where provider='pubg'",[new Date(until)]);reject('rate_limited');
+      await this.db.query("update game_api_limits set retry_at=greatest(retry_at,$1::timestamptz) where provider='pubg'",[new Date(until)]);reject('rate_limited');
     }
     if([401,403].includes(response!.status))reject('provider_auth');if(response!.status===404)reject('match_unavailable');if(!response!.ok)reject('provider_unavailable');
     // Bound the decoded stream, not merely a potentially absent Content-Length header.
@@ -72,7 +72,7 @@ export class PubgAdapter {
 /** A trusted server-side authority must implement this. Steam identity/history is not a CS2 result authority. */
 export interface Cs2ResultAuthority {match(matchId:string,verifiedSteamId:string):Promise<MatchReceipt>}
 export async function cs2Receipt(db:Database,userId:string,matchId:string,authority?:Cs2ResultAuthority){
-  const [identity]=await db.query<{steam_id:string}>('select steam_id from player_experience_identities where user_id=$1',[userId]);
+  const [identity]=await db.query<{steam_id:string}>("select i.steam_id from player_experience_identities i join users u on u.id=i.user_id and u.status='active' where i.user_id=$1",[userId]);
   if(!identity)reject('ownership_required');if(!authority)reject('authority_not_configured');
   const receipt=await authority!.match(matchId,identity.steam_id);
   if(receipt.provider!=='cs2-authority'||receipt.accountId!==identity.steam_id||receipt.matchId!==matchId)reject('identity_mismatch');return receipt;
@@ -81,6 +81,9 @@ export async function cs2Receipt(db:Database,userId:string,matchId:string,author
 export async function attachVerificationReceipt(db:Database,entryId:string,revision:number,userId:string,receipt:MatchReceipt){
   if(!/^[a-f0-9]{64}$/.test(receipt.responseHash)||!Number.isFinite(Date.parse(receipt.reportedAt)))reject('invalid_response');
   return db.tx(async q=>{
+    // Share the account lock with deletion so an in-flight provider request cannot persist after closure.
+    const [active]=await q.query("select id from users where id=$1 and status='active' for no key update",[userId]);
+    if(!active)reject('ownership_required');
     const [entry]=await q.query<{revision:number;review:string;registration_id:string;match_ref:string;game:string}>(`select e.revision,e.review,e.registration_id,e.match_ref,t.game from score_entries e join tournaments t on t.id=e.tournament_id where e.id=$1 for update of e`,[entryId]);
     if(!entry||entry.revision!==revision||entry.review!=='pending')reject('stale_submission');
     const member=await q.query('select 1 from roster_entries where registration_id=$1 and user_id=$2',[entry.registration_id,userId]);if(!member.length)reject('identity_mismatch');
@@ -98,7 +101,7 @@ export async function attachVerificationReceipt(db:Database,entryId:string,revis
  * No HTTP endpoint accepts provider receipts or ownership assertions from players. */
 export async function verifyPendingScore(db:Database,entryId:string,revision:number,userId:string,options:{pubg?:PubgAdapter;cs2?:Cs2ResultAuthority}={}){
   const [entry]=await db.query<{revision:number;review:string;game:string;match_ref:string;members:number}>(`select e.revision,e.review,e.match_ref,t.game,(select count(*)::int from roster_entries r where r.registration_id=e.registration_id) members
-    from score_entries e join tournaments t on t.id=e.tournament_id join roster_entries r on r.registration_id=e.registration_id and r.user_id=$2 where e.id=$1`,[entryId,userId]);
+    from score_entries e join tournaments t on t.id=e.tournament_id join users u on u.id=$2 and u.status='active' join roster_entries r on r.registration_id=e.registration_id and r.user_id=$2 where e.id=$1`,[entryId,userId]);
   if(!entry||entry.revision!==revision||entry.review!=='pending')reject('stale_submission');
   // Team aggregation cannot be inferred from an individual player's record.
   if(entry.members!==1)reject('team_rules_required');

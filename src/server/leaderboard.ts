@@ -85,8 +85,8 @@ export async function submitScore(db: Database, user: SessionUser, tournamentId:
       if (!reg) fail("not_participant");
       registrationId = reg.id;
     }
-    const [existing] = await q.query<{id:string;review:string;flags:string[];revision:number;payload_hash:string}>(
-      "select * from score_entries where registration_id=$1 and lower(trim(match_ref))=$2 order by created_at,id limit 1 for update",[registrationId,matchRef]);
+    const [existing] = await q.query<{id:string;review:string;flags:string[];revision:number;payload_hash:string;match_ref:string}>(
+      "select * from score_entries where registration_id=$1 and (lower(trim(match_ref))=$2 or (id::text=$3 and length(trim(match_ref))=0)) order by created_at,id limit 1 for update",[registrationId,matchRef,String(input.replaces ?? "")]);
     if (existing) {
       const correction=String(input.replaces ?? "");
       const expected=Number(input.expectedRevision);
@@ -96,10 +96,20 @@ export async function submitScore(db: Database, user: SessionUser, tournamentId:
       const reason=v.clean(input.correctionReason,500);if(reason.length<5) fail("invalid_input");
       await q.query("insert into score_entry_revisions(entry_id,revision,previous,reason,actor_id) values($1,$2,$3,$4,$5)",
         [existing.id,existing.revision,JSON.stringify(existing),reason,user.id]);
+      if (!existing.match_ref.trim()) {
+        const members=await regMembers(q,registrationId);
+        const legacy=await q.query(`select 1 from score_entries e join tournaments t on t.id=e.tournament_id
+          join roster_entries r on r.registration_id=e.registration_id where t.game=$1 and r.user_id=any($2::uuid[]) and lower(trim(e.match_ref))=$3 and e.id<>$4 limit 1`,[t.game,members,matchRef,existing.id]);
+        if(legacy.length) fail("duplicate_entry");
+        for(const member of [...members].sort()) {
+          const claimed=await q.query("insert into score_match_claims(game,account_id,match_ref,entry_id) values($1,$2,$3,$4) on conflict do nothing returning entry_id",[t.game,member,matchRef,existing.id]);
+          if(!claimed.length) fail("duplicate_entry");
+        }
+      }
       const flags=flagReasons(line);
       await q.query(`update score_entries set kills=$2,assists=$3,deaths=$4,headshots=$5,damage=$6,distance=$7,placement=$8,evidence_url=$9,
-        flags=$10,review='pending',reviewed_by=null,reviewed_at=null,review_note='',payload_hash=$11,revision=revision+1 where id=$1`,
-        [existing.id,line.kills,line.assists,line.deaths,line.headshots,line.damage,line.distance,line.placement,evidence,flags,payloadHash]);
+        flags=$10,review='pending',reviewed_by=null,reviewed_at=null,review_note='',payload_hash=$11,match_ref=$12,revision=revision+1 where id=$1`,
+        [existing.id,line.kills,line.assists,line.deaths,line.headshots,line.damage,line.distance,line.placement,evidence,flags,payloadHash,matchRef]);
       await audit(q,{actorId:user.id,action:"score.resubmitted",entity:"tournament",entityId:t.id,data:{entryId:existing.id,reason,previousRevision:existing.revision}});
       await notify(q,await staffOf(q,t),"score_flagged",{tournament:t.name,slug:t.slug});
       return {id:existing.id,review:"pending",flags};
@@ -148,21 +158,25 @@ export async function submitScore(db: Database, user: SessionUser, tournamentId:
 }
 
 /** Organiser decision on a line: approve a flagged line, or reject any line with a reason. */
-export async function reviewScore(db: Database, user: SessionUser, entryId: string, decisionInput: unknown, noteInput: unknown) {
+export async function reviewScore(db: Database, user: SessionUser, entryId: string, decisionInput: unknown, noteInput: unknown, expectedRevisionInput: unknown) {
   const decision = decisionInput === "approve" ? "approved" : decisionInput === "reject" ? "rejected" : fail("invalid_input");
   const note = v.clean(noteInput, 500);
+  const expectedRevision = v.intIn(expectedRevisionInput, 1, 2147483647);
   await db.tx(async (q) => {
     const [ref] = await q.query<{ tournament_id: string }>("select tournament_id from score_entries where id=$1", [entryId]);
     if (!ref) fail("not_found");
     // Match submit/correction lock order: tournament first, then the mutable entry.
     const t = await lockTournament(q, ref.tournament_id);
-    const [entry] = await q.query<{ id: string; tournament_id: string; registration_id: string; review: string }>(
-      "select id, tournament_id, registration_id, review from score_entries where id = $1 and tournament_id=$2 for update",
+    const [entry] = await q.query<{ id: string; tournament_id: string; registration_id: string; review: string; revision: number; match_ref: string }>(
+      "select id, tournament_id, registration_id, review, revision, match_ref from score_entries where id = $1 and tournament_id=$2 for update",
       [entryId,t.id],
     );
     if (!entry) fail("not_found");
     if (!(await canRefereeTournament(q, t, user))) fail("forbidden");
     if (!["IN_PROGRESS", "PAUSED"].includes(t.status)) fail("tournament_not_live");
+    if (entry.revision !== expectedRevision) fail("stale_submission");
+    const legacyReference = !entry.match_ref.trim();
+    if (legacyReference && (decision === "approved" || note.length < 5)) fail("invalid_input");
     if (decision === "approved" && entry.review !== "pending") fail("not_editable");
     if (decision === "rejected" && !["pending", "accepted", "approved"].includes(entry.review)) fail("not_editable");
     if (decision === "rejected" && entry.review !== "pending" && note.length < 5) fail("invalid_input");
@@ -177,7 +191,7 @@ export async function reviewScore(db: Database, user: SessionUser, entryId: stri
       tournament: t.name,
       slug: t.slug,
     });
-    await audit(q, { actorId: user.id, action: `score.${decision}`, entity: "tournament", entityId: t.id, data: { entryId: entry.id, note } });
+    await audit(q, { actorId: user.id, action: `score.${decision}`, entity: "tournament", entityId: t.id, data: { entryId: entry.id, note, revision: entry.revision, legacyReference } });
   });
 }
 

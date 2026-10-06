@@ -276,8 +276,26 @@ async function main(browser) {
   await c.submit("auth.signin", { login: c.username, password: PW }, { expectE: "invalid_credentials" });
 }
 
+/** Every public game page fits a 390 px phone screen (no sideways scrolling). */
+async function phoneWidth(browser) {
+  step("game pages at 390 px");
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: "ru-RU" });
+  const pg = await ctx.newPage();
+  await pg.goto(`${BASE}/ru/games`);
+  const slugs = [...new Set(await pg.locator('a[href^="/ru/games/"]').evaluateAll((as) => as.map((a) => a.getAttribute("href").split("/")[3]).filter(Boolean)))];
+  if (!slugs.length) problems.push("[phone] no game pages listed");
+  for (const slug of slugs) {
+    await pg.goto(`${BASE}/ru/games/${slug}`);
+    const over = await pg.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    if (over > 1) problems.push(`[phone] /ru/games/${slug} is ${over}px wider than the screen`);
+  }
+  console.log(`[phone] ${slugs.length} game pages checked`);
+  await ctx.close();
+}
+
 const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
 try {
+  await phoneWidth(browser);
   await main(browser);
 } catch (error) {
   problems.push(`stopped: ${String(error?.message ?? error).split("\n")[0]}`);

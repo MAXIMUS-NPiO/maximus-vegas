@@ -46,7 +46,7 @@ test("H1/H2 exact retries are idempotent, altered and cross-event duplicates are
 });
 test("H1 a rejected match is corrected in place with explicit revision and reason",async()=>{
   const t=await event(), line=score(`correction-${n}`);const a=await submitScore(db,player,t.id,line);
-  await reviewScore(db,owner,a.id,"reject","Evidence needs correction");
+  await reviewScore(db,owner,a.id,"reject","Evidence needs correction",1);
   await assert.rejects(submitScore(db,player,t.id,{...line,kills:9}),code("duplicate_entry"));
   const corrected={...line,kills:9,replaces:a.id,expectedRevision:1,correctionReason:"Corrected from the replay"};
   const b=await submitScore(db,player,t.id,corrected);assert.equal(b.id,a.id);assert.equal(b.review,"pending");

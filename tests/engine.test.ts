@@ -242,7 +242,7 @@ test("leaderboard: weights, best-of-N, flags, review, deadline, completion and p
   await submitScore(db, a, t.id, { kills: 2, deaths: 1, headshots: 0, evidenceUrl: "https://example.test/replay", matchRef: "m-2" }); // 10
   await submitScore(db, a, t.id, { kills: 4, deaths: 1, headshots: 0, evidenceUrl: "https://example.test/replay", matchRef: "m-3" }); // 20
   await rejects(submitScore(db, a, t.id, { kills: 1, evidenceUrl: "https://example.test/replay", matchRef: "m-3" }), "duplicate_entry");
-  for (const e of await db.query<{id:string}>("select id from score_entries where tournament_id=$1 and submitted_by=$2",[t.id,a.id])) await reviewScore(db,orgOwner,e.id,"approve","Reviewed replay");
+  for (const e of await db.query<{id:string}>("select id from score_entries where tournament_id=$1 and submitted_by=$2",[t.id,a.id])) await reviewScore(db,orgOwner,e.id,"approve","Reviewed replay",1);
   const flagged = await submitScore(db, b, t.id, { kills: 45, deaths: 1, headshots: 3, evidenceUrl: "https://example.test/replay", matchRef: "b-1" });
   assert.equal(flagged.review, "pending");
   assert.deepEqual(flagged.flags, ["kills_extreme"]);
@@ -254,9 +254,9 @@ test("leaderboard: weights, best-of-N, flags, review, deadline, completion and p
   assert.equal(table.find((r) => r.name === b.displayName)!.pending, 1);
   await rejects(transition(db, orgOwner, t.id, "COMPLETED"), "pending_reviews");
   const [pb] = await db.query<{ id: string }>("select id from score_entries where tournament_id = $1 and review = 'pending' and match_ref = 'b-1'", [t.id]);
-  await reviewScore(db, orgOwner, pb.id, "approve", "Verified from the match replay");
+  await reviewScore(db, orgOwner, pb.id, "approve", "Verified from the match replay",1);
   const [pc] = await db.query<{ id: string }>("select id from score_entries where tournament_id = $1 and review = 'pending'", [t.id]);
-  await reviewScore(db, orgOwner, pc.id, "reject", "Impossible line");
+  await reviewScore(db, orgOwner, pc.id, "reject", "Impossible line",1);
   // Deadline passed: self-service closes, the organiser can still log.
   await db.query("update tournaments set submission_deadline = now() - interval '1 minute' where id = $1", [t.id]);
   await rejects(submitScore(db, c, t.id, { kills: 1, matchRef:"late-result", evidenceUrl:"https://example.test/replay" }), "submission_closed");

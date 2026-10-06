@@ -52,7 +52,7 @@ test('pending receipts require ownership, deduplicate and cannot overwrite a cor
  assert.equal((await db.query('select 1 from score_verification_receipts where entry_id=$1',[entry.id])).length,1);
  assert.equal((await db.query<{review:string}>('select review from score_entries where id=$1',[entry.id]))[0].review,'pending');
  await assert.rejects(attachVerificationReceipt(db,entry.id,1,owner.id,receipt),code('identity_mismatch'));
- await reviewScore(db,owner,entry.id,'reject','Fixture needs corrected evidence');await submitScore(db,player,t.id,{...input,kills:2,replaces:entry.id,expectedRevision:1,correctionReason:'Corrected isolated fixture'});
+ await reviewScore(db,owner,entry.id,'reject','Fixture needs corrected evidence',1);await submitScore(db,player,t.id,{...input,kills:2,replaces:entry.id,expectedRevision:1,correctionReason:'Corrected isolated fixture'});
  await assert.rejects(attachVerificationReceipt(db,entry.id,1,player.id,receipt),code('stale_submission'));
  await db.query("insert into player_experience_identities(user_id,steam_id,consent_version) values($1,'76561198000000001','isolated-test')",[player.id]);
  await assert.rejects(cs2Receipt(db,player.id,match),code('authority_not_configured'));

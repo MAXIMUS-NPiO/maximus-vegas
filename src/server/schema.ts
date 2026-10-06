@@ -2267,4 +2267,12 @@ export const migrations: Migration[] = [
     `create table game_account_bindings(game text not null check(game='pubg'),user_id uuid not null references users(id),account_id text not null,proof_reference text not null check(length(proof_reference)>10),verified_by uuid not null references users(id),verified_at timestamptz not null default now(),revoked_at timestamptz,primary key(game,user_id),unique(game,account_id))`,
     `create table score_verification_receipts(game text not null,account_id text not null,match_id text not null,entry_id uuid not null references score_entries(id),revision integer not null,receipt jsonb not null,created_at timestamptz not null default now(),primary key(game,account_id,match_id))`,
   ] },
+  { id: 47, name: "legacy_score_review", statements: [
+    `alter table score_entries drop constraint score_match_required`,
+    `create function require_score_match_reference() returns trigger language plpgsql as $$ begin
+      if (TG_OP='INSERT' or NEW.match_ref is distinct from OLD.match_ref) and length(trim(NEW.match_ref))=0 then
+        raise check_violation using message='score match reference required';
+      end if; return NEW; end $$`,
+    `create trigger score_match_required before insert or update on score_entries for each row execute function require_score_match_reference()`,
+  ] },
 ];

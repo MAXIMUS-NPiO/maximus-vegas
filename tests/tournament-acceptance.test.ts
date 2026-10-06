@@ -23,7 +23,7 @@ test('isolated full bracket and twenty-game best-N tournament journeys',async()=
  assert.ok((await leaderboardStandings(db,{id:board.id,scoring:null,best_of:5})).every(r=>r.counted===0));
  await assert.rejects(submitScore(db,players[0],board.id,{matchRef:'acceptance-21',kills:999,evidenceUrl:'https://example.test/isolated-fixture'}),e=>Boolean(e&&typeof e==='object'&&'code' in e&&e.code==='too_many_entries'));
  await assert.rejects(transition(db,owner,board.id,'COMPLETED'));
- for(const id of ids)await reviewScore(db,owner,id,'approve','Reviewed isolated fixture');
+ for(const id of ids)await reviewScore(db,owner,id,'approve','Reviewed isolated fixture',1);
  const top=(await leaderboardStandings(db,{id:board.id,scoring:null,best_of:5}))[0];assert.equal(top.counted,5);assert.equal(top.kills,90);assert.equal(top.deaths,5);
  await transition(db,owner,board.id,'COMPLETED');assert.equal((await db.query('select id from registrations where tournament_id=$1 and placement=1',[board.id])).length,1);
  }finally{await db.close();}
