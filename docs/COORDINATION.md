@@ -68,6 +68,7 @@ Status: `open` → `in progress` (branch) → `done` (PR, verification). Take th
 | E-06 | 6 | exp | Visual consistency of feature pages (profile, team, tournament list) through shared styles only | screenshots at 390 and 1440 px before and after; no markup or data change in `core` files | open | |
 | E-07 | 13 | exp | Live centre and media pages over the C-10 data | as C-10, plus RU and EN screens | open | |
 | E-08 | 11 | exp | Academy pages over the C-11 data, confirmed coaches and venues only | as C-11 | open | |
+| E-09 | Owner request 7 October 2026 | exp | Registered mark: ® after MAXIMUS in the logo wordmark of the header and footer, as on every MAXIMUS site; the © notice stays as it is | ® shows after MAXIMUS on RU and EN at 390 and 1440 px; header width and the lion unchanged | in progress | exp/E-09-registered-mark |
 
 ## Needs the owner
 
