@@ -126,7 +126,7 @@ const ru = {
     company: "MAXIMUS VEGAS L.L.C-FZ · Meydan Free Zone · Dubai, UAE",
     noGambling: "Без ставок, азартных игр и игр на деньги.",
     columns: [
-      ["Портал", [["tournaments", "Турниры"], ["games", "Игры"], ["rankings", "Рейтинги"], ["teams", "Команды"], ["players", "Игроки"], ["membership", "Членство"]]],
+      ["Портал", [["tournaments", "Турниры"], ["games", "Игры"], ["rankings", "Рейтинги"], ["teams", "Команды"], ["players", "Игроки"], ["membership", "Членство"], ["rewards", "MAXIMUS Rewards"]]],
       ["Доверие", [["trust", "Честная игра"], ["status", "Статус сервисов"], ["help", "Помощь и FAQ"], ["contact", "Контакты"]]],
       ["Документы", [["terms", "Условия использования"], ["privacy", "Конфиденциальность"], ["explore", "Все разделы"], ["innovations", "Технологии"]]],
     ] as Array<[string, Array<[string, string]>]>,
@@ -985,7 +985,7 @@ const en: BaseDict = {
     company: "MAXIMUS VEGAS L.L.C-FZ · Meydan Free Zone · Dubai, UAE",
     noGambling: "No betting, gambling or real-money gaming.",
     columns: [
-      ["Portal", [["tournaments", "Tournaments"], ["games", "Games"], ["rankings", "Rankings"], ["teams", "Teams"], ["players", "Players"], ["membership", "Membership"]]],
+      ["Portal", [["tournaments", "Tournaments"], ["games", "Games"], ["rankings", "Rankings"], ["teams", "Teams"], ["players", "Players"], ["membership", "Membership"], ["rewards", "MAXIMUS Rewards"]]],
       ["Trust", [["trust", "Fair play"], ["status", "Service status"], ["help", "Help & FAQ"], ["contact", "Contact"]]],
       ["Documents", [["terms", "Terms of use"], ["privacy", "Privacy"], ["explore", "All sections"], ["innovations", "Technology"]]],
     ],
