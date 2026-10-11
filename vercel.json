@@ -1,6 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
+  "git": {
+    "deploymentEnabled": {
+      "core/review-revision-legacy": false,
+      "core/C-41-pr45-release-remediation": false
+    }
+  },
   "buildCommand": "npm run build",
   "installCommand": "npm ci",
   "crons": [
@@ -15,6 +21,14 @@
     {
       "path": "/api/cron/experience",
       "schedule": "47 4 * * *"
+    },
+    {
+      "path": "/api/cron/community",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/broadcasts",
+      "schedule": "* * * * *"
     }
   ]
 }

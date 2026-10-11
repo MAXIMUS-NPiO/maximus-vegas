@@ -71,3 +71,21 @@ BASE=http://127.0.0.1:3000 npm run e2e   # сквозной HTTP-сценари�
 - `docs/RELEASE_4.md` — отчёт о выпуске release 4: группы и плей-офф, лиги, лесенка, даты туров
 - `docs/RELEASE_5.md` — отчёт о выпуске release 5: FFA, подтверждение заявок, вопросы, составы, шаблоны, перенос расписания, неявка
 - `docs/RELEASE_6.md` — отчёт о выпуске release 6: серии и очки по уровням, площадки и пересечения, допуск, оценки, история
+
+## QA remediation and release boundary (C-37)
+
+Audited source: `ccd71006ba85ff5ed7ef38db2eac431d0515ebb7`. The implementation and owner acceptance checklist are in [docs/QA_REMEDIATION.md](docs/QA_REMEDIATION.md). Passing repository tests is not live provider acceptance.
+
+- Tournament entry remains free; cash prizes remain excluded. The skins marketplace stays visibly simulated **TEST MODE**.
+- Approved temporary membership collection uses **Maximus Sports MPGS** under the internal arrangement, with MAXIMUS VEGAS L.L.C-FZ as beneficiary and the collector disclosed. Credentials, approved offer terms and live checkout/refund acceptance remain operator tasks. No production payment settings were changed.
+- Text chat has persistent backend support. Voice and native studio have separate provider, scheduler, storage/payment gates; `/en/status` and `/ru/status` now report component readiness separately.
+- Player scores require a nonempty canonical match reference and HTTPS evidence and enter pending review. An exact retry is idempotent; a rejected score can be corrected in place using its revision and a reason. Rejected matches still consume a game slot. Approved results require rejection before correction.
+- Each leaderboard accepts 10–20 games per participant (default 20); best N must fit that cap. Points, KDA and kills use the same selected results. Equal sporting metrics share rank; participant ID supplies stable display order. The owner must approve the precise contract before publishing an event.
+- PUBG adapter and Steam/CS2 result interface are **NOT live-verified**. Account lookup is not ownership proof; no test fixtures are served to players. See [docs/GAME_VERIFICATION.md](docs/GAME_VERIFICATION.md).
+
+```bash
+npm run check                    # TypeScript, complete test suite, production build
+npm run acceptance:tournaments  # Isolated bracket + twenty-game best-five journey
+```
+
+The acceptance script always creates an in-memory database and never publishes a public event. Full HTTP/browser and real PostgreSQL concurrency checks also run in CI. External email, provider, device and load acceptance remain separate.

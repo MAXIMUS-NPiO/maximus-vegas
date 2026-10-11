@@ -35,3 +35,11 @@ The optional workflow package requested in the attachment was inspected and vali
 For an invitation change, G1 is the smallest concrete example: the command exercises stored outcomes, recipient mismatch, idempotency, cancellation and verified acceptance; both zero exit and the success-only zero-failure summary are required. PostgreSQL cases run only when the isolated `PG_TEST_URL` is set. A skipped case must not be reported as passed.
 
 The protected check job must pass again on the exact final PR head after this evidence update. Provider operation and the blocked attachment-package installation remain separate outcomes.
+
+## C-37 QA remediation gates
+
+- Targeted red/green regressions: leaderboard integrity, TLS, evidence/signup, CSP/recovery/logging/cron, game verification, body bounds and component readiness. Details: `docs/QA_REMEDIATION.md`.
+- Full candidate quality gate: `npm run check`; skipped PostgreSQL tests must be reported separately until the real PostgreSQL CI job passes.
+- Isolated complete bracket and twenty-game best-N journey: `npm run acceptance:tournaments`.
+- Existing Python, HTTP and browser CI journeys remain required. Verify production HTML nonce execution and CSP headers on the isolated candidate, not by modifying production.
+- Release requires owner tasks and live acceptance in `docs/QA_REMEDIATION.md`. No merge/deployment or production fixture creation is part of C-37.

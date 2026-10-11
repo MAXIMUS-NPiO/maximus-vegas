@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { Locale } from "@/lib/i18n.ts";
 import type { Standings } from "@/server/partner-api.ts";
 import { groupTitle } from "@/components/tournament";
+import { FinalPlacements } from "./final-placements";
 
 /** Header of a widget: the title and a link that opens the portal in a new tab. */
 export function EmbedHead({ lang, title, subtitle, href }: { lang: Locale; title: string; subtitle?: ReactNode; href: string }) {
@@ -35,6 +36,7 @@ export function EmbedStandings({ lang, standings }: { lang: Locale; standings: S
   const ru = lang === "ru";
   const empty = <p className="small muted">{ru ? "Таблица появится, когда будут сыграны матчи." : "The table appears once matches are played."}</p>;
   if (standings.kind === "placements") {
+    if (standings.final) return <FinalPlacements lang={lang} rows={standings.rows} />;
     if (!standings.rows.length)
       return <p className="small muted">{ru ? "Места появятся после завершения турнира." : "Places appear when the tournament ends."}</p>;
     return (

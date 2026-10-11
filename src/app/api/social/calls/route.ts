@@ -1,3 +1,4 @@
+import {reportError} from "@/server/observability.ts";
 import { jsonContext, json } from "@/server/json-api.ts";
 import { socialCallAction } from "@/server/social-calls.ts";
 import { errorCode } from "@/server/http.ts";
@@ -13,7 +14,7 @@ export async function POST(request: Request) {
   } catch (error) {
     // Database diagnostics can contain signal payloads; keep them out of application logs.
     const code = errorCode(error);
-    if (code === "server_error") console.error("[social-calls] request failed");
+    if (code === "server_error") await reportError("social.call_failure",error);
     return json({ error: code }, code === "unauthorized" ? 401 : ["server_error", "db_unavailable"].includes(code) ? 503 : 400);
   }
 }

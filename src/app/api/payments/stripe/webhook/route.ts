@@ -1,3 +1,4 @@
+import {reportError} from "@/server/observability.ts";
 import { getDb } from "@/server/db.ts";
 import { handleProviderWebhook } from "@/server/billing.ts";
 import { handleBroadcastPaymentWebhook } from "@/server/broadcast-payments.ts";
@@ -19,7 +20,7 @@ export async function POST(request: Request) {
       ?? await handleProviderWebhook(db, raw, request.headers.get("stripe-signature"));
     return new Response(result.body, { status: result.status, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    console.error("[webhook]", (error as Error).message);
+    await reportError("payment.webhook_failure", error);
     return new Response("error", { status: 500 });
   }
 }

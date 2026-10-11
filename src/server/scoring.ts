@@ -113,8 +113,8 @@ export function standings(
   weights: Weights = DEFAULT_WEIGHTS,
   bestOf: number | null = null,
 ): Standing[] {
-  const acc = new Map<string, { points: number[]; kills: number; assists: number; deaths: number; logged: number; pending: number }>();
-  for (const id of participantIds) acc.set(id, { points: [], kills: 0, assists: 0, deaths: 0, logged: 0, pending: 0 });
+  const acc = new Map<string, { lines: StatLine[]; logged: number; pending: number }>();
+  for (const id of participantIds) acc.set(id, { lines: [], logged: 0, pending: 0 });
   for (const line of lines) {
     const row = acc.get(line.participantId);
     if (!row) continue;
@@ -124,21 +124,26 @@ export function standings(
       continue;
     }
     if (!line.accepted) continue;
-    row.points.push(matchPoints(line, weights));
-    row.kills += line.kills;
-    row.assists += line.assists;
-    row.deaths += line.deaths;
+    row.lines.push(line);
   }
   const rows = [...acc.entries()].map(([participantId, r]) => {
-    const sorted = [...r.points].sort((a, b) => b - a);
+    // Equal-point records use the same published metric order, then a complete stable
+    // stat tuple. Database/input ordering can never select a different best-N set.
+    const sorted = [...r.lines].sort((a, b) => matchPoints(b, weights) - matchPoints(a, weights)
+      || kda(b.kills,b.assists,b.deaths)-kda(a.kills,a.assists,a.deaths)
+      || b.kills-a.kills || b.assists-a.assists || a.deaths-b.deaths
+      || b.headshots-a.headshots || b.damage-a.damage || b.distance-a.distance
+      || (a.placement ?? 4)-(b.placement ?? 4));
     const counted = bestOf ? sorted.slice(0, bestOf) : sorted;
+    const sum = (key: Stat) => counted.reduce((s,line)=>s+line[key],0);
+    const kills=sum("kills"), assists=sum("assists"), deaths=sum("deaths");
     return {
       participantId,
-      points: round2(counted.reduce((s, v) => s + v, 0)),
-      kills: r.kills,
-      assists: r.assists,
-      deaths: r.deaths,
-      kda: kda(r.kills, r.assists, r.deaths),
+      points: round2(counted.reduce((s, line) => s + matchPoints(line,weights), 0)),
+      kills,
+      assists,
+      deaths,
+      kda: kda(kills, assists, deaths),
       logged: r.logged,
       counted: counted.length,
       pending: r.pending,

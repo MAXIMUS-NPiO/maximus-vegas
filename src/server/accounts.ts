@@ -123,7 +123,7 @@ export async function resetPassword(db: Database, raw: unknown, passwordInput: u
  */
 export async function signUpEmailFirst(db: Database, input: SignUpInput) {
   const data = parseSignUp(input);
-  await spendSignupBudget(db, input.clientKey);
+  await spendSignupBudget(db, input.clientKey, input.deviceKey);
   const lang = input.lang ?? "ru";
   const passwordHash = await hashPassword(data.password);
   await db.tx(async (q) => {
