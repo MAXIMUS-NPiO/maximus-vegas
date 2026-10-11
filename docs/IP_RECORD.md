@@ -220,3 +220,8 @@ MIPA internal implementation record: owner-directed extension of the existing pr
 ## 11 October 2026 — C-39 release checks
 
 Replaced rolling historical dates in the clan-war integration fixture with fixed dates in one UTC quarter, preserving the two-day and ten-day intervals and all ranking assertions. Updated the framework security patch and aligned transitive dependency overrides with the reviewed remediation candidate. Runtime ranking rules and production data are unchanged.
+
+
+## 11 October 2026 — C-40 ecosystem rewards requirements
+
+Owner-directed extension of the ecosystem programme to MAXIMUS Vegas, Tennis, Baby Tennis, SHALENI and future children's clothing. Preserves the annual 20% bonus requirement and distinguishes programme design, game progression and connected transactions. Original programme copy, source-based requirement inventory, ledger/integration proposal and acceptance criteria are recorded in docs/ECOSYSTEM_REWARDS.md. This is an internal implementation/provenance record, not an external registration or a claim that rewards are live.
