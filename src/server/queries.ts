@@ -87,6 +87,7 @@ export type TournamentDetail = TournamentCard & {
   qualifier_circuit_id: string | null;
   scoring: Record<string, number> | null;
   best_of: number | null;
+  eligible_game_limit: number;
   submission_hours: number | null;
   submission_deadline: Date | null;
   region_lock: string[];

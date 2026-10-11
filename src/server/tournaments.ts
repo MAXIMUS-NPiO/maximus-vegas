@@ -94,6 +94,7 @@ export type TournamentRow = {
   created_by: string;
   scoring: Record<string, number> | null;
   best_of: number | null;
+  eligible_game_limit: number;
   submission_hours: number | null;
   submission_deadline: Date | null;
   region_lock: string[];
@@ -195,6 +196,7 @@ export type TournamentInput = {
   description: unknown;
   rules: unknown;
   bestOf?: unknown;
+  eligibleGameLimit?: unknown;
   submissionHours?: unknown;
   weights?: Record<string, unknown>;
   prizeText?: unknown;
@@ -336,7 +338,8 @@ function parseInput(input: TournamentInput, game: CatalogGame, preserveFormat = 
     startsAt: v.zonedToUtc(input.startsAt, input.timeZone),
     description: v.clean(input.description, 4000),
     rules: v.clean(input.rules, 8000),
-    bestOf: leaderboard ? optionalInt(input.bestOf, 1, 50) : null,
+    bestOf: leaderboard ? optionalInt(input.bestOf, 1, v.intIn(input.eligibleGameLimit ?? 20,10,20)) : null,
+    eligibleGameLimit: v.intIn(input.eligibleGameLimit ?? 20,10,20),
     submissionHours: leaderboard ? optionalInt(input.submissionHours, 1, 720) : null,
     scoring: leaderboard ? parseWeights(input.weights) : null,
     prizeText: v.clean(input.prizeText, 600),
@@ -402,6 +405,7 @@ export async function createTournament(db: Database, user: SessionUser, orgId: s
         fieldsJson(reg.fields), reg.approvalRequired, reg.registrationClosesAt?.toISOString() ?? null, reg.rosterLocksAt?.toISOString() ?? null,
         reg.noShowMinutes],
     );
+    await q.query("update tournaments set eligible_game_limit=$2 where id=$1",[t.id, data.eligibleGameLimit]);
     await saveExtras(q, t.id, extras);
     await audit(q, {
       actorId: user.id,
@@ -420,7 +424,7 @@ export async function updateTournament(db: Database, user: SessionUser, tourname
     await requireManager(q, t, user);
     const sameGame=input.game===t.game;
     const game=await requireCatalogGame(q,input.game,!sameGame);
-    const data=parseInput(input,game,sameGame && input.format===t.format);
+    const data=parseInput({...input,eligibleGameLimit:input.eligibleGameLimit ?? t.eligible_game_limit},game,sameGame && input.format===t.format);
     if (!["DRAFT", "PUBLISHED", "REGISTRATION_OPEN", "REGISTRATION_CLOSED"].includes(t.status)) fail("not_editable");
     const [count] = await q.query<{ n: number; active: number }>(
       "select count(*)::int as n, count(*) filter (where status = 'registered')::int as active from registrations where tournament_id = $1 and status not in ('withdrawn','rejected')",
@@ -475,6 +479,7 @@ export async function updateTournament(db: Database, user: SessionUser, tourname
         link.circuitId, link.circuitDivision, link.circuitWeight, link.qualifierCircuitId, fieldsJson(reg.fields), reg.approvalRequired,
         reg.registrationClosesAt?.toISOString() ?? null, reg.rosterLocksAt?.toISOString() ?? null, reg.noShowMinutes],
     );
+    await q.query("update tournaments set eligible_game_limit=$2 where id=$1",[t.id, data.eligibleGameLimit]);
     await saveExtras(q, t.id, extras);
     const settingsChanged = JSON.stringify(settings) !== JSON.stringify(editableFormatSettings(t));
     const registrationChanged = JSON.stringify(reg) !== JSON.stringify(storedRegistration(t));
@@ -1344,6 +1349,7 @@ export type DraftSource = {
   description: string;
   rules: string;
   best_of: number | null;
+  eligible_game_limit: number;
   submission_hours: number | null;
   scoring: Record<string, number> | null;
   prize_text: string;
@@ -1386,6 +1392,7 @@ export function draftSourceOf(src: FullRow): DraftSource {
     description: src.description,
     rules: src.rules,
     best_of: src.best_of,
+    eligible_game_limit: src.eligible_game_limit,
     submission_hours: src.submission_hours,
     scoring: src.scoring,
     prize_text: src.prize_text,
@@ -1433,6 +1440,7 @@ export async function insertDraft(q: Queryable, user: SessionUser, src: DraftSou
       fieldsJson(src.registration_fields), src.approval_required, at(src.registration_closes_before), at(src.roster_locks_before),
       src.no_show_minutes, templateId],
   );
+  await q.query("update tournaments set eligible_game_limit=$2 where id=$1",[t.id,src.eligible_game_limit ?? 20]);
   await saveExtras(q, t.id, { series: src.series_rules ?? null, admission: src.admission ?? null, matchMinutes: src.match_minutes ?? null, mapPool: src.map_pool ?? null });
   for (const venue of src.venues ?? [])
     await q.query("insert into tournament_venues (tournament_id, name, kind) values ($1, $2, $3) on conflict do nothing", [t.id, venue.name, venue.kind]);

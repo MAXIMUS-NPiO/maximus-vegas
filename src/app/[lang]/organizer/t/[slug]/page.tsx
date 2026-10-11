@@ -9,7 +9,7 @@ import { viewer } from "@/server/viewer.ts";
 import { bracket, getTournament, participants, tournamentHistory } from "@/server/queries.ts";
 import { canManageOrg } from "@/server/access.ts";
 import { allowedTransitions, canManageTournament, canRefereeTournament, isMatchFormat, type TournamentStatus } from "@/server/tournaments.ts";
-import { scoreLog } from "@/server/leaderboard.ts";
+import { scoreLog, SCORE_LOG_PAGE_SIZE } from "@/server/leaderboard.ts";
 import { isRoundFormat, playoffStage, settingsOf, stageSpec } from "@/server/format-settings.ts";
 import { effectiveSwissRounds } from "@/server/swiss.ts";
 import { groupStandings, roundStandings, stageTables } from "@/server/rounds.ts";
@@ -27,6 +27,7 @@ import { orgVenues } from "@/server/venues.ts";
 import { StreamsManager } from "@/components/streams";
 import { ActionForm, Badge, DbDown, Field, Flash, type SearchParams } from "@/components/ui";
 import { TournamentForm } from "@/components/tournament-form";
+import { ScoreCorrectionForm } from "@/components/score-correction";
 import {
   BracketView,
   chainStageLabel,
@@ -187,10 +188,17 @@ export default async function ManageTournament({ params, searchParams }: { param
     "select d.id, d.match_id, d.reason from disputes d join matches m on m.id = d.match_id where m.tournament_id = $1 and d.status = 'open' and d.kind = 'post_result'",
     [t.id],
   );
-  const lines = leaderboard ? await scoreLog(db, t.id) : [];
-  const pendingLines = lines.filter((l) => l.review === "pending");
+  const logPages = Math.max(1, Math.ceil((stats?.entries ?? 0) / SCORE_LOG_PAGE_SIZE));
+  const logPage = Math.min(logPages, Math.max(1, Math.trunc(Number(sp.logPage) || 1)));
+  // Independent oldest-first review work and paginated history can load concurrently.
+  const [lines, pendingLines, ownRegistrations] = leaderboard ? await Promise.all([
+    scoreLog(db, t.id, { page: logPage }), scoreLog(db, t.id, { pendingOnly: true }),
+    db.query<{ registration_id: string }>("select re.registration_id from roster_entries re join registrations r on r.id=re.registration_id where r.tournament_id=$1 and re.user_id=$2", [t.id, user.id]),
+  ]) : [[], [], []];
+  const ownRosterIds = new Set(ownRegistrations.map(r => r.registration_id));
   const inControl=String(sp.control??"")==="1" && user.roles.includes("admin");
   const back = inControl ? `/${lang}/admin?tab=tournaments&event=${encodeURIComponent(t.slug)}` : `/${lang}/organizer/t/${t.slug}`;
+  const scoreHistoryPath = (page: number) => `${back}${back.includes("?") ? "&" : "?"}logPage=${page}#score-history`;
   const matchPath=(id:string)=>inControl?`${back}&match=${id}`:`/${lang}/matches/${id}`;
   const hidden = { tournament: t.id };
   const status = t.status as TournamentStatus;
@@ -519,6 +527,9 @@ export default async function ManageTournament({ params, searchParams }: { param
         <section className="section-tight">
           <h2 className="h3">{ru ? "Проверка результатов" : "Result review"}</h2>
           <p className="small muted">{ru ? "Это проверка целостности данных, а не античит. Решение фиксируется в журнале." : "This is a data integrity check, not anti-cheat. Each decision is recorded in the log."}</p>
+          {(stats?.pending ?? 0) > pendingLines.length ? (
+            <p className="notice notice-info">{ru ? `Показаны ${pendingLines.length} старейших из ${stats.pending} результатов. После решения появятся следующие.` : `Showing the oldest ${pendingLines.length} of ${stats.pending} results. The next results appear as these are reviewed.`}</p>
+          ) : null}
           {pendingLines.length ? (
             <ul className="list">
               {pendingLines.map((l) => (
@@ -540,13 +551,16 @@ export default async function ManageTournament({ params, searchParams }: { param
                       </>
                     ) : null}
                   </p>
+                  {l.correction_reason ? <p className="small prewrap">{ru ? "Причина исправления" : "Correction reason"}: {l.correction_reason}</p> : null}
+                  {l.previous_values ? <p className="small muted">{ru ? "До исправления" : "Before correction"}: K {l.previous_values.kills} · A {l.previous_values.assists} · D {l.previous_values.deaths} · HS {l.previous_values.headshots} · DMG {l.previous_values.damage} · {l.previous_values.distance} m{l.previous_values.placement ? ` · #${l.previous_values.placement}` : ""}</p> : null}
                   <div className="row">
-                    <ActionForm action="score.review" lang={lang} back={back} hidden={{ entry: l.id, decision: "approve" }} className="inline-form">
+                    {l.match_ref.trim() ? <ActionForm action="score.review" lang={lang} back={back} hidden={{ entry: l.id, expectedRevision: String(l.revision), decision: "approve" }} className="inline-form">
                       <input name="note" maxLength={500} placeholder={ru ? "Комментарий" : "Note"} aria-label={ru ? "Комментарий" : "Note"} />
-                      <button className="btn btn-primary btn-xs">{ru ? "Учесть" : "Approve"}</button>
-                    </ActionForm>
-                    <ActionForm action="score.review" lang={lang} back={back} hidden={{ entry: l.id, decision: "reject" }} className="inline-form">
-                      <input name="note" maxLength={500} placeholder={ru ? "Причина" : "Reason"} aria-label={ru ? "Причина" : "Reason"} />
+                      <button className="btn btn-primary btn-xs" disabled={ownRosterIds.has(l.registration_id)}>{ru ? "Учесть" : "Approve"}</button>
+                      {ownRosterIds.has(l.registration_id) ? <span className="small muted">{ru ? "Ваш результат должен утвердить другой судья." : "Another referee must approve your roster’s result."}</span> : null}
+                    </ActionForm> : <p className="small muted">{ru ? "Для утверждения нужен ID матча. Отклоните запись с причиной, затем исправьте её." : "Approval requires a match ID. Reject with a reason, then correct the entry."}</p>}
+                    <ActionForm action="score.review" lang={lang} back={back} hidden={{ entry: l.id, expectedRevision: String(l.revision), decision: "reject" }} className="inline-form">
+                      <input name="note" required minLength={5} maxLength={500} placeholder={ru ? "Причина" : "Reason"} aria-label={ru ? "Причина" : "Reason"} />
                       <button className="btn btn-danger btn-xs">{ru ? "Отклонить" : "Reject"}</button>
                     </ActionForm>
                   </div>
@@ -559,6 +573,7 @@ export default async function ManageTournament({ params, searchParams }: { param
           {t.status === "IN_PROGRESS" ? (
             <details className="disclosure card">
               <summary>{ru ? "Внести результат за участника" : "Log a result for a participant"}</summary>
+              <p className="small muted">{ru ? "Для результата своей игровой заявки нужны доказательство и утверждение другим судьёй." : "Logging for your own playing roster requires evidence and approval by another referee."}</p>
               <ActionForm action="score.log" lang={lang} back={back} hidden={hidden} className="stack">
                 <Field label={d.tournaments.participants}>
                   <select name="registration" required>
@@ -586,18 +601,25 @@ export default async function ManageTournament({ params, searchParams }: { param
                     </select>
                   </Field>
                   <Field label={ru ? "ID матча" : "Match ID"}>
-                    <input name="matchRef" maxLength={80} />
+                    <input name="matchRef" maxLength={80} required />
                   </Field>
                 </div>
+                <Field label={ru ? "Доказательство (HTTPS)" : "Evidence URL (HTTPS)"}>
+                  <input name="evidence" type="url" maxLength={500} placeholder="https://…" />
+                </Field>
                 <button className="btn btn-primary btn-sm">{ru ? "Внести" : "Log result"}</button>
               </ActionForm>
             </details>
           ) : null}
           {lines.length ? (
-            <details className="disclosure">
+            <details className="disclosure" id="score-history" open={logPage > 1}>
               <summary>
-                {ru ? "Все строки" : "All lines"} ({lines.length})
+                {ru ? "Журнал результатов" : "Score log"} ({stats.entries}) · {ru ? "Страница" : "Page"} {logPage}/{logPages}
               </summary>
+              {logPages > 1 ? <nav className="row" aria-label={ru ? "Страницы журнала результатов" : "Score log pages"}>
+                {logPage > 1 ? <Link className="btn btn-ghost btn-xs" href={scoreHistoryPath(logPage - 1)}>{ru ? "Новее" : "Newer"}</Link> : null}
+                {logPage < logPages ? <Link className="btn btn-ghost btn-xs" href={scoreHistoryPath(logPage + 1)}>{ru ? "Старее" : "Older"}</Link> : null}
+              </nav> : null}
               <div className="table-wrap">
                 <table className="table">
                   <thead>
@@ -627,10 +649,11 @@ export default async function ManageTournament({ params, searchParams }: { param
                           <Badge status={l.review === "pending" ? "warn" : l.review === "rejected" ? "bad" : "ok"}>{reviewLabel(l.review, lang)}</Badge>
                         </td>
                         <td>
+                          <ScoreCorrectionForm lang={lang} back={back} tournament={t} entry={l} />
                           {["accepted", "approved"].includes(l.review) && ["IN_PROGRESS", "PAUSED"].includes(t.status) ? (
                             <details className="disclosure">
                               <summary>{ru ? "Отклонить" : "Reject"}</summary>
-                              <ActionForm action="score.review" lang={lang} back={back} hidden={{ entry: l.id, decision: "reject" }} className="inline-form">
+                              <ActionForm action="score.review" lang={lang} back={back} hidden={{ entry: l.id, expectedRevision: String(l.revision), decision: "reject" }} className="inline-form">
                                 <input name="note" required minLength={5} maxLength={500} placeholder={ru ? "Причина" : "Reason"} aria-label={ru ? "Причина" : "Reason"} />
                                 <button className="btn btn-danger btn-xs">{ru ? "Отклонить" : "Reject"}</button>
                               </ActionForm>

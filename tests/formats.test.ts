@@ -189,7 +189,7 @@ test("scoring: best-of-N counts only the top lines; KDA then kills break ties; p
   assert.equal(all.find((s) => s.participantId === "b")!.pending, 1);
   const best2 = standings(["a", "b"], lines, DEFAULT_WEIGHTS, 2);
   assert.equal(best2.find((s) => s.participantId === "a")!.points, 60);
-  assert.equal(best2[0].participantId, "a", "a (60, KDA 13) beats b (60, KDA 12) on KDA");
+  assert.equal(best2[0].participantId, "a", "a and b share the same counted metrics; stable ID ordering");
   assert.equal(kda(10, 5, 0), 15);
   const tie = standings(["x", "y"], [
     { participantId: "x", ...line({ kills: 2 }), accepted: true, pending: false },

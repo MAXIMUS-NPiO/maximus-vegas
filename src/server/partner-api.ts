@@ -139,12 +139,12 @@ export async function standingsFor(q: Queryable, t: StandingsTournament) {
     points: r.points,
     diff: r.diff,
   });
-  if (t.format === "leaderboard") {
-    const rows = ["IN_PROGRESS", "PAUSED", "COMPLETED", "ARCHIVED"].includes(t.status) ? await leaderboardStandings(q, t) : [];
+  if (t.format === "leaderboard" && !finished) {
+    const rows = ["IN_PROGRESS", "PAUSED"].includes(t.status) ? await leaderboardStandings(q, t) : [];
     return {
       kind: "leaderboard" as const,
       final: finished,
-      rows: rows.map((r, i) => ({ registration: r.participantId, name: r.name, rank: i + 1, points: r.points, kills: r.kills })),
+      rows: rows.map((r) => ({ registration: r.participantId, name: r.name, rank: r.rank, points: r.points, kills: r.kills })),
     };
   }
   if (isRoundFormat(t.format) && !finished) {

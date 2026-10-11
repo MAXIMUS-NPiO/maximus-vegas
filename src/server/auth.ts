@@ -106,6 +106,7 @@ export type SignUpInput = {
   userAgent?: string;
   lang?: "ru" | "en";
   clientKey?: string;
+  deviceKey?: string;
 };
 
 /**
@@ -114,18 +115,23 @@ export type SignUpInput = {
  */
 export const SIGNUP_PER_HOUR = 10;
 export const SIGNUP_PER_DAY = 50;
-/** Requests from this machine itself (local servers, tests and acceptance scripts) carry a loopback address. */
-const loopback = (address: string) => /^(127\.|::1$|::ffff:127\.)/.test(address);
-export async function spendSignupBudget(q: Queryable, clientKey: string | undefined) {
-  if (!clientKey || loopback(clientKey)) return;
-  const key = `signup-client:${sha256(clientKey)}`;
-  const [row] = await q.query<{ hour: number; day: number }>(
-    `select count(*) filter (where at > now() - interval '1 hour')::int as hour, count(*)::int as day
-       from auth_attempts where key = $1 and at > now() - interval '1 day'`,
-    [key],
-  );
-  if ((row?.hour ?? 0) >= SIGNUP_PER_HOUR || (row?.day ?? 0) >= SIGNUP_PER_DAY) fail("signup_limited");
-  await q.query("insert into auth_attempts (key, ok) values ($1, true)", [key]);
+export async function spendSignupBudget(db: Database, clientKey: string | undefined, deviceKey?: string) {
+  // Domain-only fixtures may omit the address. The HTTP route always supplies one,
+  // falling back to a shared unknown-address bucket, never to a bypass.
+  if (!clientKey) return;
+  const configured=(key:string,fallback:number)=>Math.max(1,Math.min(1000,Number(process.env[key])||fallback));
+  const keys=[{key:`signup-client:${sha256(clientKey)}`,hour:configured("SIGNUP_IP_HOURLY",SIGNUP_PER_HOUR),day:configured("SIGNUP_IP_DAILY",SIGNUP_PER_DAY)}];
+  if(deviceKey && /^[a-f0-9]{48}$/.test(deviceKey)) keys.push({key:`signup-device:${sha256(deviceKey)}`,hour:5,day:20});
+  await db.tx(async q=>{
+    for(const budget of keys.sort((a,b)=>a.key.localeCompare(b.key))) {
+      await q.query("select pg_advisory_xact_lock(hashtextextended($1,0))",[budget.key]);
+      const [row] = await q.query<{ hour: number; day: number }>(
+        `select count(*) filter (where at > now() - interval '1 hour')::int as hour, count(*)::int as day
+           from auth_attempts where key = $1 and at > now() - interval '1 day'`, [budget.key]);
+      if ((row?.hour ?? 0) >= budget.hour || (row?.day ?? 0) >= budget.day) fail("signup_limited");
+    }
+    for(const budget of keys) await q.query("insert into auth_attempts (key, ok) values ($1, true)",[budget.key]);
+  });
 }
 
 export function parseSignUp(input: SignUpInput) {
@@ -155,7 +161,7 @@ export async function recordSignupConsents(q: Queryable, userId: string, marketi
  */
 export async function signUp(db: Database, input: SignUpInput) {
   const data = parseSignUp(input);
-  await spendSignupBudget(db, input.clientKey);
+  await spendSignupBudget(db, input.clientKey, input.deviceKey);
   const passwordHash = await hashPassword(data.password);
   try {
     return await db.tx(async (q) => {
@@ -574,6 +580,7 @@ export async function deleteAccount(db: Database, user: SessionUser, confirmPass
       [user.id, `deleted+${user.id}@invalid.local`, `deleted_${tag}`, `deleted$${randomBytes(16).toString("hex")}`],
     );
     await q.query("delete from username_reservations where invited_by = $1 or claimed_by = $1", [user.id]);
+    await q.query("update game_account_bindings set revoked_at=coalesce(revoked_at,now()) where user_id=$1", [user.id]);
     await q.query("delete from additional_game_accounts where user_id = $1", [user.id]);
     await q.query("delete from linked_game_accounts where user_id = $1", [user.id]);
     // Registration answers may hold contact details: erased with the account that gave them.

@@ -225,3 +225,11 @@ Replaced rolling historical dates in the clan-war integration fixture with fixed
 ## 11 October 2026 — C-40 ecosystem rewards requirements
 
 Owner-directed extension of the ecosystem programme to MAXIMUS Vegas, Tennis, Baby Tennis, SHALENI and future children's clothing. Preserves the annual 20% bonus requirement and distinguishes programme design, game progression and connected transactions. Original programme copy, source-based requirement inventory, ledger/integration proposal and acceptance criteria are recorded in docs/ECOSYSTEM_REWARDS.md. This is an internal implementation/provenance record, not an external registration or a claim that rewards are live.
+
+## 6 October 2026 — C-37: owner-requested QA remediation
+
+Original owner-directed implementation: canonical reviewed score ingestion and correction history, best-N integrity and event limits, verified database trust configuration, normalized private evidence, atomic signup budgets, request-body bounds, nonce CSP and recovery interfaces, structured monitoring hooks, pending publisher receipt preparation and isolated tournament acceptance. Preserves the existing ownership record, MAXIMUS branding and third-party licences. No new copyright registration, publisher certification, ownership binding, anti-cheat guarantee or live payment/provider acceptance is asserted. Scope and evidence: `docs/QA_REMEDIATION.md`, PR #41.
+
+## 11 October 2026 — C-41 release remediation
+
+Original owner-directed integration of the reviewed tournament candidate: preserved historical final places across public/API/widget views, revision-bound organizer corrections, stricter score evidence URLs, independent pending-review access, preserved evidence originals with bounded display derivatives, independent approval for playing staff, runtime-compatible error reporting, and regression coverage. Prior release and rewards changes are preserved. No production migration or financial activation is performed by this record.

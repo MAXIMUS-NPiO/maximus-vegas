@@ -53,6 +53,7 @@ import { reviewLabel } from "@/lib/labels.ts";
 import { seriesCustomised, seriesMap, seriesRulesOf } from "@/server/series.ts";
 import { admissionOf, playerStandings, unmetCriteria } from "@/server/admission.ts";
 import { canRate, feedbackSummary, ownFeedback } from "@/server/feedback.ts";
+import { FinalPlacements } from "@/components/final-placements";
 
 export async function generateMetadata({ params }: { params: Promise<{ lang: string; slug: string }> }): Promise<Metadata> {
   const { lang, slug } = await params;
@@ -210,7 +211,7 @@ export default async function TournamentPage({ params, searchParams }: { params:
   const plannedLobbies = ffa && !started && seededList(list).length >= 2 ? dealLobbies(seededList(list), ffaRules.lobbySize) : [];
   const plannedRounds = ffa && !started ? planRounds(seededList(list).length, ffaRules) : [];
   const previewRounds = rounds === "round_robin" ? roundRobinSchedule(list.filter((p) => p.status === "registered"), settings.legs ?? 1).rounds : 0;
-  const standings = t.status === "COMPLETED" ? list.filter((p) => p.placement !== null).sort((a, b) => (a.placement ?? 0) - (b.placement ?? 0)) : [];
+  const standings = t.status === "COMPLETED" || (leaderboard && t.status === "ARCHIVED") ? list.filter((p) => p.placement !== null).sort((a, b) => (a.placement ?? 0) - (b.placement ?? 0)) : [];
   // A main stage (round robin, Swiss or groups) may be followed by further round stages and a playoff (MV-STAGES-2).
   const playoff = rounds ? (settings.playoff ?? null) : null;
   const chain = rounds ? (settings.chain ?? []) : [];
@@ -254,7 +255,7 @@ export default async function TournamentPage({ params, searchParams }: { params:
   const qualifier = linked.find((c) => c.id === t.qualifier_circuit_id) ?? null;
   const full = t.registered >= t.max_participants;
   const hidden = { tournament: t.id };
-  const table = leaderboard && ["IN_PROGRESS", "PAUSED", "COMPLETED", "ARCHIVED"].includes(t.status) ? await leaderboardStandings(db, t) : [];
+  const table = leaderboard && ["IN_PROGRESS", "PAUSED"].includes(t.status) ? await leaderboardStandings(db, t) : [];
   const weights = mergeWeights(t.scoring);
   const deadlinePassed = Boolean(t.submission_deadline && new Date(t.submission_deadline).getTime() < Date.now());
   const canSubmit = leaderboard && entry?.leader && entry.status === "registered" && t.status === "IN_PROGRESS" && !deadlinePassed;
@@ -788,7 +789,9 @@ export default async function TournamentPage({ params, searchParams }: { params:
               ) : null}
             </p>
           ) : null}
-          {table.length ? (
+          {finished ? (
+            <p className="muted"><a href="#standings">{ru ? "Сохранённые итоговые места" : "Recorded final placements"}</a></p>
+          ) : table.length ? (
             <div className="table-wrap">
               <table className="table">
                 <thead>
@@ -828,6 +831,9 @@ export default async function TournamentPage({ params, searchParams }: { params:
             <div className="card form-card">
               <h3 className="h4">{ru ? "Отправить результат матча" : "Submit a match result"}</h3>
               <ActionForm action="score.submit" lang={lang} back={`${back}#leaderboard`} hidden={hidden} className="stack">
+                <p>{ru ? `Лимит: ${t.eligible_game_limit} матчей. Каждый результат ждёт проверки. Отклонённый матч исправляется в той же записи и занимает одно место в лимите.` : `Limit: ${t.eligible_game_limit} games. Every self-report awaits review. Correct a rejected match in the same record; it still uses one game slot.`}</p>
+                <Field label={ru ? "Новый результат или исправление" : "New result or correction"}><select name="correction" defaultValue=""><option value="">{ru ? "Новый результат" : "New result"}</option>{myLines.filter(l=>l.review==="rejected").map(l=><option key={l.id} value={`${l.id}:${l.revision}`}>{l.match_ref}</option>)}</select></Field>
+                <Field label={ru ? "Причина исправления (обязательна для повторной отправки)" : "Correction reason (required when resubmitting)"}><input name="correctionReason" maxLength={500} /></Field>
                 <div className="form-grid form-grid-4">
                   {(["kills", "assists", "deaths", "headshots"] as const).map((k) => (
                     <Field key={k} label={{ kills: ru ? "Убийства" : "Kills", assists: ru ? "Помощь" : "Assists", deaths: ru ? "Смерти" : "Deaths", headshots: ru ? "В голову" : "Headshots" }[k]}>
@@ -848,12 +854,12 @@ export default async function TournamentPage({ params, searchParams }: { params:
                       <option value="3">3</option>
                     </select>
                   </Field>
-                  <Field label={ru ? "ID матча в игре" : "In-game match ID"} hint={d.common.optional}>
-                    <input name="matchRef" maxLength={80} />
+                  <Field label={ru ? "ID матча в игре" : "In-game match ID"}>
+                    <input name="matchRef" maxLength={80} required />
                   </Field>
                 </div>
                 <Field label={d.match.evidence} hint={ru ? "Ссылка на скриншот или запись" : "Link to a screenshot or recording"}>
-                  <input name="evidence" type="url" maxLength={500} placeholder="https://" />
+                  <input name="evidence" type="url" maxLength={500} placeholder="https://" required />
                 </Field>
                 <button className="btn btn-primary">{ru ? "Отправить" : "Submit"}</button>
               </ActionForm>
@@ -1038,7 +1044,9 @@ export default async function TournamentPage({ params, searchParams }: { params:
 
       <section id="standings" className="section-tight">
         <h2 className="h3">{d.tournaments.tabs.standings}</h2>
-        {(playoff || chain.length) && finished && standings.length ? (
+        {leaderboard && finished ? (
+          <FinalPlacements lang={lang} rows={standings.map((p) => ({ registration: p.id, name: p.name, placement: p.placement }))} />
+        ) : (playoff || chain.length) && finished && standings.length ? (
           <>
             <ol className="standings">
               {standings.map((p) => (

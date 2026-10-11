@@ -29,7 +29,23 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - run: npm run check
+      - name: Concurrent leaderboard review and retry
+        run: node --test tests/leaderboard-locking-postgres.test.ts
+      - name: Run npm run check
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          npm run check 2>&1 | tee artifacts/quality-check.log
+          python3 -c 'import pathlib,re,sys; text=pathlib.Path("artifacts/quality-check.log").read_text(); bad=re.search(r"not supported in the Edge Runtime|node-module-in-edge-runtime|edge-dynamic-code-evaluation",text); print("Edge runtime compatibility: FAILED" if bad else "Edge runtime compatibility: passed"); sys.exit(1 if bad else 0)'
+      - name: Quality check evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-check
+          path: artifacts/quality-check.log
+      - name: Bracket and twenty-game best-N acceptance
+        run: npm run acceptance:tournaments
       - run: python3 -m unittest discover -s server-agent -v
       - name: Admin HTTP acceptance (isolated database)
         run: node scripts/admin-http.mjs
