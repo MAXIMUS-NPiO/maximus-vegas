@@ -23,6 +23,7 @@ Status: `open` → `in progress` (branch) → `done` (PR, verification). Take th
 
 | ID | § | Lane | Task | Done when | Status | Branch / PR |
 |---|---|---|---|---|---|---|
+| C-39 | Release verification 11 October 2026 | core | Stabilise clan-war season fixtures and patch the Next.js dependency reported by the package audit | Calendar-independent clan tests, clean dependency audit, full quality gate on exact head; preserve all runtime ranking rules | in progress | core/C-39-release-check-fixes |
 | C-01 | 9 | core | Game Day screen for the participant: opponent, local time, readiness, roster, lobby or server details, referee contact, result, evidence, next match; the current state and the one available action explained | every match state (scheduled → completed, dispute, no-show, cancelled) renders on RU and EN at 390 and 1440 px; tests and e2e on a local database | done | #3 |
 | C-02 | 25 | core | Bracket on phones: round-by-round match list instead of the scaled scheme below 640 px | no horizontal overflow at 390 px for single and double elimination, groups, Swiss, gauntlet | done | #4 |
 | C-03 | 9 | core | Live operations: incident queue with assignee, priority and escalation; pause and resume of a match or event; documented override with reason; bracket repair after a result correction with a preview of affected matches | an incident goes from report to closure; a correction lists affected matches before it applies; audit chain valid; tests | done | #5, #6 |
