@@ -169,3 +169,22 @@ test("pending review reaches old entries beyond the history cap and drains every
   await reviewScore(db,reviewer,next[0].id,"approve","Queue reached the oldest remaining result",1);
   assert.equal((await scoreLog(db,t.id,{pendingOnly:true})).length,0);
 });
+
+test("a playing referee must supply evidence and cannot approve their own roster result", async () => {
+  for (const asOrganizer of [false,true]) {
+    const { t } = await event();
+    const [ownReg] = await db.query<{id:string}>("select id from registrations where tournament_id=$1 and user_id=$2",[t.id,reviewer.id]);
+    const score = {...input(`referee-own-${asOrganizer}`),registration:ownReg.id};
+    await assert.rejects(submitScore(db,reviewer,t.id,{...score,evidenceUrl:""},asOrganizer),code("invalid_evidence"));
+    const entry=await submitScore(db,reviewer,t.id,score,asOrganizer);
+    assert.equal(entry.review,"pending");
+    const before=await snapshot(t.id);
+    await assert.rejects(reviewScore(db,reviewer,entry.id,"approve","My own score",1),code("forbidden"));
+    assert.deepEqual(await snapshot(t.id),before,"self-approval never changes score, XP or audit");
+    await reviewScore(db,owner,entry.id,"approve","Reviewed by staff outside this roster",1);
+    const after=await snapshot(t.id);
+    assert.equal(after.entries[0].review,"approved");
+    assert.equal(after.entries[0].reviewed_by,owner.id);
+    assert.equal(after.xp.length,1);
+  }
+});

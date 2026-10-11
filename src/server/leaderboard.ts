@@ -84,6 +84,7 @@ export async function submitScore(db: Database, user: SessionUser, tournamentId:
       if (!reg) fail("not_participant");
       registrationId = reg.id;
     }
+    const playingOwnRoster = (await regMembers(q, registrationId)).includes(user.id);
     // A correction addresses one locked row, never a new row with a similar match reference.
     const [existing] = await q.query<{id:string;review:string;flags:string[];revision:number;payload_hash:string;match_ref:string;evidence_url:string}>(
       correction
@@ -101,7 +102,7 @@ export async function submitScore(db: Database, user: SessionUser, tournamentId:
     // A byte-identical retry of historical HTTP evidence writes nothing and remains idempotent.
     if (existing && existing.payload_hash===payloadHash && ((!correction && existing.review!=="rejected") || (correction===existing.id && expected !== null && existing.revision===expected+1)))
       return {id:existing.id,review:existing.review,flags:existing.flags};
-    if (!asOrganizer && !evidence) fail("invalid_evidence");
+    if ((!asOrganizer || playingOwnRoster) && !evidence) fail("invalid_evidence");
     if (!retainEvidence && evidence) {
       const evidenceUrl = new URL(evidence);
       if (evidenceUrl.protocol !== "https:" || evidenceUrl.username || evidenceUrl.password) fail("invalid_evidence");
@@ -139,7 +140,7 @@ export async function submitScore(db: Database, user: SessionUser, tournamentId:
     const [count] = await q.query<{ n: number }>("select count(*)::int as n from score_entries where registration_id = $1", [registrationId]);
     if ((count?.n ?? 0) >= t.eligible_game_limit) fail("too_many_entries");
     const flags = flagReasons(line);
-    const review = !asOrganizer || flags.length ? "pending" : "accepted";
+    const review = !asOrganizer || playingOwnRoster || flags.length ? "pending" : "accepted";
     let id: string;
     try {
       const [row] = await q.query<{ id: string }>(
@@ -190,6 +191,7 @@ export async function reviewScore(db: Database, user: SessionUser, entryId: stri
     if (!(await canRefereeTournament(q, t, user))) fail("forbidden");
     if (!["IN_PROGRESS", "PAUSED"].includes(t.status)) fail("tournament_not_live");
     if (entry.revision !== expectedRevision) fail("stale_submission");
+    if (decision === "approved" && (await regMembers(q, entry.registration_id)).includes(user.id)) fail("forbidden");
     const legacyReference = !entry.match_ref.trim();
     if (legacyReference && (decision === "approved" || note.length < 5)) fail("invalid_input");
     if (decision === "approved" && entry.review !== "pending") fail("not_editable");

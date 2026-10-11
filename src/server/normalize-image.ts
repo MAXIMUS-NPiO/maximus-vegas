@@ -40,10 +40,15 @@ export async function verifyEvidenceImage(input: Uint8Array, type: "image/png" |
 /** Fully decoded safe derivative. The immutable submitted original is stored privately. */
 export async function normalizeEvidenceImage(input:Uint8Array,limit:number) {
   try {
-    const output=await sharp(input,{limitInputPixels:50_000_000,animated:false,failOn:"error"}).rotate()
-      .resize({width:4096,height:4096,fit:"inside",withoutEnlargement:true}).webp({lossless:true}).toBuffer();
-    if(output.length>limit) fail("file_too_large");
-    return new Uint8Array(output);
+    const image=sharp(input,{limitInputPixels:50_000_000,animated:false,failOn:"error"}).rotate()
+      .resize({width:4096,height:4096,fit:"inside",withoutEnlargement:true});
+    // Lossless JPEG-to-WebP can exceed the limit even for a small valid upload.
+    // The submitted original remains immutable; only the safe display copy is compressed.
+    for (const options of [{lossless:true},{quality:95},{quality:90},{quality:85}]) {
+      const output=await image.clone().webp(options).toBuffer();
+      if(output.length<=limit) return new Uint8Array(output);
+    }
+    return fail("file_too_large");
   } catch(error) {
     if(error && typeof error==="object" && "code" in error && error.code==="file_too_large") throw error;
     return fail("invalid_file");

@@ -11,9 +11,11 @@ Status: draft candidate, not a production release. PR #49 preserves PR45's exist
 | Pending reviews disappear behind 500 recent rows | Separate oldest-first pending query, bounded batches with remaining count, plus paginated complete history | 1,101-row fixture with 501 old pending entries; every history row reachable and queue drained |
 | Correction provenance and review context | Latest actor/source stored; prior snapshot, reason and stats retained and displayed to reviewers | Correction provenance/history regression |
 | Legacy blank references have unusable review forms | Approval explains the missing match ID; rejection requires a meaningful reason and allows subsequent correction | Typecheck and review-form inspection |
+| Staff can approve their own playing roster | Own-roster submissions require evidence and remain pending; server rejects self-approval, and the organizer form includes evidence and review guidance | Participant/staff modes, missing proof, rejected self-approval with unchanged XP/audit, independent approval |
+| Valid originals can exceed the display-size budget after normalization | Preserve the original and try bounded WebP display encodings within the existing size limit | Reproduced 537 KB JPEG expanding beyond the limit; normalized image fits, decodes at original dimensions, and original bytes remain unchanged |
 | Intermediate upgrades | Existing migrations 44–47 unchanged; populated 43/44/45/46 upgrade paths covered | Embedded database upgrade tests; hosted rehearsal remains separate |
 
-Local focused correction/queue tests: 5 passed, 0 failed or skipped. Fresh dependency installation completed with 0 reported vulnerabilities. Full integrated quality checks and exact-head independent review are recorded on the pull request when complete.
+Focused final regression suite: 31 passed, 0 failed or skipped; typecheck passed. Fresh dependency installation completed with 0 reported vulnerabilities. Full CI on the previous integration revision passed, including real PostgreSQL and browser acceptance. The final revision's complete quality gate and independent review are recorded on the pull request.
 
 ## Boundaries
 - No production database, payment configuration, secret or external provider setting changed.
@@ -26,8 +28,7 @@ Local focused correction/queue tests: 5 passed, 0 failed or skipped. Fresh depen
 1. Full current-head quality gate, real PostgreSQL concurrency and browser acceptance.
 2. Actual hosted certificate/hostname verification and isolated failure tests for the strict TLS path.
 3. A recent recovery point, isolated restore drill and rehearsal of migrations 44–47; production data counts and rollback limitations recorded. The additive nonblank-reference trigger can reject blank inserts from rolled-back code.
-4. Explicit tournament policy for staff reviewing their own playing roster, review SLA and final rules. Existing policy is not silently replaced by this remediation.
-5. Measure large photographic/screenshot evidence derivatives: the current lossless WebP output may exceed the upload-size budget despite a valid original.
-6. Other feature-specific gates in QA_REMEDIATION.md: email delivery, administrator/MFA, publisher ownership/live verification, payment readiness and voice/broadcast provider acceptance.
+4. Final tournament rules and operational review SLA; playing staff now require independent approval of their own roster's results.
+5. Other feature-specific gates in QA_REMEDIATION.md: email delivery, administrator/MFA, publisher ownership/live verification, payment readiness and voice/broadcast provider acceptance.
 
 The independent review of the original PR45 candidate concluded that it must not be merged unchanged. This draft resolves the concrete issues listed above; it does not substitute for the outstanding production evidence.

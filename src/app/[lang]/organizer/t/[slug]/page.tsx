@@ -191,9 +191,11 @@ export default async function ManageTournament({ params, searchParams }: { param
   const logPages = Math.max(1, Math.ceil((stats?.entries ?? 0) / SCORE_LOG_PAGE_SIZE));
   const logPage = Math.min(logPages, Math.max(1, Math.trunc(Number(sp.logPage) || 1)));
   // Independent oldest-first review work and paginated history can load concurrently.
-  const [lines, pendingLines] = leaderboard ? await Promise.all([
+  const [lines, pendingLines, ownRegistrations] = leaderboard ? await Promise.all([
     scoreLog(db, t.id, { page: logPage }), scoreLog(db, t.id, { pendingOnly: true }),
-  ]) : [[], []];
+    db.query<{ registration_id: string }>("select re.registration_id from roster_entries re join registrations r on r.id=re.registration_id where r.tournament_id=$1 and re.user_id=$2", [t.id, user.id]),
+  ]) : [[], [], []];
+  const ownRosterIds = new Set(ownRegistrations.map(r => r.registration_id));
   const inControl=String(sp.control??"")==="1" && user.roles.includes("admin");
   const back = inControl ? `/${lang}/admin?tab=tournaments&event=${encodeURIComponent(t.slug)}` : `/${lang}/organizer/t/${t.slug}`;
   const scoreHistoryPath = (page: number) => `${back}${back.includes("?") ? "&" : "?"}logPage=${page}#score-history`;
@@ -554,7 +556,8 @@ export default async function ManageTournament({ params, searchParams }: { param
                   <div className="row">
                     {l.match_ref.trim() ? <ActionForm action="score.review" lang={lang} back={back} hidden={{ entry: l.id, expectedRevision: String(l.revision), decision: "approve" }} className="inline-form">
                       <input name="note" maxLength={500} placeholder={ru ? "Комментарий" : "Note"} aria-label={ru ? "Комментарий" : "Note"} />
-                      <button className="btn btn-primary btn-xs">{ru ? "Учесть" : "Approve"}</button>
+                      <button className="btn btn-primary btn-xs" disabled={ownRosterIds.has(l.registration_id)}>{ru ? "Учесть" : "Approve"}</button>
+                      {ownRosterIds.has(l.registration_id) ? <span className="small muted">{ru ? "Ваш результат должен утвердить другой судья." : "Another referee must approve your roster’s result."}</span> : null}
                     </ActionForm> : <p className="small muted">{ru ? "Для утверждения нужен ID матча. Отклоните запись с причиной, затем исправьте её." : "Approval requires a match ID. Reject with a reason, then correct the entry."}</p>}
                     <ActionForm action="score.review" lang={lang} back={back} hidden={{ entry: l.id, expectedRevision: String(l.revision), decision: "reject" }} className="inline-form">
                       <input name="note" required minLength={5} maxLength={500} placeholder={ru ? "Причина" : "Reason"} aria-label={ru ? "Причина" : "Reason"} />
@@ -570,6 +573,7 @@ export default async function ManageTournament({ params, searchParams }: { param
           {t.status === "IN_PROGRESS" ? (
             <details className="disclosure card">
               <summary>{ru ? "Внести результат за участника" : "Log a result for a participant"}</summary>
+              <p className="small muted">{ru ? "Для результата своей игровой заявки нужны доказательство и утверждение другим судьёй." : "Logging for your own playing roster requires evidence and approval by another referee."}</p>
               <ActionForm action="score.log" lang={lang} back={back} hidden={hidden} className="stack">
                 <Field label={d.tournaments.participants}>
                   <select name="registration" required>
@@ -600,6 +604,9 @@ export default async function ManageTournament({ params, searchParams }: { param
                     <input name="matchRef" maxLength={80} required />
                   </Field>
                 </div>
+                <Field label={ru ? "Доказательство (HTTPS)" : "Evidence URL (HTTPS)"}>
+                  <input name="evidence" type="url" maxLength={500} placeholder="https://…" />
+                </Field>
                 <button className="btn btn-primary btn-sm">{ru ? "Внести" : "Log result"}</button>
               </ActionForm>
             </details>
