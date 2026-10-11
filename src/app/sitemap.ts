@@ -3,7 +3,7 @@ import { siteOrigin } from "@/lib/site.ts";
 import { GAMES } from "@/lib/games.ts";
 import { DIRECTIONS } from "@/lib/directions.ts";
 
-const PUBLIC = ["", "tournaments", "circuits", "games", "rankings", "players", "teams", "clans", "ladders", "finder", "matchmaking", "membership", "partners", "developers", "organizer", "innovations", "trust", "help", "contact", "status", "terms", "privacy", "explore"];
+const PUBLIC = ["", "tournaments", "circuits", "games", "rankings", "players", "teams", "clans", "ladders", "finder", "matchmaking", "membership", "rewards", "partners", "developers", "organizer", "innovations", "trust", "help", "contact", "status", "terms", "privacy", "explore"];
 
 /** Direction pages that became signed-in sections send guests to sign-in, so they stay out of the public map. */
 const SIGNED_IN_ONLY = new Set(["community"]);

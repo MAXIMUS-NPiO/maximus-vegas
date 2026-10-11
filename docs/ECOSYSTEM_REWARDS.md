@@ -92,3 +92,7 @@ The recovered annual model supplies the initial-amount basis and simple annual t
 Ante: review the proposed ledger and merchant integration against the existing server architecture; identify the smallest testable slice and any policy dependency before enabling transactions.
 Storm: review the customer journey, clarity of programme status, cross-project coverage and the list of things users can actually redeem.
 No acceptance by either reviewer is asserted.
+
+## Informational preview implementation
+
+A bilingual /rewards page presents the programme, the planned 20% model and reciprocal ecosystem destinations. Footer discovery and sitemap entries are added. The page explicitly states that contributions, accrual, merchants and redemption are not active; it creates no money flow, ledger, account or contract. The activation requirements above remain open.
