@@ -330,7 +330,18 @@ dd {
   line-height: 1;
 }
 .brand-main {
+  position: relative;
   font-size: 1em;
+}
+/* Registered mark after MAXIMUS (owner, 7 October 2026). Outside the flow, so the wordmark keeps its width. */
+.brand-reg {
+  position: absolute;
+  left: 100%;
+  top: -.3em;
+  margin-left: 1px;
+  font-size: .5em;
+  font-weight: 600;
+  line-height: 1;
 }
 .brand-sub {
   font-size: .66em;

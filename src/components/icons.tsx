@@ -59,7 +59,7 @@ export function Brand() {
     <span className="brand" role="img" aria-label="MAXIMUS VEGAS">
       <Image className="brand-mark" src="/brand/maximus-lion.jpg" alt="" width={48} height={48} />
       <span className="brand-wordmark">
-        <span className="brand-main">MAXIMUS</span>
+        <span className="brand-main">MAXIMUS<sup className="brand-reg">®</sup></span>
         <span className="brand-sub">VEGAS</span>
       </span>
     </span>
