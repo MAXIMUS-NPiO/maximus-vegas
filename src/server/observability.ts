@@ -1,4 +1,3 @@
-import {randomUUID} from "node:crypto";
 type Runtime={env?:Partial<NodeJS.ProcessEnv>;fetch?:typeof fetch;sink?:(line:string)=>void};
 /** Deliberately never serialize messages, stacks, headers, URLs, bodies, accounts or credentials. */
 export async function reportError(event:string,error:unknown,context:{route?:string;requestId?:string}={},runtime:Runtime={}) {
@@ -6,7 +5,7 @@ export async function reportError(event:string,error:unknown,context:{route?:str
   const e=error&&typeof error==="object"?error as {name?:unknown;code?:unknown;digest?:unknown}:{};
   const safe=(v:unknown,pattern:RegExp,max=100)=>typeof v==="string"&&v.length<=max&&pattern.test(v)?v:undefined;
   const record={timestamp:new Date().toISOString(),level:"error",event:safe(event,/^[a-z0-9_.-]+$/)??"application.error",
-    requestId:safe(context.requestId,/^[a-zA-Z0-9_-]+$/)??randomUUID(),route:safe(context.route,/^\/[a-zA-Z0-9_\-/[\].]+$/),
+    requestId:safe(context.requestId,/^[a-zA-Z0-9_-]+$/)??globalThis.crypto.randomUUID(),route:safe(context.route,/^\/[a-zA-Z0-9_\-/[\].]+$/),
     errorType:safe(e.name,/^(?:[A-Z][a-zA-Z]*Error|Error)$/)??"Error",code:safe(e.code,/^[a-zA-Z0-9_]+$/),digest:safe(e.digest,/^[a-zA-Z0-9_-]+$/)};
   const sink=runtime.sink??(line=>console.error(line));sink(JSON.stringify(record));
   const endpoint=env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT;if(!endpoint)return record.requestId;

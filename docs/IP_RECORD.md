@@ -232,4 +232,4 @@ Original owner-directed implementation: canonical reviewed score ingestion and c
 
 ## 11 October 2026 — C-41 release remediation
 
-Original owner-directed integration of the reviewed tournament candidate: preserved historical final places across public/API/widget views, revision-bound organizer corrections, stricter score evidence URLs, independent pending-review access, preserved evidence originals with bounded display derivatives, independent approval for playing staff, and regression coverage. Prior release and rewards changes are preserved. No production migration or financial activation is performed by this record.
+Original owner-directed integration of the reviewed tournament candidate: preserved historical final places across public/API/widget views, revision-bound organizer corrections, stricter score evidence URLs, independent pending-review access, preserved evidence originals with bounded display derivatives, independent approval for playing staff, runtime-compatible error reporting, and regression coverage. Prior release and rewards changes are preserved. No production migration or financial activation is performed by this record.
