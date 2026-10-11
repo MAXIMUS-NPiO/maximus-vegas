@@ -216,3 +216,7 @@ MIPA internal implementation record: owner-directed reuse of existing Maximus Sp
 ## 5 October 2026 — C-33: operational administration
 
 MIPA internal implementation record: owner-directed extension of the existing protected control centre, persisted game catalog with independent metadata and retirement, scoped organizer administration, independently routed appeals, version-bound application and sponsor decisions, reasoned tournament transitions, inspectable integrity verification and same-source transparency reporting. Original additions include bilingual administration components, migration 41 and isolated domain/HTTP acceptance. No new copyright registration, connected publisher service, trusted external audit anchor or live financial acceptance is asserted. PR #37; requirements, pre-code assessment and operating limits in `docs/ADMIN_OPERATIONS.md`. Existing ownership and third-party licences are preserved.
+
+## 11 October 2026 — C-39 release checks
+
+Replaced rolling historical dates in the clan-war integration fixture with fixed dates in one UTC quarter, preserving the two-day and ten-day intervals and all ranking assertions. Updated the framework security patch and aligned transitive dependency overrides with the reviewed remediation candidate. Runtime ranking rules and production data are unchanged.

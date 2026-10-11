@@ -157,7 +157,8 @@ test("clan war: proposal rules, lineups, report, confirmation, ladder; repeat pa
   await reportWar(db, a1, w1.id, "2", "1");
   await rejects(confirmWar(db, a2, w1.id), "forbidden");
   await rejects(confirmWar(db, a1, w1.id), "war_own_report");
-  await db.query("update clan_wars set scheduled_at = now() - interval '20 days' where id = $1", [w1.id]);
+  // Fixed dates keep this three-war rating scenario within one UTC quarter on every run.
+  await db.query("update clan_wars set scheduled_at = '2025-02-01T12:00:00Z'::timestamptz where id = $1", [w1.id]);
   await confirmWar(db, b1, w1.id);
   const done = await war(w1.id);
   assert.equal(done.status, "completed");
@@ -175,7 +176,7 @@ test("clan war: proposal rules, lineups, report, confirmation, ladder; repeat pa
   await answerWar(db, a1, w2.id, "accept", [a1.id, a2.id]);
   await db.query("update clan_wars set scheduled_at = now() - interval '2 hours' where id = $1", [w2.id]);
   await reportWar(db, b1, w2.id, "2", "0");
-  await db.query("update clan_wars set scheduled_at = now() - interval '18 days' where id = $1", [w2.id]);
+  await db.query("update clan_wars set scheduled_at = '2025-02-03T12:00:00Z'::timestamptz where id = $1", [w2.id]);
   await confirmWar(db, a1, w2.id);
   const second = await war(w2.id);
   assert.deepEqual([second.status, second.winner_id, second.rated], ["completed", B.id, false]);
@@ -190,7 +191,7 @@ test("clan war: proposal rules, lineups, report, confirmation, ladder; repeat pa
   await rejects(disputeWar(db, a1, w3.id, "коротко"), "invalid_input");
   await rejects(disputeWar(db, b1, w3.id, "Свой же счёт оспорить нельзя никак."), "war_own_report");
   await disputeWar(db, a1, w3.id, "Соперник играл третьим игроком не из заявленного состава.");
-  await db.query("update clan_wars set scheduled_at = now() - interval '10 days' where id = $1", [w3.id]);
+  await db.query("update clan_wars set scheduled_at = '2025-02-11T12:00:00Z'::timestamptz where id = $1", [w3.id]);
   const [open] = await openWarDisputes(db);
   assert.equal(open.id, w3.id);
   await rejects(decideWar(db, a1, w3.id, "challenger", "Решение без прав сотрудника платформы."), "forbidden");
